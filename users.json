@@ -1,0 +1,79 @@
+{
+  "admin": {
+    "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+    "role": "researcher",
+    "name": "System Administrator",
+    "created": "2025-06-05T22:42:55.316645",
+    "email": "20p1019diya@gmail.com",
+    "phone": "+919686182642"
+  },
+  "researcher": {
+    "password": "381fa94c49882e0a06845ff8aa9df705412448592bc9a4e637dc3dcd0e543968",
+    "role": "researcher",
+    "name": "Emergency Researcher",
+    "created": "2025-06-05T22:42:55.316645"
+  },
+  "citizen": {
+    "password": "4b4b4c19fdc4b422ca5a52085c3ba8fd2087c62afb06dae791f8fb9c51c56b4b",
+    "role": "citizen",
+    "name": "Emergency Citizen",
+    "created": "2025-06-05T22:42:55.316645"
+  },
+  "abr": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "role": "researcher",
+    "name": "Aditri B Ray",
+    "email": "xaditrix@gmail.com",
+    "phone": "+917338199014",
+    "created": "2025-06-07T15:39:42.814266"
+  },
+  "cit1": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "role": "citizen",
+    "name": "npc",
+    "email": "xaditrix@gmail.com",
+    "phone": "+917338199014",
+    "created": "2025-06-07T17:11:26.369262"
+  },
+  "anisha816": {
+    "password": "6ac694361a3648ce313e2eafaa29f499ecd6ed61da6e28bcdac84f9a1a513bdb",
+    "role": "researcher",
+    "name": "Anisha Ajit",
+    "email": "anisha.ajit303@gmail.com",
+    "phone": "+916361473471",
+    "created": "2025-06-07T19:31:54.855537",
+    "address": "Purva Heights, Flat No. 101, 1st Floor, Block A, Purva Heights, Near Purva Heights Club House, Kalyan Nagar, Bengaluru, Karnataka 560043"
+  },
+  "Modi": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "role": "authority",
+    "name": "mode",
+    "email": "xaditrix@gmail.com",
+    "phone": "+917338199014",
+    "created": "2025-06-07T21:10:35.738992"
+  },
+  "Rahul": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "role": "authority",
+    "name": "rara",
+    "email": "aditrixd@gmail.com",
+    "phone": "+917338199014",
+    "created": "2025-06-07T21:37:26.191396"
+  },
+  "Anisha Flood Evacuation Agency": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "role": "authority",
+    "name": "Anisha Ajit",
+    "email": "anisha.ajit303@gmail.com",
+    "phone": "+916361473471",
+    "created": "2025-06-07T21:39:50.819076"
+  },
+  "Aditri": {
+    "password": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "role": "researcher",
+    "name": "Aditri B Ray",
+    "email": "xaditrix@gmail.com",
+    "phone": "+917338199014",
+    "created": "2025-06-07T21:40:28.086478"
+  }
+}

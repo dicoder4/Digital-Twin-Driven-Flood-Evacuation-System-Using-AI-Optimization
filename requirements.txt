@@ -1,0 +1,37 @@
+# Core scientific and geospatial libraries
+numpy
+pandas
+geopandas
+shapely
+matplotlib
+networkx
+osmnx
+folium
+contextily
+
+# Web and visualization
+streamlit
+streamlit-folium
+plotly
+selenium
+
+# Geocoding and traffic
+geopy
+googlemaps
+gmaps
+polyline
+streamlit-js-eval
+
+# Environment and notifications
+python-dotenv
+twilio
+requests
+
+# Utility
+haversine
+pymongo
+
+# Testing
+pytest
+pytest-cov
+pytest-mock
