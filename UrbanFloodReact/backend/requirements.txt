@@ -6,3 +6,11 @@ geopandas
 shapely
 scipy
 rtree
+pymongo
+python-dotenv
+geopy
+haversine
+pydantic
+matplotlib
+numpy
+pandas

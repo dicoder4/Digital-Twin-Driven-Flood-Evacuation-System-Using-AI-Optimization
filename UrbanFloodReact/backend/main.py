@@ -164,21 +164,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Update CORS to be more specific and robust
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
+# CORS — list all likely dev ports
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=[
+        f"http://localhost:{p}" for p in range(5173, 5181)
+    ] + [
+        f"http://127.0.0.1:{p}" for p in range(5173, 5181)
+    ] + ["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register new route modules
+from auth_routes import router as auth_router
+from location_routes import router as location_router
+from simulation_routes import router as simulation_router
+from evacuation_routes import router as evacuation_router
+
+app.include_router(auth_router)
+app.include_router(location_router)
+app.include_router(simulation_router)
+app.include_router(evacuation_router)
 
 class SimulationParams(BaseModel):
     rainfall_mm: float = 150.0
