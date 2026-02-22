@@ -8,23 +8,17 @@ Thin FastAPI layer. All business logic lives in:
   flood_simulator.py — physics simulation
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-import asyncio
-import json
-import pandas as pd
-import uvicorn
-import osmnx as ox
 
-from region_manager import (
-    initialise, get_region, norm_key,
-    HOBLI_COORDS, RAINFALL_DATA, REGIONS_TREE, REGION_CACHE,
-)
-from flood_simulator import UrbanFloodSimulator
-from generate_people import load_population, get_population, POPULATION_CSV
+from region_manager import initialise, norm_key, REGIONS_TREE
+from generate_people import load_population, POPULATION_CSV
+
+# Import service layer
+import service
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -57,101 +51,37 @@ class LoadRegionRequest(BaseModel):
 
 
 # ══════════════════════════════════════════════════════
-#  ENDPOINTS
+#  ENDPOINTS (Controller Layer)
 # ══════════════════════════════════════════════════════
 
 @app.get("/regions")
 async def get_regions():
     """District → Taluk → [Hobli] cascade tree for the UI."""
-    return REGIONS_TREE
+    return await service.get_all_regions()
 
 
 @app.get("/population/{hobli_name}")
 async def population(hobli_name: str):
-    """
-    Return population data for a hobli.
-    source='csv'  → matched from BBMP ward data.
-    source='none' → no match, frontend should show manual override.
-    """
-    key  = norm_key(hobli_name)
-    data = get_population(key)
-    if data:
-        return {
-            "hobli":            hobli_name,
-            "total_population": data["total"],
-            "male":             data["male"],
-            "female":           data["female"],
-            "matched_wards":    data["matched_wards"],
-            "taluk":            data.get("taluk", ""),
-            "source":           "csv",
-        }
-    return {
-        "hobli":            hobli_name,
-        "total_population": 0,
-        "male":             0,
-        "female":           0,
-        "matched_wards":    [],
-        "taluk":            "",
-        "source":           "none",
-    }
+    """Return population data for a hobli."""
+    return await service.get_hobli_population(hobli_name)
 
 
 @app.post("/load-region")
 async def load_region(req: LoadRegionRequest):
-    """
-    Lazy-load OSMnx graph for a hobli.
-    Returns centre coords so the frontend can pan the map.
-    """
-    key    = norm_key(req.hobli)
-    coords = HOBLI_COORDS.get(key)
-    if not coords:
-        raise HTTPException(
-            404,
-            detail=f"Hobli '{req.hobli}' not in coordinate map.",
-        )
-
-    try:
-        await asyncio.get_event_loop().run_in_executor(None, get_region, key)
-    except Exception as e:
-        raise HTTPException(500, detail=f"Failed to load graph: {e}")
-
-    return {
-        "status":   "loaded",
-        "hobli":    req.hobli,
-        "lat":      coords["lat"],
-        "lon":      coords["lon"],
-        "district": coords["district"],
-    }
+    """Lazy-load OSMnx graph for a hobli."""
+    return await service.process_load_region(req.hobli)
 
 
 @app.get("/rainfall-data/{hobli_name}")
 async def get_rainfall_data(hobli_name: str):
     """Historical rainfall records for a hobli, sorted chronologically."""
-    key     = norm_key(hobli_name)
-    entries = RAINFALL_DATA.get(key)
-    if not entries:
-        raise HTTPException(404, detail=f"No rainfall data for '{hobli_name}'.")
-
-    try:
-        sorted_entries = sorted(
-            entries,
-            key=lambda e: pd.to_datetime(e["date"], dayfirst=True),
-        )
-    except Exception:
-        sorted_entries = entries
-
-    return {"hobli": hobli_name, "count": len(sorted_entries), "records": sorted_entries}
+    return await service.fetch_rainfall_records(hobli_name)
 
 
 @app.get("/map-data")
 async def get_map_data(hobli: str = Query(...)):
     """Road network GeoJSON for a loaded hobli."""
-    key = norm_key(hobli)
-    if key not in REGION_CACHE:
-        raise HTTPException(400, detail=f"Region '{hobli}' not loaded. Call /load-region first.")
-    G = REGION_CACHE[key]["G"]
-    _, edges = ox.graph_to_gdfs(G)
-    return json.loads(edges.to_json())
+    return await service.fetch_map_geojson(hobli)
 
 
 @app.get("/simulate-stream")
@@ -162,44 +92,13 @@ async def simulate_stream(
     decay_factor: float = Query(0.5),
 ):
     """SSE stream of flood simulation steps."""
-    key = norm_key(hobli)
-    if key not in REGION_CACHE:
-        raise HTTPException(400, detail=f"Region '{hobli}' not loaded. Call /load-region first.")
-
-    entry  = REGION_CACHE[key]
-    G_ref  = entry["G"]
-    drains = entry["drain_nodes"]
-    lakes  = entry["lake_nodes"]
-
-    async def event_generator():
-        sim = UrbanFloodSimulator(G_ref.copy(), drain_nodes=drains, lake_nodes=lakes)
-        sim.initialize_from_drains(rainfall_mm)
-        loop = asyncio.get_event_loop()
-
-        for i in range(steps):
-            await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
-            impact    = await loop.run_in_executor(None, sim.calculate_flood_impact)
-            flood_gdf = impact["flood_gdf"]
-            roads_gdf = impact["roads_gdf"]
-
-            step_data = {
-                "step":          i + 1,
-                "total":         steps,
-                "flood_geojson": json.loads(flood_gdf.to_json()) if not flood_gdf.empty
-                                 else {"type": "FeatureCollection", "features": []},
-                "roads_geojson": json.loads(roads_gdf.to_json()) if not roads_gdf.empty
-                                 else {"type": "FeatureCollection", "features": []},
-            }
-            yield f"data: {json.dumps(step_data)}\n\n"
-
-        yield f"data: {json.dumps({'done': True, 'total': steps})}\n\n"
-
     return StreamingResponse(
-        event_generator(),
+        service.run_simulation_generator(hobli, rainfall_mm, steps, decay_factor),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

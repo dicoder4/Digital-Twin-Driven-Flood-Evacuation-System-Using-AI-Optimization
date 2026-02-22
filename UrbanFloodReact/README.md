@@ -37,6 +37,11 @@ Open the link (usually `http://localhost:5173`) in your browser.
 - **Lazy Loading**: Automatic downloading and disk-caching of road networks (OSMnx) for the selected region.
 - **Historical Rainfall Data**: Simulation based on real meteorological data from May, June, and July datasets.
 - **Road Risk Assessment**: Real-time coloring of road segments based on calculated flood depth (Green: Passable, Yellow: Caution, Red: Dangerous).
+- **Population Integration**: 
+  - **Ward-Level Data**: Loads total, male, and female metrics from BBMP ward-level CSV datasets.
+  - **Two-Pass Matching**: Matches hoblis to wards directly or falls back to Taluk-level aggregation.
+  - **Taluk Bucketing**: Groups wards by Assembly Constituency to calculate Taluk-wide population totals.
+  - **Proportional Scaling**: Distributes aggregated Taluk counts evenly across hoblis without direct matches.
 - **MapLibre Visualization**: Uses a light CartoDB Positron basemap for a clean, Google Maps-like aesthetic.
 - **SSE Real-time Updates**: Server-Sent Events (SSE) provide a smooth, step-by-step animation of flood propagation.
 
