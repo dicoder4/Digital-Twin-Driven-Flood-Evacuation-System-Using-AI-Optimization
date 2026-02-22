@@ -1,6 +1,11 @@
 /**
  * App.jsx — Orchestrator
  * Composes hooks and components. Owns top-level state only.
+ *
+ * Flow: District → Taluk → Hobli → Load Region
+ *       → Population panel (people first)
+ *       → Rainfall panel   (configure rainfall)
+ *       → Simulation Controls → Run flood sim
  */
 import { useState, useCallback } from 'react';
 import { Droplets, Activity } from 'lucide-react';
@@ -9,6 +14,7 @@ import axios from 'axios';
 import { useRegions } from './hooks/useRegions';
 import { useSimulation } from './hooks/useSimulation';
 import { RegionSelector } from './components/RegionSelector';
+import { PopulationPanel } from './components/PopulationPanel';
 import { RainfallPanel } from './components/RainfallPanel';
 import { SimulationControls } from './components/SimulationControls';
 import { FloodMap } from './components/FloodMap';
@@ -28,6 +34,11 @@ export default function App() {
   const [baseRoadsData, setBaseRoadsData] = useState(null);
   const [selRec, setSelRec] = useState(null);  // current historical record
 
+  // Population state — set by PopulationPanel (CSV or manual override)
+  const [populationCount, setPopulationCount] = useState(0);
+  // Unsafe people count — updated live by PeopleLayer as simulation runs
+  const [unsafePeopleCount, setUnsafePeopleCount] = useState(0);
+
   // Sim params
   const [rainfallMm, setRainfallMm] = useState(150);
   const [steps, setSteps] = useState(20);
@@ -43,6 +54,8 @@ export default function App() {
     setRegionLoading(true);
     sim.setStatusMsg(`Loading ${regions.selHobli} …`);
     sim.clearMap();
+    setPopulationCount(0);  // reset people count while new region loads
+    setUnsafePeopleCount(0);
 
     try {
       const res = await axios.post(`${API_URL}/load-region`, { hobli: regions.selHobli });
@@ -55,7 +68,7 @@ export default function App() {
       setLoadedHobli(regions.selHobli);
       setRegionLoaded(true);
       setSelRec(null);
-      sim.setStatusMsg(`${regions.selHobli} ready. Configure and run.`);
+      sim.setStatusMsg(`${regions.selHobli} ready. Set population, then configure and run.`);
     } catch (err) {
       sim.setStatusMsg(`Error: ${err.response?.data?.detail || err.message}`);
     } finally {
@@ -64,9 +77,9 @@ export default function App() {
   }, [regions.selHobli, sim]);
 
   // When district/taluk/hobli changes, unload region
-  const handleDistrict = (d) => { regions.setDistrict(d); setRegionLoaded(false); sim.reset(); };
-  const handleTaluk = (t) => { regions.setTaluk(t); setRegionLoaded(false); sim.reset(); };
-  const handleHobli = (h) => { regions.setHobli(h); setRegionLoaded(false); sim.reset(); };
+  const handleDistrict = (d) => { regions.setDistrict(d); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); };
+  const handleTaluk    = (t) => { regions.setTaluk(t);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); };
+  const handleHobli    = (h) => { regions.setHobli(h);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); };
 
   // ── Start simulation ───────────────────────────────────────────────────────
   const handleStart = () => {
@@ -102,8 +115,15 @@ export default function App() {
           loadedHobli={loadedHobli}
         />
 
+        {/* ── STEP 1: People (loaded before simulation) ── */}
         {regionLoaded && (
           <>
+            <PopulationPanel
+              loadedHobli={loadedHobli}
+              onPopulationSet={setPopulationCount}
+            />
+
+            {/* ── STEP 2: Rainfall + Simulation ── */}
             <RainfallPanel
               loadedHobli={loadedHobli}
               rainfallMm={rainfallMm}
@@ -120,6 +140,26 @@ export default function App() {
               onTogglePause={sim.togglePause}
               onReset={sim.reset}
             />
+
+            {/* ── Unsafe people result (shown after simulation finishes) ── */}
+            {sim.simulationDone && populationCount > 0 && (
+              <section className="panel">
+                <h3 className="panel-title" style={{ color: '#dc2626' }}>⚠ Flood Impact</h3>
+                <div className="pop-count-row">
+                  <span className="pop-count" style={{ color: '#dc2626' }}>
+                    {unsafePeopleCount.toLocaleString()}
+                  </span>
+                  <span className="pop-count-label">people at risk</span>
+                </div>
+                <div className="pop-split">
+                  <span style={{ color: '#16a34a' }}>✓ Safe: {(populationCount - unsafePeopleCount).toLocaleString()}</span>
+                  <span style={{ color: '#dc2626' }}>✗ Unsafe: {unsafePeopleCount.toLocaleString()}</span>
+                </div>
+                <div className="hint-text">
+                  {((unsafePeopleCount / populationCount) * 100).toFixed(1)}% of total population affected
+                </div>
+              </section>
+            )}
           </>
         )}
 
@@ -138,6 +178,8 @@ export default function App() {
         riskRoadsData={sim.roadsData}
         loadedHobli={loadedHobli}
         selRec={selRec}
+        populationCount={populationCount}
+        onUnsafeCount={setUnsafePeopleCount}
       />
     </div>
   );

@@ -3,7 +3,8 @@
  * MapLibre map with:
  *   - Light CartoDB Positron basemap (GMaps-like)
  *   - Base road network layer (thin gray)
- *   - Flood area polygons (teal, intensity-mapped opacity)
+ *   - People dots on roads (green → red when flooded)
+ *   - Flood area polygons (dark blue, intensity-mapped opacity)
  *   - Flood risk road overlay (colored by 'risk' field: low/medium/high)
  *   - Legend (bottom-right)
  *   - Hobli info chip (top-left)
@@ -12,10 +13,11 @@ import Map, { Source, Layer, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapPin, BarChart2 } from 'lucide-react';
 import { Legend } from './Legend';
+import { PeopleLayer } from './PeopleLayer';
 
 // Road risk → colour
 const RISK_COLOUR = {
-    low: '#22c55e',
+    low: '#b3e168ff',
     medium: '#f59e0b',
     high: '#ef4444',
 };
@@ -27,15 +29,15 @@ const BASE_ROAD_PAINT = {
     'line-opacity': 0.65,
 };
 
-// Flood area fill (uses 'intensity': 0–1 from flood_gdf)
+// Flood area fill — dark blue (distinct from green people dots)
 const FLOOD_FILL_PAINT = {
     'fill-color': [
         'interpolate', ['linear'], ['coalesce', ['get', 'intensity'], 0.2],
-        0.2, 'rgba(56,189,248,0.35)',
-        0.6, 'rgba(14,165,233,0.55)',
-        1.0, 'rgba(2,132,199,0.75)',
+        0.2, 'rgba(29,78,216,0.35)',
+        0.6, 'rgba(30,58,138,0.58)',
+        1.0, 'rgba(15,23,79,0.80)',
     ],
-    'fill-outline-color': 'rgba(14,165,233,0.5)',
+    'fill-outline-color': 'rgba(30,58,138,0.6)',
 };
 
 // Flooded roads: colour from `risk` field
@@ -51,9 +53,9 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec }) {
+export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount }) {
     const hasFlood = !!(floodData?.features?.length);
-    const hasRisk = !!(riskRoadsData?.features?.length);
+    const hasRisk  = !!(riskRoadsData?.features?.length);
 
     return (
         <main className="map-container">
@@ -72,14 +74,23 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                     </Source>
                 )}
 
-                {/* 2. Flood extent polygons */}
+                {/* 2. People dots on roads (above roads, below flood) */}
+                <PeopleLayer
+                    baseRoadsData={baseRoadsData}
+                    populationCount={populationCount}
+                    riskRoadsData={riskRoadsData}
+                    hobliName={loadedHobli}
+                    onUnsafeCount={onUnsafeCount}
+                />
+
+                {/* 3. Flood extent polygons */}
                 {hasFlood && (
                     <Source id="flood" type="geojson" data={floodData}>
                         <Layer id="flood-fill" type="fill" paint={FLOOD_FILL_PAINT} />
                     </Source>
                 )}
 
-                {/* 3. Risk-coloured roads overlay */}
+                {/* 4. Risk-coloured roads overlay */}
                 {hasRisk && (
                     <Source id="risk-roads" type="geojson" data={riskRoadsData}>
                         <Layer id="risk-roads-layer" type="line" paint={RISK_ROAD_PAINT} />

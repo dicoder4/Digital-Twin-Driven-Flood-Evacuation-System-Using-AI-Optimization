@@ -24,6 +24,7 @@ from region_manager import (
     HOBLI_COORDS, RAINFALL_DATA, REGIONS_TREE, REGION_CACHE,
 )
 from flood_simulator import UrbanFloodSimulator
+from generate_people import load_population, get_population, POPULATION_CSV
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ from flood_simulator import UrbanFloodSimulator
 async def lifespan(app: FastAPI):
     print("━━ Urban Flood Backend starting ━━")
     initialise()
+    load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
     print("━━ Backend ready — regions lazy-loaded on demand ━━")
     yield
     print("━━ Backend shutting down ━━")
@@ -41,6 +43,7 @@ app = FastAPI(lifespan=lifespan, title="Urban Flood Digital Twin API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
+                   "http://localhost:5174", "http://127.0.0.1:5174",
                    "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -61,6 +64,36 @@ class LoadRegionRequest(BaseModel):
 async def get_regions():
     """District → Taluk → [Hobli] cascade tree for the UI."""
     return REGIONS_TREE
+
+
+@app.get("/population/{hobli_name}")
+async def population(hobli_name: str):
+    """
+    Return population data for a hobli.
+    source='csv'  → matched from BBMP ward data.
+    source='none' → no match, frontend should show manual override.
+    """
+    key  = norm_key(hobli_name)
+    data = get_population(key)
+    if data:
+        return {
+            "hobli":            hobli_name,
+            "total_population": data["total"],
+            "male":             data["male"],
+            "female":           data["female"],
+            "matched_wards":    data["matched_wards"],
+            "taluk":            data.get("taluk", ""),
+            "source":           "csv",
+        }
+    return {
+        "hobli":            hobli_name,
+        "total_population": 0,
+        "male":             0,
+        "female":           0,
+        "matched_wards":    [],
+        "taluk":            "",
+        "source":           "none",
+    }
 
 
 @app.post("/load-region")
