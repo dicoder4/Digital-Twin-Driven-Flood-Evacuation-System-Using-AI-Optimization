@@ -6,3 +6,5 @@ geopandas
 shapely
 scipy
 rtree
+pandas
+openpyxl

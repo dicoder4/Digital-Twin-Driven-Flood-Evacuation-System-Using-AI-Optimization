@@ -1,0 +1,397 @@
+[
+    {
+        "hobli_name": "Kasaba-1",
+        "latitude": 13.025238,
+        "longitude": 77.623793
+    },
+    {
+        "hobli_name": "Yashavantapura-2",
+        "latitude": 12.986207,
+        "longitude": 77.493836
+    },
+    {
+        "hobli_name": "Dasanapura-2",
+        "latitude": 13.023435,
+        "longitude": 77.455186
+    },
+    {
+        "hobli_name": "Dasanapura-3",
+        "latitude": 13.031883,
+        "longitude": 77.406428
+    },
+    {
+        "hobli_name": "Kasaba",
+        "latitude": 12.977942,
+        "longitude": 77.589315
+    },
+    {
+        "hobli_name": "Uttarahalli-1",
+        "latitude": 12.875303,
+        "longitude": 77.572812
+    },
+    {
+        "hobli_name": "Uttarahalli-3",
+        "latitude": 12.766802,
+        "longitude": 77.505851
+    },
+    {
+        "hobli_name": "Uttarahalli-4",
+        "latitude": 12.911515,
+        "longitude": 77.538213
+    },
+    {
+        "hobli_name": "Beguru-1",
+        "latitude": 12.927904,
+        "longitude": 77.627242
+    },
+    {
+        "hobli_name": "Beguru-2",
+        "latitude": 12.871323,
+        "longitude": 77.650262
+    },
+    {
+        "hobli_name": "Beguru-3",
+        "latitude": 12.870918,
+        "longitude": 77.609643
+    },
+    {
+        "hobli_name": "Kengeri-1",
+        "latitude": 12.926471,
+        "longitude": 77.468895
+    },
+    {
+        "hobli_name": "Kengeri-3",
+        "latitude": 12.853671,
+        "longitude": 77.49359
+    },
+    {
+        "hobli_name": "Tavarekere-2",
+        "latitude": 12.967244,
+        "longitude": 77.398758
+    },
+    {
+        "hobli_name": "Kengeri-4",
+        "latitude": 12.924623,
+        "longitude": 77.513735
+    },
+    {
+        "hobli_name": "Uttarahalli",
+        "latitude": 12.927198,
+        "longitude": 77.575263
+    },
+    {
+        "hobli_name": "Kasaba",
+        "latitude": 12.702442,
+        "longitude": 77.671294
+    },
+    {
+        "hobli_name": "Attibele-2",
+        "latitude": 12.806809,
+        "longitude": 77.711144
+    },
+    {
+        "hobli_name": "Sarjapura-1",
+        "latitude": 12.868447,
+        "longitude": 77.796854
+    },
+    {
+        "hobli_name": "Sarjapura-2",
+        "latitude": 12.855866,
+        "longitude": 77.707983
+    },
+    {
+        "hobli_name": "Kasaba-2",
+        "latitude": 12.743677,
+        "longitude": 77.709291
+    },
+    {
+        "hobli_name": "Jigani-2",
+        "latitude": 12.795719,
+        "longitude": 77.551093
+    },
+    {
+        "hobli_name": "Sarjapura-3",
+        "latitude": 12.883723,
+        "longitude": 77.760502
+    },
+    {
+        "hobli_name": "K R Pura-1",
+        "latitude": 13.012724,
+        "longitude": 77.679839
+    },
+    {
+        "hobli_name": "K R Pura-3",
+        "latitude": 12.980016,
+        "longitude": 77.734856
+    },
+    {
+        "hobli_name": "Mahadevapura",
+        "latitude": 12.993753,
+        "longitude": 77.668472
+    },
+    {
+        "hobli_name": "Marathahalli",
+        "latitude": 12.964205,
+        "longitude": 77.672985
+    },
+    {
+        "hobli_name": "Bidarahalli-3",
+        "latitude": 13.078921,
+        "longitude": 77.673779
+    },
+    {
+        "hobli_name": "Yalahanka-1",
+        "latitude": 13.12287,
+        "longitude": 77.589548
+    },
+    {
+        "hobli_name": "Yalahanka-2",
+        "latitude": 13.080302,
+        "longitude": 77.600884
+    },
+    {
+        "hobli_name": "Jala-1",
+        "latitude": 13.178135,
+        "longitude": 77.648197
+    },
+    {
+        "hobli_name": "Jala-2",
+        "latitude": 13.153907,
+        "longitude": 77.616475
+    },
+    {
+        "hobli_name": "Jala-3",
+        "latitude": 13.142831,
+        "longitude": 77.697663
+    },
+    {
+        "hobli_name": "Kasaba-2",
+        "latitude": 13.040382,
+        "longitude": 77.571397
+    },
+    {
+        "hobli_name": "Kasaba-2",
+        "latitude": 13.035788,
+        "longitude": 77.598851
+    },
+    {
+        "hobli_name": "Yashavantapura-1",
+        "latitude": 13.02453,
+        "longitude": 77.530014
+    },
+    {
+        "hobli_name": "Yashavantapura-1",
+        "latitude": 13.064945,
+        "longitude": 77.507323
+    },
+    {
+        "hobli_name": "Dasanapura-1",
+        "latitude": 13.10836,
+        "longitude": 77.477352
+    },
+    {
+        "hobli_name": "Dasanapura-1",
+        "latitude": 13.107129,
+        "longitude": 77.44363
+    },
+    {
+        "hobli_name": "Yeshwanthapura",
+        "latitude": 12.953663,
+        "longitude": 77.525173
+    },
+    {
+        "hobli_name": "Yeshwanthapura",
+        "latitude": 12.981765,
+        "longitude": 77.540442
+    },
+    {
+        "hobli_name": "Yeshwanthapura",
+        "latitude": 13.006023,
+        "longitude": 77.553104
+    },
+    {
+        "hobli_name": "Uttarahalli-2",
+        "latitude": 12.802633,
+        "longitude": 77.513812
+    },
+    {
+        "hobli_name": "Uttarahalli-2",
+        "latitude": 12.864065,
+        "longitude": 77.534663
+    },
+    {
+        "hobli_name": "Kengeri-2",
+        "latitude": 12.82612,
+        "longitude": 77.450204
+    },
+    {
+        "hobli_name": "Kengeri-2",
+        "latitude": 12.897398,
+        "longitude": 77.437912
+    },
+    {
+        "hobli_name": "Tavarekere-1",
+        "latitude": 12.874944,
+        "longitude": 77.366175
+    },
+    {
+        "hobli_name": "Tavarekere-1",
+        "latitude": 12.941451,
+        "longitude": 77.356052
+    },
+    {
+        "hobli_name": "Tavarekere-3",
+        "latitude": 12.899675,
+        "longitude": 77.390938
+    },
+    {
+        "hobli_name": "Tavarekere-3",
+        "latitude": 12.937187,
+        "longitude": 77.377868
+    },
+    {
+        "hobli_name": "Uttarahalli-5",
+        "latitude": 12.911523,
+        "longitude": 77.559873
+    },
+    {
+        "hobli_name": "Uttarahalli-5",
+        "latitude": 12.931717,
+        "longitude": 77.592928
+    },
+    {
+        "hobli_name": "Jigani",
+        "latitude": 12.773856,
+        "longitude": 77.642291
+    },
+    {
+        "hobli_name": "Jigani",
+        "latitude": 12.830991,
+        "longitude": 77.588616
+    },
+    {
+        "hobli_name": "Attibele-1",
+        "latitude": 12.719963,
+        "longitude": 77.766754
+    },
+    {
+        "hobli_name": "Attibele-1",
+        "latitude": 12.773702,
+        "longitude": 77.766096
+    },
+    {
+        "hobli_name": "Jigani-2",
+        "latitude": 12.728242,
+        "longitude": 77.578631
+    },
+    {
+        "hobli_name": "Jigani-2",
+        "latitude": 12.811401,
+        "longitude": 77.594545
+    },
+    {
+        "hobli_name": "K R Pura-2",
+        "latitude": 12.979637,
+        "longitude": 77.678901
+    },
+    {
+        "hobli_name": "K R Pura-2",
+        "latitude": 13.048377,
+        "longitude": 77.649116
+    },
+    {
+        "hobli_name": "Varturu-1",
+        "latitude": 12.938485,
+        "longitude": 77.732641
+    },
+    {
+        "hobli_name": "Varturu-1",
+        "latitude": 12.938614,
+        "longitude": 77.72738
+    },
+    {
+        "hobli_name": "Varturu-2",
+        "latitude": 12.908154,
+        "longitude": 77.699182
+    },
+    {
+        "hobli_name": "Bidarahalli-1",
+        "latitude": 13.032679,
+        "longitude": 77.756841
+    },
+    {
+        "hobli_name": "Bidarahalli-2",
+        "latitude": 13.078603,
+        "longitude": 77.745505
+    },
+    {
+        "hobli_name": "Bidarahalli-2",
+        "latitude": 13.098756,
+        "longitude": 77.671812
+    },
+    {
+        "hobli_name": "Bidarahalli-2",
+        "latitude": 13.063824,
+        "longitude": 77.722875
+    },
+    {
+        "hobli_name": "K.R.Puram",
+        "latitude": 12.977526,
+        "longitude": 77.649572
+    },
+    {
+        "hobli_name": "K.R.Puram",
+        "latitude": 12.987153,
+        "longitude": 77.65556
+    },
+    {
+        "hobli_name": "Yalahanka-3",
+        "latitude": 13.050117,
+        "longitude": 77.601858
+    },
+    {
+        "hobli_name": "Yalahanka-3",
+        "latitude": 13.063644,
+        "longitude": 77.599916
+    },
+    {
+        "hobli_name": "Yalahanka-3",
+        "latitude": 13.080233,
+        "longitude": 77.557531
+    },
+    {
+        "hobli_name": "Hesarughatta-1",
+        "latitude": 13.129257,
+        "longitude": 77.498204
+    },
+    {
+        "hobli_name": "Hesarughatta-2",
+        "latitude": 13.142296,
+        "longitude": 77.534268
+    },
+    {
+        "hobli_name": "Hesarughatta-2",
+        "latitude": 13.192822,
+        "longitude": 77.521991
+    },
+    {
+        "hobli_name": "Yelahanka",
+        "latitude": 13.018581,
+        "longitude": 77.537644
+    },
+    {
+        "hobli_name": "Yelahanka",
+        "latitude": 13.054365,
+        "longitude": 77.538187
+    },
+    {
+        "hobli_name": "Yelahanka",
+        "latitude": 13.079386,
+        "longitude": 77.551902
+    },
+    {
+        "hobli_name": "Yelahanka",
+        "latitude": 13.12067,
+        "longitude": 77.546067
+    }
+]
