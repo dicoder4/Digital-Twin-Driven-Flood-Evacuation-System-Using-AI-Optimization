@@ -1,24 +1,33 @@
 /* ── Reset / Base ──────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg:        #0f1117;
-  --surface:   #1a1f2e;
-  --surface2:  #242938;
-  --border:    #2d3548;
-  --accent:    #3b82f6;
-  --accent2:   #6366f1;
-  --text:      #e2e8f0;
-  --muted:     #8892a4;
-  --danger:    #ef4444;
-  --warn:      #f59e0b;
-  --ok:        #22c55e;
-  --sidebar-w: 300px;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-html, body, #root {
+:root {
+  /* Light sidebar palette */
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --border: #e2e8f0;
+  --accent: #2563eb;
+  --accent-h: #1d4ed8;
+  --text: #1e293b;
+  --muted: #64748b;
+  --danger: #dc2626;
+  --warn: #d97706;
+  --ok: #16a34a;
+  --sidebar-w: 280px;
+}
+
+html,
+body,
+#root {
   height: 100%;
-  width:  100%;
+  width: 100%;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 13px;
   background: var(--bg);
@@ -30,281 +39,426 @@ html, body, #root {
 .app-container {
   display: flex;
   height: 100vh;
-  width:  100vw;
+  width: 100vw;
 }
 
 .sidebar {
-  width:       var(--sidebar-w);
-  min-width:   var(--sidebar-w);
-  background:  var(--surface);
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--surface);
   border-right: 1px solid var(--border);
-  display:     flex;
+  display: flex;
   flex-direction: column;
-  overflow-y:  auto;
-  overflow-x:  hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06);
 }
 
 .map-container {
   flex: 1;
   position: relative;
-  background: #0a0e18;
 }
 
 /* ── Sidebar Header ────────────────────────────────────────── */
 .sidebar-header {
-  display:     flex;
+  display: flex;
   align-items: center;
-  gap:         8px;
-  padding:     16px;
-  font-size:   15px;
-  font-weight: 700;
-  background:  var(--surface2);
-  border-bottom: 1px solid var(--border);
-  color:       var(--text);
-  letter-spacing: 0.3px;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--accent);
 }
-.icon-blue { color: var(--accent); }
+
+.sidebar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sidebar-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.icon-blue {
+  color: var(--accent);
+}
 
 /* ── Panels ────────────────────────────────────────────────── */
 .panel {
-  padding:       14px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
-  display:       flex;
+  display: flex;
   flex-direction: column;
-  gap:           8px;
+  gap: 7px;
 }
 
 .panel-title {
-  display:     flex;
+  display: flex;
   align-items: center;
-  gap:         5px;
-  font-size:   11px;
-  font-weight: 600;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color:       var(--muted);
-  margin-bottom: 2px;
+  letter-spacing: 0.9px;
+  color: var(--muted);
+  margin-bottom: 1px;
 }
 
 /* ── Form Elements ─────────────────────────────────────────── */
 .field-label {
-  display:     flex;
+  display: flex;
   align-items: center;
-  gap:         4px;
-  font-size:   11px;
-  color:       var(--muted);
-  margin-top:  2px;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
 }
 
 .select-wrap {
   position: relative;
 }
+
 .select-wrap .select-arrow {
-  position:       absolute;
-  right:          8px;
-  top:            50%;
-  transform:      translateY(-50%);
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none;
-  color:          var(--muted);
+  color: var(--muted);
 }
 
 .styled-select {
-  width:            100%;
-  padding:          7px 28px 7px 10px;
-  background:       var(--surface2);
-  border:           1px solid var(--border);
-  border-radius:    6px;
-  color:            var(--text);
-  font-size:        12px;
-  appearance:       none;
-  cursor:           pointer;
-  outline:          none;
-  transition:       border-color 0.15s;
+  width: 100%;
+  padding: 6px 26px 6px 9px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
 }
-.styled-select:focus  { border-color: var(--accent); }
-.styled-select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.styled-select:focus {
+  border-color: var(--accent);
+}
+
+.styled-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .slider {
-  width:      100%;
+  width: 100%;
   accent-color: var(--accent);
-  cursor:     pointer;
+  cursor: pointer;
 }
 
 /* ── Buttons ───────────────────────────────────────────────── */
 .btn-primary {
-  display:         flex;
-  align-items:     center;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap:             6px;
-  padding:         8px 14px;
-  background:      var(--accent);
-  color:           #fff;
-  border:          none;
-  border-radius:   6px;
-  font-size:       12px;
-  font-weight:     600;
-  cursor:          pointer;
-  transition:      background 0.15s, opacity 0.15s;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.btn-primary:hover:not(.btn-disabled) { background: #2563eb; }
+
+.btn-primary:hover:not(.btn-disabled) {
+  background: var(--accent-h);
+}
 
 .btn-secondary {
-  display:         flex;
-  align-items:     center;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap:             6px;
-  padding:         8px 14px;
-  background:      var(--surface2);
-  color:           var(--text);
-  border:          1px solid var(--border);
-  border-radius:   6px;
-  font-size:       12px;
-  cursor:          pointer;
-  transition:      background 0.15s;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.btn-secondary:hover { background: var(--border); }
+
+.btn-secondary:hover {
+  background: var(--border);
+}
 
 .btn-ghost {
-  display:         flex;
-  align-items:     center;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap:             6px;
-  padding:         8px 10px;
-  background:      transparent;
-  color:           var(--muted);
-  border:          1px solid var(--border);
-  border-radius:   6px;
-  font-size:       12px;
-  cursor:          pointer;
-  transition:      color 0.15s, border-color 0.15s;
+  gap: 5px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s;
 }
-.btn-ghost:hover { color: var(--text); border-color: var(--muted); }
-.btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
 
-.btn-disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 .btn-row {
   display: flex;
-  gap:     8px;
+  gap: 7px;
   margin-top: 4px;
 }
 
 /* ── Mode Toggle ───────────────────────────────────────────── */
 .mode-toggle {
-  display:       flex;
-  background:    var(--surface2);
-  border:        1px solid var(--border);
+  display: flex;
+  background: var(--surface2);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  overflow:      hidden;
+  overflow: hidden;
 }
+
 .toggle-btn {
-  flex:        1;
-  padding:     6px 10px;
-  border:      none;
-  background:  transparent;
-  color:       var(--muted);
-  font-size:   11px;
+  flex: 1;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
   font-weight: 600;
-  cursor:      pointer;
-  transition:  background 0.15s, color 0.15s;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
+
 .toggle-btn.active {
   background: var(--accent);
-  color:      #fff;
+  color: #fff;
 }
 
 /* ── Rainfall Card ─────────────────────────────────────────── */
 .rainfall-card {
-  background:    var(--surface2);
-  border:        1px solid var(--border);
+  background: var(--surface2);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  padding:       10px;
-  display:       flex;
+  padding: 9px;
+  display: flex;
   flex-direction: column;
-  gap:           6px;
+  gap: 5px;
 }
+
 .rf-row {
-  display:         flex;
+  display: flex;
   justify-content: space-between;
-  align-items:     center;
-  font-size:       11px;
-  color:           var(--muted);
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
 }
-.rf-row strong { color: var(--text); }
+
+.rf-row strong {
+  color: var(--text);
+}
 
 /* ── Risk Badges ───────────────────────────────────────────── */
 .badge {
-  display:       inline-flex;
-  align-items:   center;
-  padding:       2px 7px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
   border-radius: 999px;
-  font-size:     10px;
-  font-weight:   600;
-  white-space:   nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
 }
-.badge-extreme { background: rgba(239,68,68,0.18); color: #fca5a5; }
-.badge-high    { background: rgba(245,158,11,0.18); color: #fcd34d; }
-.badge-normal  { background: rgba(34,197,94,0.18);  color: #86efac; }
-.badge-low     { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+
+.badge-extreme {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.badge-high {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-normal {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-low {
+  background: #ede9fe;
+  color: #5b21b6;
+}
 
 /* ── Progress ──────────────────────────────────────────────── */
-.progress-section { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
-.progress-bar-bg  {
-  height: 5px; background: var(--surface2); border-radius: 999px; overflow: hidden;
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
 }
+
+.progress-bar-bg {
+  height: 5px;
+  background: var(--surface2);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
 .progress-bar-fill {
-  height: 100%; background: var(--accent); border-radius: 999px;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
   transition: width 0.3s ease;
 }
+
 .progress-stats {
-  display: flex; justify-content: space-between;
-  font-size: 10px; color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
 }
 
-/* ── Loaded badge / hints ──────────────────────────────────── */
+/* ── Misc ──────────────────────────────────────────────────── */
 .loaded-badge {
-  display:     flex;
+  display: flex;
   align-items: center;
-  gap:         5px;
-  font-size:   11px;
-  color:       var(--ok);
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ok);
 }
-.hint-text { font-size: 11px; color: var(--muted); font-style: italic; }
 
-/* ── Status bar ────────────────────────────────────────────── */
+.hint-text {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── Status Bar ────────────────────────────────────────────── */
 .status-bar {
-  display:     flex;
+  display: flex;
   align-items: center;
-  gap:         6px;
-  padding:     10px 14px;
-  margin-top:  auto;
-  font-size:   11px;
-  color:       var(--muted);
-  background:  var(--surface2);
-  border-top:  1px solid var(--border);
-  min-height:  38px;
+  gap: 6px;
+  padding: 9px 14px;
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface2);
+  border-top: 1px solid var(--border);
+  min-height: 36px;
 }
 
 /* ── Map floating chip ─────────────────────────────────────── */
 .map-chip {
-  position:      absolute;
-  top:           12px;
-  left:          12px;
-  display:       flex;
-  align-items:   center;
-  gap:           6px;
-  background:    rgba(15,17,23,0.82);
-  border:        1px solid var(--border);
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  padding:       5px 12px;
-  font-size:     11px;
-  color:         var(--text);
-  backdrop-filter: blur(8px);
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--text);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Legend ─────────────────────────────────────────────────── */
+.legend {
+  position: absolute;
+  bottom: 22px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 11px;
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(6px);
+  min-width: 160px;
   pointer-events: none;
 }
 
-/* ── Spinner animation ─────────────────────────────────────── */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spin { animation: spin 0.8s linear infinite; }
+.legend-title {
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+
+.legend-section {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.legend-swatch-line {
+  display: inline-block;
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.legend-swatch-box {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* ── Spinner ────────────────────────────────────────────────── */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}

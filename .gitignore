@@ -3,3 +3,7 @@ __pycache__/
 .env
 cache/
 .pytest_cache/
+
+# UrbanFloodReact specific
+UrbanFloodReact/backend/cache/
+UrbanFloodReact/backend/__pycache__/
