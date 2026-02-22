@@ -1,0 +1,3 @@
+@echo off
+echo Starting Urban Flood Backend on Port 8005...
+uvicorn main:app --reload --port 8005
