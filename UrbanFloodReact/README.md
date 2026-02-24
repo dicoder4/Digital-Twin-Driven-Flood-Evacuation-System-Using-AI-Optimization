@@ -1,4 +1,3 @@
-## Evacuation Shelter Generation (`generate_shelters` branch)
 # Urban Flood Model Use Guide
 
 This project uses a decoupled architecture for high performance:
