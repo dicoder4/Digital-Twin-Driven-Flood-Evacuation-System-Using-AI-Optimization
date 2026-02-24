@@ -7,7 +7,7 @@
  *       → Rainfall panel   (configure rainfall)
  *       → Simulation Controls → Run flood sim
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Droplets, Activity } from 'lucide-react';
 import axios from 'axios';
 
@@ -17,7 +17,9 @@ import { RegionSelector } from './components/RegionSelector';
 import { PopulationPanel } from './components/PopulationPanel';
 import { RainfallPanel } from './components/RainfallPanel';
 import { SimulationControls } from './components/SimulationControls';
+import { SheltersPanel } from './components/SheltersPanel';
 import { FloodMap } from './components/FloodMap';
+import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';
 import './App.css';
 
@@ -34,10 +36,11 @@ export default function App() {
   const [baseRoadsData, setBaseRoadsData] = useState(null);
   const [selRec, setSelRec] = useState(null);  // current historical record
 
-  // Population state — set by PopulationPanel (CSV or manual override)
+  // Population state
   const [populationCount, setPopulationCount] = useState(0);
-  // Unsafe people count — updated live by PeopleLayer as simulation runs
   const [unsafePeopleCount, setUnsafePeopleCount] = useState(0);
+  // Shelter state — raw candidates from backend; safety computed live
+  const [shelterCandidates, setShelterCandidates] = useState([]);
 
   // Sim params
   const [rainfallMm, setRainfallMm] = useState(150);
@@ -48,14 +51,21 @@ export default function App() {
   const regions = useRegions();
   const sim = useSimulation();
 
+  // Recompute shelter safety on every flood update so map updates live
+  const sheltersWithSafety = useMemo(
+    () => computeShelterSafety(shelterCandidates, sim.floodData),
+    [shelterCandidates, sim.floodData],
+  );
+
   // ── Load Region ───────────────────────────────────────────────────────────
   const handleLoadRegion = useCallback(async () => {
     if (!regions.selHobli) return;
     setRegionLoading(true);
     sim.setStatusMsg(`Loading ${regions.selHobli} …`);
     sim.clearMap();
-    setPopulationCount(0);  // reset people count while new region loads
+    setPopulationCount(0);
     setUnsafePeopleCount(0);
+    setShelterCandidates([]);
 
     try {
       const res = await axios.post(`${API_URL}/load-region`, { hobli: regions.selHobli });
@@ -77,9 +87,9 @@ export default function App() {
   }, [regions.selHobli, sim]);
 
   // When district/taluk/hobli changes, unload region
-  const handleDistrict = (d) => { regions.setDistrict(d); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); };
-  const handleTaluk    = (t) => { regions.setTaluk(t);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); };
-  const handleHobli    = (h) => { regions.setHobli(h);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); };
+  const handleDistrict = (d) => { regions.setDistrict(d); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
+  const handleTaluk    = (t) => { regions.setTaluk(t);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
+  const handleHobli    = (h) => { regions.setHobli(h);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
 
   // ── Start simulation ───────────────────────────────────────────────────────
   const handleStart = () => {
@@ -123,7 +133,14 @@ export default function App() {
               onPopulationSet={setPopulationCount}
             />
 
-            {/* ── STEP 2: Rainfall + Simulation ── */}
+            {/* ── STEP 2: Shelters (load before simulation runs) ── */}
+            <SheltersPanel
+              loadedHobli={loadedHobli}
+              shelters={sheltersWithSafety.length ? sheltersWithSafety : null}
+              onCandidates={setShelterCandidates}
+            />
+
+            {/* ── STEP 3: Rainfall + Simulation ── */}
             <RainfallPanel
               loadedHobli={loadedHobli}
               rainfallMm={rainfallMm}
@@ -180,6 +197,7 @@ export default function App() {
         selRec={selRec}
         populationCount={populationCount}
         onUnsafeCount={setUnsafePeopleCount}
+        shelters={sheltersWithSafety}
       />
     </div>
   );

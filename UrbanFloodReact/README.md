@@ -42,6 +42,12 @@ Open the link (usually `http://localhost:5173`) in your browser.
   - **Two-Pass Matching**: Matches hoblis to wards directly or falls back to Taluk-level aggregation.
   - **Taluk Bucketing**: Groups wards by Assembly Constituency to calculate Taluk-wide population totals.
   - **Proportional Scaling**: Distributes aggregated Taluk counts evenly across hoblis without direct matches.
+- **Evacuation Shelter Candidate Identification**
+  - **Extract from OSM** — Queries OpenStreetMap for shelter-suitable buildings (schools, hospitals, community centres, town halls, police stations, fire stations, public buildings) within ~2 km of the hobli centre using `osmnx.features_from_point()`.
+  - **Attach to graph** — Each candidate is snapped to the nearest road graph node via `osmnx.nearest_nodes()`, enabling future routing.
+  - **Assign capacity** — Rule-based capacity assigned by building type (e.g. School → 500, Hospital → 200).
+  - **Filter by flood state** — Frontend runs a point-in-polygon ray-casting check against the live flood GeoJSON on every simulation step. Shelters inside the flood zone turn red in real time without any extra API calls.
+  - **Fallback** — If OSM returns no results for a hobli, 6 synthetic shelters are placed at high-degree road intersections (most connected/accessible nodes) and marked with amber icons.
 - **MapLibre Visualization**: Uses a light CartoDB Positron basemap for a clean, Google Maps-like aesthetic.
 - **SSE Real-time Updates**: Server-Sent Events (SSE) provide a smooth, step-by-step animation of flood propagation.
 
@@ -63,3 +69,17 @@ Open the link (usually `http://localhost:5173`) in your browser.
 - **Propagation**: In each time step, every node with water checks its connected neighbors. If a neighbor is at a lower elevation, a portion of the water (determined by the decay factor and slope steepness) flows down to that neighbor.
 - **Accumulation**: If a node has no lower neighbors (a "sink"), water accumulates there.
 - **Heatmap**: We visualize this depth as a color gradient (Green→Yellow→Red) growing outwards from the sources over time.
+
+### User flow
+```
+Load Hobli → Click "Find Shelters" → House icons appear on map (all green)
+                                              ↓
+                              Run flood simulation
+                                              ↓
+              Icons turn red live as flood reaches each shelter
+              Sidebar shows: "4 safe · 6 total"  ← updates each step
+                                              ↓
+              Hover over any icon → tooltip shows name, type, capacity
+                                              ↓
+              Click "View shelter list" in sidebar → full scrollable list
+```

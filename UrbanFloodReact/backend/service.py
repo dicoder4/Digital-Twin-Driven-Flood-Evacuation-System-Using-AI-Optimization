@@ -18,6 +18,7 @@ from region_manager import (
 )
 from flood_simulator import UrbanFloodSimulator
 from generate_people import get_population
+from shelter_generator import extract_shelter_candidates, filter_safe_shelters
 
 async def get_all_regions():
     """Return the hierarchy tree of regions."""
@@ -131,3 +132,31 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         yield f"data: {json.dumps(step_data)}\n\n"
 
     yield f"data: {json.dumps({'done': True, 'total': steps})}\n\n"
+
+
+async def fetch_shelters(hobli_name: str) -> dict:
+    """
+    Extract shelter candidates for the hobli (OSM-queried, disk-cached).
+    Safety evaluation happens on the frontend using live simulation state.
+    """
+    key = norm_key(hobli_name)
+
+    if key not in REGION_CACHE:
+        raise HTTPException(status_code=400, detail=f"Region '{hobli_name}' not loaded.")
+
+    entry  = REGION_CACHE[key]
+    G      = entry["G"]
+    coords = HOBLI_COORDS.get(key, {})
+    lat    = coords.get("lat", G.nodes[list(G.nodes())[0]]["y"])
+    lon    = coords.get("lon", G.nodes[list(G.nodes())[0]]["x"])
+
+    loop = asyncio.get_event_loop()
+    candidates = await loop.run_in_executor(
+        None, extract_shelter_candidates, G, lat, lon, key
+    )
+
+    return {
+        "hobli":    hobli_name,
+        "total":    len(candidates),
+        "shelters": candidates,
+    }

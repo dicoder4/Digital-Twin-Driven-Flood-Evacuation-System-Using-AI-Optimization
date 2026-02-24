@@ -14,6 +14,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapPin, BarChart2 } from 'lucide-react';
 import { Legend } from './Legend';
 import { PeopleLayer } from './PeopleLayer';
+import { ShelterLayer } from './ShelterLayer';
 
 // Road risk → colour
 const RISK_COLOUR = {
@@ -53,7 +54,7 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount }) {
+export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters }) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk  = !!(riskRoadsData?.features?.length);
 
@@ -96,6 +97,9 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                         <Layer id="risk-roads-layer" type="line" paint={RISK_ROAD_PAINT} />
                     </Source>
                 )}
+
+                {/* 5. Shelter markers with built-in hover tooltip */}
+                <ShelterLayer shelters={shelters} />
             </Map>
 
             {/* Floating hobli chip */}
