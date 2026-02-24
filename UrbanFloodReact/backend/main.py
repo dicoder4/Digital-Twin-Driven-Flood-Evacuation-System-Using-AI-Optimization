@@ -99,6 +99,15 @@ async def simulate_stream(
     )
 
 
+@app.get("/shelters/{hobli_name}")
+async def get_shelters(hobli_name: str):
+    """
+    Return raw shelter candidates for a hobli (OSM-extracted, disk-cached).
+    Flood safety is evaluated on the frontend from live simulation state.
+    """
+    return await service.fetch_shelters(hobli_name)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

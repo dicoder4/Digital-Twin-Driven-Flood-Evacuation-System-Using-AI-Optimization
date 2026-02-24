@@ -512,3 +512,59 @@ body,
   font-size: 10px; cursor: pointer; text-align: left; padding: 0; text-decoration: underline;
 }
 .btn-link:hover { color: var(--accent-h); }
+
+/* ── Shelters Panel ────────────────────────────────────────── */
+.shelter-summary {
+  display: flex; align-items: baseline; gap: 6px; margin-top: 2px;
+}
+.shelter-safe  { font-size: 18px; font-weight: 800; color: #16a34a; }
+.shelter-muted { font-size: 11px; color: var(--muted); }
+
+.shelter-list {
+  list-style: none; display: flex; flex-direction: column;
+  gap: 5px; max-height: 220px; overflow-y: auto; margin-top: 2px;
+}
+
+.shelter-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface2);
+}
+.shelter-item-safe   { border-color: #bbf7d0; background: #f0fdf4; }
+.shelter-item-unsafe { border-color: #fecaca; background: #fff1f2; }
+
+.shelter-icon { font-size: 16px; flex-shrink: 0; }
+
+.shelter-info { flex: 1; min-width: 0; }
+.shelter-name {
+  font-size: 11px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.shelter-meta { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+.shelter-badge {
+  font-size: 9px; font-weight: 700; padding: 2px 6px;
+  border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+}
+.shelter-badge-safe   { background: #dcfce7; color: #166534; }
+.shelter-badge-unsafe { background: #fee2e2; color: #b91c1c; }
+
+/* Collapsible shelter list */
+.shelter-details { margin-top: 2px; }
+.shelter-details-summary {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--accent); cursor: pointer;
+  user-select: none; list-style: none; padding: 2px 0;
+}
+.shelter-details-summary::-webkit-details-marker { display: none; }
+.shelter-details[open] .shelter-details-summary { margin-bottom: 5px; }
+
+/* MapLibre popup for shelter hover */
+.shelter-popup {
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 11px; min-width: 130px;
+}
+.shelter-popup strong {
+  font-size: 12px; font-weight: 700; color: #1e293b;
+}
+.shelter-popup span { color: #64748b; }
