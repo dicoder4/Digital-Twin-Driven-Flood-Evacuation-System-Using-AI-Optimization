@@ -1,43 +1,75 @@
-
-
 ## Evacuation Shelter Generation (`generate_shelters` branch)
+# Urban Flood Model Use Guide
 
-### What it does
-After loading a hobli and running the flood simulation, the system automatically identifies valid **evacuation shelter candidates** from OpenStreetMap and evaluates their safety against the current flood state in real time.
+This project uses a decoupled architecture for high performance:
+- **Backend**: FastAPI (Python) for physics simulation.
+- **Frontend**: React + MapLibre for high-performance visualization.
 
-**4-step pipeline:**
-1. **Extract from OSM** — Queries OpenStreetMap for shelter-suitable buildings (schools, hospitals, community centres, town halls, police stations, fire stations, public buildings) within ~2 km of the hobli centre using `osmnx.features_from_point()`.
-2. **Attach to graph** — Each candidate is snapped to the nearest road graph node via `osmnx.nearest_nodes()`, enabling future routing.
-3. **Assign capacity** — Rule-based capacity assigned by building type (e.g. School → 500, Hospital → 200).
-4. **Filter by flood state** — Frontend runs a point-in-polygon ray-casting check against the live flood GeoJSON on every simulation step. Shelters inside the flood zone turn red in real time without any extra API calls.
-5. **Fallback** — If OSM returns no results for a hobli, 6 synthetic shelters are placed at high-degree road intersections (most connected/accessible nodes) and marked with amber icons.
+## Setup Instructions
 
-**Result is disk-cached** at `backend/cache/{hobli_key}_shelters.pkl` so repeat loads are instant.
+### 1. Backend Setup
+Navigate to the `backend` folder and install dependencies:
+```bash
+cd backend
+pip install -r requirements.txt
+```
 
----
+Run the backend server:
+```bash
+uvicorn main:app --reload
+```
+The API will be available at `http://localhost:8000`.
 
-### File-by-file changes
+### 2. Frontend Setup
+Open a new terminal, navigate to the `frontend` folder, and install dependencies:
+```bash
+cd frontend
+npm install
+```
 
-#### Backend
+Run the development server:
+```bash
+npm run dev
+```
+Open the link (usually `http://localhost:5173`) in your browser.
 
-| File | What changed |
-|------|-------------|
-| `backend/shelter_generator.py` | **NEW** — Full 4-step shelter pipeline: OSM query, graph attachment, capacity rules, flood filter, and synthetic fallback. Functions: `extract_shelter_candidates()`, `filter_safe_shelters()`, `_generate_synthetic_shelters()`. |
-| `backend/service.py` | Added `fetch_shelters(hobli_name)` — loads/caches candidates via `shelter_generator`, returns raw list (no flood filter — done on frontend). |
-| `backend/main.py` | Added `GET /shelters/{hobli_name}` endpoint that calls `service.fetch_shelters()`. |
+## Features
+- **Multi-Hobli Support**: Hierarchical region selection (District → Taluk → Hobli) for Bengaluru Urban and Rural.
+- **Lazy Loading**: Automatic downloading and disk-caching of road networks (OSMnx) for the selected region.
+- **Historical Rainfall Data**: Simulation based on real meteorological data from May, June, and July datasets.
+- **Road Risk Assessment**: Real-time coloring of road segments based on calculated flood depth (Green: Passable, Yellow: Caution, Red: Dangerous).
+- **Population Integration**: 
+  - **Ward-Level Data**: Loads total, male, and female metrics from BBMP ward-level CSV datasets.
+  - **Two-Pass Matching**: Matches hoblis to wards directly or falls back to Taluk-level aggregation.
+  - **Taluk Bucketing**: Groups wards by Assembly Constituency to calculate Taluk-wide population totals.
+  - **Proportional Scaling**: Distributes aggregated Taluk counts evenly across hoblis without direct matches.
+- **Evacuation Shelter Candidate Identification**
+  - **Extract from OSM** — Queries OpenStreetMap for shelter-suitable buildings (schools, hospitals, community centres, town halls, police stations, fire stations, public buildings) within ~2 km of the hobli centre using `osmnx.features_from_point()`.
+  - **Attach to graph** — Each candidate is snapped to the nearest road graph node via `osmnx.nearest_nodes()`, enabling future routing.
+  - **Assign capacity** — Rule-based capacity assigned by building type (e.g. School → 500, Hospital → 200).
+  - **Filter by flood state** — Frontend runs a point-in-polygon ray-casting check against the live flood GeoJSON on every simulation step. Shelters inside the flood zone turn red in real time without any extra API calls.
+  - **Fallback** — If OSM returns no results for a hobli, 6 synthetic shelters are placed at high-degree road intersections (most connected/accessible nodes) and marked with amber icons.
+- **MapLibre Visualization**: Uses a light CartoDB Positron basemap for a clean, Google Maps-like aesthetic.
+- **SSE Real-time Updates**: Server-Sent Events (SSE) provide a smooth, step-by-step animation of flood propagation.
 
-#### Frontend
+## How it works
+- **Region Initialization**: Selecting a Hobli triggers the backend to load its road network. If not cached, it downloads data from OpenStreetMap.
+- **Rainfall Input**: 
+  - **Manual**: Adjust rainfall (mm) using a slider.
+  - **Historical**: Select a specific date from history to auto-populate rainfall levels and see calculated "Risk Departure" badges.
+- **Physics Propagation**: 
+  - Water is "injected" at drains and lake boundaries.
+  - In each time step, water flows to neighbors with lower elevation, adjusted by the **Flow Decay** factor.
+- **Visualization**: 
+  - **Flood Area**: A gradient poly-layer showing general flood extent.
+  - **Road Overlay**: Specific road segments are highlighted and colored based on depth thresholds (e.g., >15cm is High risk).
+- **Legend**: A dynamic legend in the bottom-right corner provides context for the color mappings.
 
-| File | What changed |
-|------|-------------|
-| `frontend/src/utils/geoUtils.js` | **NEW** — `computeShelterSafety(candidates, floodGeoJSON)` and `isPointFlooded()` — pure JS ray-casting point-in-polygon, no dependencies. Recomputed via `useMemo` on every simulation step. |
-| `frontend/src/components/ShelterLayer.jsx` | **NEW** — Renders each shelter as a react-map-gl `Marker` with an inline SVG house icon (green = safe, red = flooded, amber = synthetic). Hover tooltip (name, type, capacity, status) via React `onMouseEnter/Leave` + `Popup`. |
-| `frontend/src/components/SheltersPanel.jsx` | **NEW** — Sidebar panel with "Find Shelters" button (calls `GET /shelters/{hobli}`), summary count (`N safe · M total`), and a collapsible `<details>` list showing each shelter with type emoji, capacity, and safe/unsafe badge. |
-| `frontend/src/App.jsx` | Added `shelterCandidates` state + `sheltersWithSafety` useMemo (recomputed from `sim.floodData`). `SheltersPanel` placed **before** the rainfall panel so shelters can be loaded before the simulation runs. |
-| `frontend/src/components/FloodMap.jsx` | Added `ShelterLayer` import and renders it as the topmost map layer. |
-| `frontend/src/App.css` | Added styles for `.shelter-details`, `.shelter-details-summary`, `.shelter-popup`, `.shelter-list`, `.shelter-item`, `.shelter-badge`, etc. |
-
----
+## Flooding
+- **Initialization**: Water is "injected" at identified drain locations (simulating overflow) and lake boundaries based on the rainfall amount.
+- **Propagation**: In each time step, every node with water checks its connected neighbors. If a neighbor is at a lower elevation, a portion of the water (determined by the decay factor and slope steepness) flows down to that neighbor.
+- **Accumulation**: If a node has no lower neighbors (a "sink"), water accumulates there.
+- **Heatmap**: We visualize this depth as a color gradient (Green→Yellow→Red) growing outwards from the sources over time.
 
 ### User flow
 ```
