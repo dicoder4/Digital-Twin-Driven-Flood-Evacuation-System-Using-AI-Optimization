@@ -58,10 +58,13 @@ def _build_regions_tree():
     for key, entries in RAINFALL_DATA.items():
         if not entries:
             continue
+        # Skip hoblis that have no coordinate entry — they can't be loaded
+        if key not in HOBLI_COORDS:
+            continue
         e        = entries[0]
         district = e.get("district") or "Unknown"
         taluk    = e.get("taluk")    or "Unknown"
-        display  = HOBLI_COORDS.get(key, {}).get("original_name", key)
+        display  = HOBLI_COORDS[key].get("original_name", key)
 
         tree.setdefault(district, {}).setdefault(taluk, [])
         if display not in tree[district][taluk]:
