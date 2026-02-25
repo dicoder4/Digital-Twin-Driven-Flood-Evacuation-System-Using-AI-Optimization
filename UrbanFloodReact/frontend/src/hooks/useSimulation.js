@@ -14,6 +14,9 @@ export function useSimulation() {
     const [simulationDone, setSimulationDone] = useState(false);
     const [floodData, setFloodData] = useState(null);
     const [roadsData, setRoadsData] = useState(null);   // sim-coloured roads
+    const [evacuationPlan, setEvacuationPlan] = useState([]);
+    const [shelterOccupancy, setShelterOccupancy] = useState({});
+    const [finalReport, setFinalReport] = useState(null);
     const [statusMsg, setStatusMsg] = useState('Select a region to begin');
 
     const esRef = useRef(null);
@@ -25,7 +28,9 @@ export function useSimulation() {
         clearInterval(timerRef.current); timerRef.current = null;
         setIsRunning(false); setIsPaused(false); pauseRef.current = false;
         setCurrentStep(0); setTotalSteps(0); setElapsedTime(0);
-        setFloodData(null); setRoadsData(null); setSimulationDone(false);
+        setFloodData(null); setRoadsData(null);
+        setEvacuationPlan([]); setShelterOccupancy({}); setFinalReport(null);
+        setSimulationDone(false);
     }, []);
 
     const clearMap = useCallback(() => {
@@ -33,7 +38,7 @@ export function useSimulation() {
         setRoadsData(null);
     }, []);
 
-    const start = useCallback((hobli, rainfallMm, steps, decayFactor) => {
+    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode) => {
         reset();
         setIsRunning(true);
         setSimulationDone(false);
@@ -42,7 +47,13 @@ export function useSimulation() {
         const t0 = Date.now();
         timerRef.current = setInterval(() => setElapsedTime(Math.round((Date.now() - t0) / 1000)), 1000);
 
-        const params = new URLSearchParams({ hobli, rainfall_mm: rainfallMm, steps, decay_factor: decayFactor });
+        const params = new URLSearchParams({
+            hobli,
+            rainfall_mm: rainfallMm,
+            steps,
+            decay_factor: decayFactor,
+            evacuation_mode: evacuationMode
+        });
         const es = new EventSource(`${API_URL}/simulate-stream?${params}`);
         esRef.current = es;
 
@@ -53,13 +64,22 @@ export function useSimulation() {
                 es.close(); esRef.current = null;
                 clearInterval(timerRef.current); timerRef.current = null;
                 setIsRunning(false); setSimulationDone(true);
-                setStatusMsg(`Done — ${data.total} steps`);
+                if (data.summary) {
+                    setFinalReport(data);
+                    const evac = data.summary.total_evacuated || 0;
+                    const statusSuffix = evac > 0 ? ` · ${evac.toLocaleString()} evacuated` : '';
+                    setStatusMsg(`Done — ${data.total} steps${statusSuffix}`);
+                } else {
+                    setStatusMsg(`Done — ${data.total} steps`);
+                }
+                if (data.evacuation_plan?.length) setEvacuationPlan(data.evacuation_plan);
                 return;
             }
             setCurrentStep(data.step);
             setTotalSteps(data.total);
             if (data.flood_geojson?.features?.length > 0) setFloodData(data.flood_geojson);
             if (data.roads_geojson?.features?.length > 0) setRoadsData(data.roads_geojson);
+            // Evacuation plan only arrives in the final 'done' message - no-op here during streaming
         };
 
         es.onerror = () => {
@@ -81,6 +101,7 @@ export function useSimulation() {
     return {
         isRunning, isPaused, currentStep, totalSteps,
         elapsedTime, simulationDone, floodData, roadsData,
+        evacuationPlan, shelterOccupancy, finalReport,
         statusMsg, setStatusMsg, progressPct,
         start, togglePause, reset, clearMap,
     };

@@ -5,7 +5,8 @@
 import { Play, Pause, RefreshCw, Clock, Activity } from 'lucide-react';
 
 export function SimulationControls({
-    steps, decayFactor, onSteps, onDecay,
+    steps, decayFactor,
+    onSteps, onDecay,
     isRunning, isPaused, simulationDone,
     currentStep, totalSteps, elapsedTime, progressPct,
     onStart, onTogglePause, onReset,
@@ -30,7 +31,7 @@ export function SimulationControls({
 
             <div className="btn-row">
                 {!isRunning
-                    ? <button className="btn-primary" onClick={onStart}><Play size={13} /> Run</button>
+                    ? <button className="btn-primary" onClick={onStart}><Play size={13} /> Run Simulation</button>
                     : <button className="btn-secondary" onClick={onTogglePause}>
                         {isPaused ? <><Play size={13} /> Resume</> : <><Pause size={13} /> Pause</>}
                     </button>}

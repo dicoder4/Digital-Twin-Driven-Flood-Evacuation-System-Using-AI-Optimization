@@ -81,5 +81,64 @@ Load Hobli → Click "Find Shelters" → House icons appear on map (all green)
                                               ↓
               Hover over any icon → tooltip shows name, type, capacity
                                               ↓
-              Click "View shelter list" in sidebar → full scrollable list
+               Click "View shelter list" in sidebar → full scrollable list
 ```
+
+---
+
+## Genetic Algorithm — Evacuation Route Optimization
+
+### Overview
+
+After the flood simulation completes, a **Genetic Algorithm (GA)** runs once to assign every at-risk population group to a safe evacuation shelter. The goal is to minimise total evacuation cost — a combinatorial optimisation problem too large to solve exhaustively (*S^N* combinations for *N* groups and *S* shelters).
+
+### Three-Phase Design
+
+#### Phase 1 — Flood-Aware Precomputation
+
+Before the GA starts, real road-network distances are computed for every (group, shelter) pair using **Dijkstra's algorithm** with flood-penalised edge weights:
+
+```
+flood_weight = road_length × (1 + 5 × avg_water_depth_on_edge)
+```
+
+Edges with deeper water count as substantially longer, so evacuees are automatically routed **around flooded roads** — not through them.
+
+#### Phase 2 — Greedy Population Seeding
+
+Rather than starting from random assignments, **80% of the initial population** is seeded from a greedy nearest-shelter heuristic: each group is assigned to the nearest (flood-weighted) shelter that still has remaining capacity, with small perturbations for diversity. The remaining 20% are fully random to prevent premature convergence.
+
+#### Phase 3 — GA Evolution
+
+| Operator | Detail |
+|---|---|
+| **Fitness** | `flood_dist × pop + 0.5 × travel_time × pop + capacity_overflow_penalty` |
+| **Selection** | Tournament (k = 3) — best of 3 random chromosomes |
+| **Crossover** | Two-point crossover for minimal disruption |
+| **Mutation** | Reassigns to one of the 3 nearest shelters (distance-biased, not random) |
+| **Elitism** | Top 10% carried unchanged into each new generation |
+
+Capacity overflow is penalised heavily (×2000 per excess person) to prevent overfilling shelters.
+
+### Multi-Factor Fitness
+
+The fitness function balances three concerns simultaneously:
+
+1. **Flood-weighted network distance** — prefers shorter routes on drier roads
+2. **Travel time** — estimated as raw road distance ÷ walking speed (1.2 m/s)
+3. **Shelter capacity** — heavy penalty for over-assignment
+
+### Output & Visualisation
+
+Each GA result entry includes `from_node`, `to_shelter`, `pop`, and a `path` — ordered `[lon, lat]` waypoints tracing the flood-aware road route.
+
+In the **Evacuation tab**, click any shelter row to see:
+- 🟣 **Purple route lines** following the actual road network (flood-aware)
+- 🧍 **Citizen pins** at each source location, labeled "Citizen N (X people)"
+- 📍 **Destination pin** at the shelter with its name
+
+Click the row again to clear the routes.
+
+### Evacuation Mode (1% Scale)
+
+Enable **Evacuation Mode** before running to scale population to 1% of real count, reducing GA runtime from minutes to seconds for rapid testing. The map people-layer also scales immediately on toggle.

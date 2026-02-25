@@ -90,10 +90,11 @@ async def simulate_stream(
     rainfall_mm:  float = Query(150.0),
     steps:        int   = Query(20),
     decay_factor: float = Query(0.5),
+    evacuation_mode: bool = Query(False),
 ):
     """SSE stream of flood simulation steps."""
     return StreamingResponse(
-        service.run_simulation_generator(hobli, rainfall_mm, steps, decay_factor),
+        service.run_simulation_generator(hobli, rainfall_mm, steps, decay_factor, evacuation_mode),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
