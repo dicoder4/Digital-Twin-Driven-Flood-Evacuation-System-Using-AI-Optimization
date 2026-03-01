@@ -1,23 +1,108 @@
 import math
+import time
+import requests
 import numpy as np
 import networkx as nx
 
 class SetupMixin:
+    def _fetch_google_traffic_speed(self, start_coord, end_coord):
+        """
+        Queries Google Routes API to get real-time speed between two points.
+        Returns: duration_in_traffic (s)
+        """
+        base_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.GOOGLE_API_KEY,
+            "X-Goog-FieldMask": "routes.duration,routes.distanceMeters"
+        }
+        body = {
+            "origin": {"location": {"latLng": {"latitude": start_coord[0], "longitude": start_coord[1]}}},
+            "destination": {"location": {"latLng": {"latitude": end_coord[0], "longitude": end_coord[1]}}},
+            "travelMode": "DRIVE",
+            "routingPreference": "TRAFFIC_AWARE_OPTIMAL"
+        }
+        try:
+            print(f"DEBUG: Requesting Google Traffic for {start_coord} -> {end_coord}")
+            response = requests.post(base_url, json=body, headers=headers)
+            if response.status_code != 200:
+                 print(f"DEBUG: Google API Error {response.status_code}: {response.text}")
+                 return None
+                
+            data = response.json()
+            if "routes" in data and len(data["routes"]) > 0:
+                duration_str = data["routes"][0].get("duration", "0s")
+                duration_val = int(duration_str.replace("s", ""))
+                print(f"DEBUG: Success! Duration: {duration_val}s")
+                return duration_val
+            else:
+                 print(f"DEBUG: No routes found in response: {data}")
+        except Exception as e:
+            print(f"DEBUG: Exception during Google API call: {e}")
+            return None
+        return None
+
+    def _update_graph_with_google_traffic(self):
+        """
+        Updates 'travel_time' on major roads using Google API.
+        Only runs if use_google_traffic=True.
+        """
+        print("Fetching Google Traffic data (Limited to major roads)...")
+        count = 0 
+        limit = 50 # Safety limit, increased slightly
+        
+        for u, v, k, data in self.G.edges(keys=True, data=True):
+            highway = data.get('highway', '')
+            # Filter for highways/main roads
+            if isinstance(highway, list): highway = highway[0]
+            
+            if highway in ['motorway', 'trunk', 'primary'] and count < limit:
+                print(f"DEBUG: Checking traffic for edge {u}->{v} (Highway: {highway})")
+                start = (self.G.nodes[u]['y'], self.G.nodes[u]['x'])
+                end = (self.G.nodes[v]['y'], self.G.nodes[v]['x'])
+                
+                duration = self._fetch_google_traffic_speed(start, end)
+                if duration:
+                    # Store real-time traffic duration
+                    self.G[u][v][k]['traffic_time'] = duration
+                    count += 1
+                
+                # Small delay to prevent hitting API rate limits (QPS)
+                time.sleep(0.1)
+        print(f"Updated {count} road segments with real-time traffic.")
+
     def _add_flood_edge_weights(self):
         """
         Annotate every edge with 'flood_weight':
             flood_weight = length × (1 + FLOOD_PENALTY_FACTOR × avg_water_depth)
-        This makes evacuees prefer dry roads automatically when we run Dijkstra
-        with weight='flood_weight'.
+                           × (1 + TRAFFIC_PENALTY IF CONGESTED)
         """
-        for u, v, data in self.G.edges(data=True):
-            base = data.get('length', 1.0)
+        for u, v, k, data in self.G.edges(keys=True, data=True):
+            base_len = data.get('length', 1.0)
+            
+            # 1. Flood Penalty
             depth_u = self.G.nodes[u].get('water_depth', 0.0)
             depth_v = self.G.nodes[v].get('water_depth', 0.0)
             avg_depth = (depth_u + depth_v) / 2.0
-            # nx multigraph stores parallel edges; handle both Graph and MultiGraph
-            flood_w = base * (1.0 + self.FLOOD_PENALTY_FACTOR * avg_depth)
-            data['flood_weight'] = flood_w
+            flood_factor = (1.0 + self.FLOOD_PENALTY_FACTOR * avg_depth)
+            
+            # 2. Traffic Penalty (Google Data OR Simulation Fallback)
+            traffic_factor = 1.0
+            
+            if 'traffic_time' in data:
+                # If we have real data: Factor = Actual Time / Free Flow Time
+                # Free flow estimate: length / 13.8m/s (50km/h)
+                free_flow_time = max(0.1, base_len / 13.8) # Avoid division by zero
+                actual_time = data['traffic_time']
+                
+                if actual_time > free_flow_time:
+                     traffic_factor = min(5.0, actual_time / free_flow_time)
+            
+            # Combined Weight
+            # We multiply length by these factors to make the "effective distance" longer
+            # effectively routing around floods AND traffic jams.
+            flood_w = max(0.1, base_len * flood_factor * traffic_factor) # Ensure positive weight
+            
 
     def _compute_matrices(self):
         """

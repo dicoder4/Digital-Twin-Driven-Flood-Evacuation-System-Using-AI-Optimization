@@ -38,7 +38,7 @@ export function useSimulation() {
         setRoadsData(null);
     }, []);
 
-    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode) => {
+    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic) => {
         reset();
         setIsRunning(true);
         setSimulationDone(false);
@@ -52,7 +52,8 @@ export function useSimulation() {
             rainfall_mm: rainfallMm,
             steps,
             decay_factor: decayFactor,
-            evacuation_mode: evacuationMode
+            evacuation_mode: evacuationMode,
+            use_traffic: useTraffic
         });
         const es = new EventSource(`${API_URL}/simulate-stream?${params}`);
         esRef.current = es;

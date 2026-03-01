@@ -49,6 +49,7 @@ export default function App() {
   const [steps, setSteps] = useState(20);
   const [decayFactor, setDecayFactor] = useState(0.5);
   const [evacuationMode, setEvacuationMode] = useState(false);
+  const [useTraffic, setUseTraffic] = useState(false);
   const [activeTab, setActiveTab] = useState('setup');
 
   // Selected shelter for interactive route display
@@ -115,7 +116,7 @@ export default function App() {
   const handleStart = () => {
     if (!regionLoaded) return;
     setActiveTab('setup');
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode);
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic);
   };
 
   // Switch to Evacuation tab automatically when simulation completes
@@ -210,6 +211,22 @@ export default function App() {
                         <span className="evac-toggle-thumb" />
                       </button>
                     </div>
+                
+                    {evacuationMode && (
+                        <div className="evac-toggle-row" style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
+                            <div>
+                                <div className="evac-toggle-label">Live Traffic</div>
+                                <div className="evac-toggle-sub">Fetch Google Maps congestion data</div>
+                            </div>
+                            <button
+                                className={`evac-toggle-btn ${useTraffic ? 'evac-toggle-on' : ''}`}
+                                onClick={() => setUseTraffic(v => !v)}
+                            >
+                                <span className="evac-toggle-thumb" />
+                            </button>
+                        </div>
+                    )}
+
                     {evacuationMode && (
                       <div className="evac-toggle-hint">
                         🚨 GA will run after simulation — routes appear when streaming ends

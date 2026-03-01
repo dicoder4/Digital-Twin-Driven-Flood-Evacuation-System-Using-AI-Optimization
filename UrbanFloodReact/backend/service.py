@@ -98,7 +98,7 @@ async def fetch_map_geojson(hobli_name: str):
     _, edges = ox.graph_to_gdfs(G)
     return json.loads(edges.to_json())
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False):
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False):
     """Generator for SSE simulation stream."""
     import time
     key = norm_key(hobli)
@@ -217,7 +217,8 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
             planner = GeneticEvacuationPlanner(
                 at_risk_formatted, safe_shelters, sim.G,
-                pop_size=pop_sz, generations=gens
+                pop_size=pop_sz, generations=gens,
+                use_google_traffic=use_traffic
             )
             precompute_time = round(time.time() - ga_start, 2)
             print(f"  [GA DEBUG] Dijkstra precompute done in {precompute_time}s")

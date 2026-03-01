@@ -1,4 +1,9 @@
+import os
 import numpy as np
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from .setup_mixin import SetupMixin
 from .evolution_mixin import EvolutionMixin
@@ -15,15 +20,20 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
     # Capacity overflow penalty per excess person.
     # 100,000 = equivalent to forcing 100km of walking rather than overflowing by 1
     CAPACITY_PENALTY = 100_000
+    
+    # Traffic Congestion Penalties
+    TRAFFIC_PENALTY_FACTOR = 3.0 # Heavy traffic makes edge 3x "longer"
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") 
 
     def __init__(self, at_risk_nodes, safe_shelters, G,
-                 pop_size=60, generations=40, mutation_rate=0.15):
+                 pop_size=60, generations=40, mutation_rate=0.15, use_google_traffic=False):
         """
         at_risk_nodes : list of {'id': node_id, 'pop': count, 'lat': y, 'lon': x}
         safe_shelters : list of {'id': str, 'node_id': int, 'capacity': int,
                                   'lat': y, 'lon': x, ...}
         G             : NetworkX road graph with 'length' edge attr and optional
                         'water_depth' node attr
+        use_google_traffic: bool - if True, fetches real-time traffic for major roads
         """
         self.at_risk_nodes = at_risk_nodes
         self.safe_shelters = safe_shelters
@@ -31,12 +41,22 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
         self.pop_size = pop_size
         self.generations = generations
         self.mutation_rate = mutation_rate
+        self.use_google_traffic = use_google_traffic
 
         n_risk = len(at_risk_nodes)
         n_shelters = len(safe_shelters)
+        
+        print(f"  [GA DEBUG] Traffic Awareness Mode: {'ON' if self.use_google_traffic else 'OFF'}")
+
+        # ── Step 0: Traffic Integration ───────────────────────────────────────
+        if self.use_google_traffic:
+            self._update_graph_with_google_traffic()
 
         # ── Step 1: build flood-aware edge weights ────────────────────────────
         self._add_flood_edge_weights()
+        self.pop_size = pop_size
+        self.generations = generations
+        self.mutation_rate = mutation_rate
 
         # ── Step 2: precompute cost matrices (network distance + travel time) ─
         self.dist_matrix = np.full((n_risk, n_shelters), np.inf)
