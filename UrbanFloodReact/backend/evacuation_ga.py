@@ -28,8 +28,9 @@ class GeneticEvacuationPlanner:
     # How heavily to penalise flooded edges (each metre of depth multiplies edge
     # cost by this factor). 5 makes 20 cm depth roughly double the effective cost.
     FLOOD_PENALTY_FACTOR = 5.0
-    # Capacity overflow penalty per excess person
-    CAPACITY_PENALTY = 2000
+    # Capacity overflow penalty per excess person.
+    # 100,000 = equivalent to forcing 100km of walking rather than overflowing by 1
+    CAPACITY_PENALTY = 100_000
 
     def __init__(self, at_risk_nodes, safe_shelters, G,
                  pop_size=60, generations=40, mutation_rate=0.15):
@@ -138,12 +139,29 @@ class GeneticEvacuationPlanner:
             pop = self.at_risk_nodes[i]['pop']
             # Sort shelters by flood-weighted distance
             order = np.argsort(self.dist_matrix[i])
-            chosen = int(order[0])  # default: nearest
+            
+            chosen = int(order[0])
+            best_overflow_j = chosen
+            min_ratio = float('inf')
+
             for j in order:
                 j = int(j)
-                if assigned_counts[j] + pop <= capacities[j]:
+                ratio = (assigned_counts[j] + pop) / max(1.0, capacities[j])
+                
+                # If there's physical space, take it immediately
+                if ratio <= 1.0:
                     chosen = j
                     break
+                
+                # Otherwise, track the shelter with the least proportional overflow
+                if ratio < min_ratio:
+                    min_ratio = ratio
+                    best_overflow_j = j
+            else:
+                # Loop exhausted: all shelters are over capacity. 
+                # Pick the one with the smallest overflow ratio instead of the absolute nearest.
+                chosen = best_overflow_j
+
             assigned_counts[chosen] += pop
             chromosome.append(chosen)
 
@@ -240,15 +258,15 @@ class GeneticEvacuationPlanner:
             total_time += t * pop
             shelter_counts[j] += pop
 
-        # Capacity penalty
+        # Combine: distance is the primary factor, time adds secondary weight.
+        # Penalty is quadratic so that putting 1000 extra people in 1 shelter
+        # is mathematically *much* worse than putting 100 extra people in 10 shelters.
         penalty = 0.0
         for j, count in shelter_counts.items():
             cap = self.safe_shelters[j]['capacity']
             if count > cap:
-                penalty += (count - cap) * self.CAPACITY_PENALTY
+                penalty += ((count - cap) ** 2) * self.CAPACITY_PENALTY
 
-        # Combine: distance is the primary factor, time adds secondary weight
-        # (both are in comparable units — metres and seconds × speed factor)
         return total_dist + 0.5 * total_time + penalty
 
     def _selection(self, population, fitness_scores):
