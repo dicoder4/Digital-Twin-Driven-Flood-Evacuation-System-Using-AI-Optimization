@@ -35,7 +35,7 @@ function FillBar({ pct }) {
     );
 }
 
-export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter }) {
+export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false }) {
     if (!summary) {
         return (
             <div className="evac-empty">
@@ -92,6 +92,13 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                         <div className="evac-stat-val">{ga_execution_time}s</div>
                         <div className="evac-stat-lbl">GA Time</div>
                     </div>
+                    {showTraffic && (
+                        <div className="evac-stat-card" style={{ background: '#ecfeff', border: '1px solid #22d3ee' }}>
+                            <span style={{ fontSize: 16 }}>🚦</span>
+                            <div className="evac-stat-val" style={{ color: '#0891b2' }}>{trafficSegmentCount}</div>
+                            <div className="evac-stat-lbl">Traffic Roads</div>
+                        </div>
+                    )}
                 </div>
 
                 {simulation_population > 0 && (

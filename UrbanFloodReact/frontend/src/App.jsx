@@ -50,6 +50,7 @@ export default function App() {
   const [decayFactor, setDecayFactor] = useState(0.5);
   const [evacuationMode, setEvacuationMode] = useState(false);
   const [useTraffic, setUseTraffic] = useState(false);
+  const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [activeTab, setActiveTab] = useState('setup');
 
   // Selected shelter for interactive route display
@@ -123,7 +124,8 @@ export default function App() {
   useEffect(() => {
     if (sim.simulationDone) {
       setActiveTab('evacuation');
-      setSelectedShelterId(null); // reset selection on new sim
+      setSelectedShelterId(null);
+      setShowTrafficPins(false); // reset pin visibility on new sim
     }
   }, [sim.simulationDone]);
 
@@ -284,6 +286,8 @@ export default function App() {
               evacuationMode={evacuationMode}
               selectedShelterId={selectedShelterId}
               onSelectShelter={setSelectedShelterId}
+              trafficSegmentCount={sim.trafficSegmentCount}
+              showTraffic={useTraffic}
             />
           )}
         </div>
@@ -309,6 +313,10 @@ export default function App() {
         evacuationPlan={sim.evacuationPlan}
         simulationDone={sim.simulationDone}
         selectedShelter={selectedShelter}
+        trafficRoadsData={sim.trafficRoadsData}
+        showTraffic={useTraffic && sim.simulationDone}
+        showTrafficPins={showTrafficPins}
+        onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
       />
     </div>
   );

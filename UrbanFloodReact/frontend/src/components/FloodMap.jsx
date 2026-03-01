@@ -16,6 +16,8 @@ import { Legend } from './Legend';
 import { PeopleLayer } from './PeopleLayer';
 import { ShelterLayer } from './ShelterLayer';
 import { EvacuationLayer } from './EvacuationLayer';
+import { TrafficLayer } from './TrafficLayer';
+
 
 // Road risk → colour
 const RISK_COLOUR = {
@@ -55,9 +57,10 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter }) {
+export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins }) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk = !!(riskRoadsData?.features?.length);
+    const hasTrafficData = showTraffic && !!(trafficRoadsData?.features?.length);
 
     return (
         <main className="map-container">
@@ -76,7 +79,10 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                     </Source>
                 )}
 
-                {/* 2. People dots on roads (above roads, below flood) */}
+                {/* 2. Traffic signal pins — only when toggled ON */}
+                {hasTrafficData && showTrafficPins && <TrafficLayer trafficRoadsData={trafficRoadsData} />}
+
+                {/* 3. People dots on roads (above roads, below flood) */}
                 <PeopleLayer
                     baseRoadsData={baseRoadsData}
                     populationCount={populationCount}
@@ -133,8 +139,26 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                 </div>
             )}
 
+            {/* Live Traffic indicator chip */}
+            {showTraffic && (
+                <div className="map-chip map-chip-traffic">
+                    🚦 Live Traffic{hasTrafficData ? ` · ${trafficRoadsData.features.length} roads` : ' · fetching…'}
+                </div>
+            )}
+
+            {/* Live Traffic toggle button — only shown when traffic data available */}
+            {hasTrafficData && (
+                <button
+                    className={`map-traffic-toggle ${showTrafficPins ? 'map-traffic-toggle--on' : ''}`}
+                    onClick={onToggleTrafficPins}
+                    title={showTrafficPins ? 'Hide traffic signals' : 'Show traffic signals'}
+                >
+                    🚦 {showTrafficPins ? 'Hide Signals' : 'Show Signals'}
+                </button>
+            )}
+
             {/* Legend */}
-            <Legend visible={hasFlood || hasRisk} />
+            <Legend visible={hasFlood || hasRisk} showTraffic={showTraffic} />
         </main>
     );
 }

@@ -70,6 +70,38 @@ class SetupMixin:
                 # Small delay to prevent hitting API rate limits (QPS)
                 time.sleep(0.1)
         print(f"Updated {count} road segments with real-time traffic.")
+        self._traffic_segment_count = count
+
+    def get_traffic_geojson(self):
+        """
+        Returns a GeoJSON FeatureCollection of major road edges that received
+        real-time traffic data from Google. Each feature has:
+          - congestion_factor: actual_time / free_flow_time (1.0 = free, >2 = congested)
+          - highway: road type string
+        Used by the frontend TrafficLayer to colour-code congested roads.
+        """
+        features = []
+        for u, v, k, data in self.G.edges(keys=True, data=True):
+            if 'traffic_time' not in data:
+                continue
+            ux, uy = self.G.nodes[u]['x'], self.G.nodes[u]['y']
+            vx, vy = self.G.nodes[v]['x'], self.G.nodes[v]['y']
+            base_len = data.get('length', 1.0)
+            free_flow_time = max(0.1, base_len / 13.8)
+            congestion_factor = round(min(5.0, data['traffic_time'] / free_flow_time), 2)
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [[ux, uy], [vx, vy]],
+                },
+                'properties': {
+                    'congestion_factor': congestion_factor,
+                    'highway': data.get('highway', 'primary'),
+                    'traffic_time': data['traffic_time'],
+                },
+            })
+        return {'type': 'FeatureCollection', 'features': features}
 
     def _add_flood_edge_weights(self):
         """
@@ -102,6 +134,7 @@ class SetupMixin:
             # We multiply length by these factors to make the "effective distance" longer
             # effectively routing around floods AND traffic jams.
             flood_w = max(0.1, base_len * flood_factor * traffic_factor) # Ensure positive weight
+            self.G[u][v][k]['flood_weight'] = flood_w   # ← write back so Dijkstra uses it
             
 
     def _compute_matrices(self):

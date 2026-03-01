@@ -200,6 +200,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     total_at_risk_before_ga = sum(pop for _, pop in at_risk)
     print(f"  [GA DEBUG] total at-risk pop before GA = {total_at_risk_before_ga}")
 
+    planner_instance = None  # sentinel for traffic geojson extraction
     if at_risk and safe_shelters:
         at_risk_formatted = [
             {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}
@@ -215,7 +216,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             pop_sz = min(60, max(20, n_risk * 2))
             print(f"  [GA DEBUG] Params: pop_size={pop_sz}, generations={gens}")
 
-            planner = GeneticEvacuationPlanner(
+            planner_instance = GeneticEvacuationPlanner(
                 at_risk_formatted, safe_shelters, sim.G,
                 pop_size=pop_sz, generations=gens,
                 use_google_traffic=use_traffic
@@ -224,7 +225,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             print(f"  [GA DEBUG] Dijkstra precompute done in {precompute_time}s")
 
             evolve_start = time.time()
-            final_evacuation_plan = await loop.run_in_executor(None, planner.run)
+            final_evacuation_plan = await loop.run_in_executor(None, planner_instance.run)
             ga_execution_time = round(time.time() - ga_start, 2)
             evolve_time = round(time.time() - evolve_start, 2)
             print(f"  [GA DEBUG] GA complete: {len(final_evacuation_plan)} routes in "
@@ -266,15 +267,27 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     total_assigned = sim.total_evacuated
     at_risk_remaining = max(0, total_at_risk_before_ga - total_assigned)
 
+    # Extract traffic layer data (only if traffic was used and planner ran)
+    traffic_geojson = None
+    traffic_segment_count = 0
+    if use_traffic and planner_instance is not None:
+        try:
+            traffic_geojson = planner_instance.get_traffic_geojson()
+            traffic_segment_count = getattr(planner_instance, '_traffic_segment_count', 0)
+        except Exception:
+            pass
+
     final_report = {
         "done":  True,
         "total": steps,
         "evacuation_plan": final_evacuation_plan,
+        "traffic_geojson": traffic_geojson,
+        "traffic_segment_count": traffic_segment_count,
         "summary": {
             "total_evacuated":         total_assigned,
             "total_at_risk_remaining": at_risk_remaining,
             "total_at_risk_initial":   total_at_risk_before_ga,
-            "simulation_population":   total_pop,  # actual (possibly scaled) population
+            "simulation_population":   total_pop,
             "success_rate_pct":        round(
                 total_assigned / max(total_at_risk_before_ga, 1) * 100, 1
             ),
@@ -282,7 +295,14 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "shelter_reports":         shelter_reports,
         },
     }
-    yield f"data: {json.dumps(final_report)}\n\n"
+    try:
+        yield f"data: {json.dumps(final_report)}\n\n"
+    except (TypeError, ValueError):
+        # traffic_geojson serialization failed — send without it
+        final_report["traffic_geojson"] = None
+        yield f"data: {json.dumps(final_report)}\n\n"
+
+
 
 
 async def fetch_shelters(hobli_name: str) -> dict:

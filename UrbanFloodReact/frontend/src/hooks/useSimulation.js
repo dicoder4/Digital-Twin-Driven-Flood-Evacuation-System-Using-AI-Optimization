@@ -18,6 +18,8 @@ export function useSimulation() {
     const [shelterOccupancy, setShelterOccupancy] = useState({});
     const [finalReport, setFinalReport] = useState(null);
     const [statusMsg, setStatusMsg] = useState('Select a region to begin');
+    const [trafficRoadsData, setTrafficRoadsData] = useState(null);
+    const [trafficSegmentCount, setTrafficSegmentCount] = useState(0);
 
     const esRef = useRef(null);
     const pauseRef = useRef(false);
@@ -31,6 +33,7 @@ export function useSimulation() {
         setFloodData(null); setRoadsData(null);
         setEvacuationPlan([]); setShelterOccupancy({}); setFinalReport(null);
         setSimulationDone(false);
+        setTrafficRoadsData(null); setTrafficSegmentCount(0);
     }, []);
 
     const clearMap = useCallback(() => {
@@ -74,6 +77,8 @@ export function useSimulation() {
                     setStatusMsg(`Done — ${data.total} steps`);
                 }
                 if (data.evacuation_plan?.length) setEvacuationPlan(data.evacuation_plan);
+                if (data.traffic_geojson?.features?.length) setTrafficRoadsData(data.traffic_geojson);
+                if (data.traffic_segment_count) setTrafficSegmentCount(data.traffic_segment_count);
                 return;
             }
             setCurrentStep(data.step);
@@ -103,6 +108,7 @@ export function useSimulation() {
         isRunning, isPaused, currentStep, totalSteps,
         elapsedTime, simulationDone, floodData, roadsData,
         evacuationPlan, shelterOccupancy, finalReport,
+        trafficRoadsData, trafficSegmentCount,
         statusMsg, setStatusMsg, progressPct,
         start, togglePause, reset, clearMap,
     };
