@@ -213,20 +213,20 @@ export default function App() {
                         <span className="evac-toggle-thumb" />
                       </button>
                     </div>
-                
+
                     {evacuationMode && (
-                        <div className="evac-toggle-row" style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
-                            <div>
-                                <div className="evac-toggle-label">Live Traffic</div>
-                                <div className="evac-toggle-sub">Fetch Google Maps congestion data</div>
-                            </div>
-                            <button
-                                className={`evac-toggle-btn ${useTraffic ? 'evac-toggle-on' : ''}`}
-                                onClick={() => setUseTraffic(v => !v)}
-                            >
-                                <span className="evac-toggle-thumb" />
-                            </button>
+                      <div className="evac-toggle-row" style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
+                        <div>
+                          <div className="evac-toggle-label">Live Traffic</div>
+                          <div className="evac-toggle-sub">Fetch TomTom congestion data</div>
                         </div>
+                        <button
+                          className={`evac-toggle-btn ${useTraffic ? 'evac-toggle-on' : ''}`}
+                          onClick={() => setUseTraffic(v => !v)}
+                        >
+                          <span className="evac-toggle-thumb" />
+                        </button>
+                      </div>
                     )}
 
                     {evacuationMode && (
@@ -254,13 +254,13 @@ export default function App() {
                       <h3 className="panel-title" style={{ color: '#dc2626' }}>⚠ Flood Impact</h3>
                       <div className="pop-count-row">
                         <span className="pop-count" style={{ color: '#dc2626' }}>
-                          {unsafePeopleCount.toLocaleString()}
+                          {(sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount).toLocaleString()}
                         </span>
                         <span className="pop-count-label">people at risk</span>
                       </div>
                       <div className="pop-split">
-                        <span style={{ color: '#16a34a' }}>✓ Safe: {(populationCount - unsafePeopleCount).toLocaleString()}</span>
-                        <span style={{ color: '#dc2626' }}>✗ Unsafe: {unsafePeopleCount.toLocaleString()}</span>
+                        <span style={{ color: '#16a34a' }}>✓ Safe: {((sim.finalReport?.summary?.simulation_population ?? displayPopulation) - (sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount)).toLocaleString()}</span>
+                        <span style={{ color: '#dc2626' }}>✗ Unsafe: {(sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount).toLocaleString()}</span>
                       </div>
                       {evacuationMode && sim.simulationDone && (
                         <button

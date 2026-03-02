@@ -219,7 +219,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             planner_instance = GeneticEvacuationPlanner(
                 at_risk_formatted, safe_shelters, sim.G,
                 pop_size=pop_sz, generations=gens,
-                use_google_traffic=use_traffic
+                use_tomtom_traffic=use_traffic
             )
             precompute_time = round(time.time() - ga_start, 2)
             print(f"  [GA DEBUG] Dijkstra precompute done in {precompute_time}s")
