@@ -151,9 +151,9 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                 <button
                     className={`map-traffic-toggle ${showTrafficPins ? 'map-traffic-toggle--on' : ''}`}
                     onClick={onToggleTrafficPins}
-                    title={showTrafficPins ? 'Hide traffic signals' : 'Show traffic signals'}
+                    title={showTrafficPins ? 'Hide traffic lines' : 'Show traffic lines'}
                 >
-                    🚦 {showTrafficPins ? 'Hide Signals' : 'Show Signals'}
+                    🚦 {showTrafficPins ? 'Hide Traffic' : 'Show Traffic'}
                 </button>
             )}
 

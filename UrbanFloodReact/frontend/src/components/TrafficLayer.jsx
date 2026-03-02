@@ -2,7 +2,7 @@
  * TrafficLayer.jsx
  * ─────────────────
  * Places 🚦 traffic signal markers at the midpoint of road segments
- * that received real-time congestion data from Google.
+ * that received real-time congestion data from TomTom.
  *
  * Only shows congested roads (congestion_factor >= 1.2).
  * Labels: Heavy (>2×) | Moderate (1.2–2×)
@@ -13,8 +13,8 @@ import { Marker } from 'react-map-gl/maplibre';
 
 function congestionLabel(factor) {
     if (factor >= 2.0) return { label: 'Heavy', cls: 'traffic-pin-heavy' };
-    if (factor >= 1.2) return { label: 'Moderate', cls: 'traffic-pin-moderate' };
-    return null; // free flow — skip
+    if (factor >= 1.05) return { label: 'Moderate', cls: 'traffic-pin-moderate' };
+    return { label: 'Clear', cls: 'traffic-pin-clear' }; // always show a pin for any road with data
 }
 
 export function TrafficLayer({ trafficRoadsData }) {

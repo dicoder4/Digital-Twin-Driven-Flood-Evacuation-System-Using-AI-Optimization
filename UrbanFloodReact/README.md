@@ -142,3 +142,32 @@ Click the row again to clear the routes.
 ### Evacuation Mode (1% Scale)
 
 Enable **Evacuation Mode** before running to scale population to 1% of real count, reducing GA runtime from minutes to seconds for rapid testing. The map people-layer also scales immediately on toggle.
+
+---
+
+## Live Traffic Integration (TomTom)
+
+When **Live Traffic** is enabled alongside Evacuation Mode, real-time road congestion data from the **TomTom Traffic Flow API** is fetched and woven into the evacuation model before the GA runs. Here is how it works end-to-end:
+
+1. **Regional Bulk Fetch via TomTom Flow API**
+   Rather than querying traffic per-route (which would require hundreds of individual API calls and block the simulation), the system pre-identifies up to **100 major road segments** (motorway, trunk, primary, secondary) from the loaded OSMnx graph. Their geographic midpoints are submitted to TomTom's `flowSegmentData` endpoint **concurrently** using a `ThreadPoolExecutor` with 10 parallel workers — reducing total fetch time from potentially minutes (sequential) to **3–10 seconds** in practice. Each response returns `currentTravelTime` and `freeFlowTravelTime` in seconds for the nearest road segment.
+
+2. **Traffic-Aware Edge Weight Augmentation**
+   Fetched travel times are matched back to graph edges by coordinate proximity and stored as `traffic_time` and `free_flow_time` on each edge. The existing `flood_weight` formula is then extended with a **traffic multiplier**:
+   ```
+   traffic_factor = min(5.0, actual_time / free_flow_time)
+   flood_weight   = road_length × flood_penalty × traffic_factor
+   ```
+   A road carrying 2× its normal traffic volume appears twice as "long" to Dijkstra — meaning the GA naturally routes evacuees **away from congested roads** toward free-flowing alternatives, even before shelter assignments are made.
+
+3. **Effect on GA Route Optimisation**
+   Because traffic factors feed directly into the precomputed `dist_matrix` that the GA uses for fitness evaluation, congested major roads incur a higher effective cost. Evacuees assigned near a heavily congested primary road will be re-routed to a parallel secondary or residential route with lower effective weight, even if it is geometrically longer. This mirrors real-world emergency management: emergency planners avoid congested arterials and favour quieter residential corridors during evacuations.
+
+4. **Traffic Congestion Visualisation on Map**
+   After simulation completes, the backend's `get_traffic_geojson()` method returns a **GeoJSON FeatureCollection** of all edges that received TomTom data, each tagged with a computed `congestion_factor`. Toggling **🚦 Show Traffic** on the map renders signal markers at the midpoint of each segment, colour-coded by severity:
+   - 🟢 **Clear** (`< 1.05×`) — free-flowing, no meaningful delay
+   - 🟡 **Moderate** (`1.05–2.0×`) — minor slowdown, slight cost increase
+   - 🔴 **Heavy** (`> 2.0×`) — significant congestion, up to 5× edge cost penalty applied
+
+5. **Graceful Degradation Without Traffic Data**
+   If the TomTom API key is missing, the network returns no results, or all fetched segments are unresolvable (e.g., the hobli has no major roads), the system falls back silently to **flood-weight-only routing**. The GA continues to run normally and evacuation routes remain fully functional — traffic simply does not influence the route cost in that case. This ensures the simulation is never blocked by traffic API failures during critical emergency scenarios.

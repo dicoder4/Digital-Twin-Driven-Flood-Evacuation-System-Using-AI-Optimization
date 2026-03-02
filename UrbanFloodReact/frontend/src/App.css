@@ -479,6 +479,12 @@ body,
   border-color: #fcd34d;
 }
 
+.traffic-pin-clear {
+  background: rgba(220, 252, 231, 0.95);
+  color: #166534;
+  border-color: #86efac;
+}
+
 /* ── Legend ─────────────────────────────────────────────────── */
 .legend {
   position: absolute;

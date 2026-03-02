@@ -3,82 +3,146 @@ import time
 import requests
 import numpy as np
 import networkx as nx
-
+from traffic_data.tomtom import get_bulk_traffic_data
 class SetupMixin:
-    def _fetch_google_traffic_speed(self, start_coord, end_coord):
-        """
-        Queries Google Routes API to get real-time speed between two points.
-        Returns: duration_in_traffic (s)
-        """
-        base_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": self.GOOGLE_API_KEY,
-            "X-Goog-FieldMask": "routes.duration,routes.distanceMeters"
-        }
-        body = {
-            "origin": {"location": {"latLng": {"latitude": start_coord[0], "longitude": start_coord[1]}}},
-            "destination": {"location": {"latLng": {"latitude": end_coord[0], "longitude": end_coord[1]}}},
-            "travelMode": "DRIVE",
-            "routingPreference": "TRAFFIC_AWARE_OPTIMAL"
-        }
-        try:
-            print(f"DEBUG: Requesting Google Traffic for {start_coord} -> {end_coord}")
-            response = requests.post(base_url, json=body, headers=headers)
-            if response.status_code != 200:
-                 print(f"DEBUG: Google API Error {response.status_code}: {response.text}")
-                 return None
-                
-            data = response.json()
-            if "routes" in data and len(data["routes"]) > 0:
-                duration_str = data["routes"][0].get("duration", "0s")
-                duration_val = int(duration_str.replace("s", ""))
-                print(f"DEBUG: Success! Duration: {duration_val}s")
-                return duration_val
-            else:
-                 print(f"DEBUG: No routes found in response: {data}")
-        except Exception as e:
-            print(f"DEBUG: Exception during Google API call: {e}")
-            return None
-        return None
+    # def _fetch_google_traffic_speed(self, start_coord, end_coord):
+    #     """
+    #     Queries Google Routes API to get real-time speed between two points.
+    #     Returns: duration_in_traffic (s)
+    #     """
+    #     base_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
+    #     headers = {
+    #         "Content-Type": "application/json",
+    #         "X-Goog-Api-Key": self.GOOGLE_API_KEY,
+    #         "X-Goog-FieldMask": "routes.duration,routes.distanceMeters"
+    #     }
+    #     body = {
+    #         "origin": {"location": {"latLng": {"latitude": start_coord[0], "longitude": start_coord[1]}}},
+    #         "destination": {"location": {"latLng": {"latitude": end_coord[0], "longitude": end_coord[1]}}},
+    #         "travelMode": "DRIVE",
+    #         "routingPreference": "TRAFFIC_AWARE_OPTIMAL"
+    #     }
+    #     try:
+    #         print(f"DEBUG: Requesting Google Traffic for {start_coord} -> {end_coord}")
+    #         response = requests.post(base_url, json=body, headers=headers)
+    #         if response.status_code != 200:
+    #              print(f"DEBUG: Google API Error {response.status_code}: {response.text}")
+    #              return None
+    #             
+    #         data = response.json()
+    #         if "routes" in data and len(data["routes"]) > 0:
+    #             duration_str = data["routes"][0].get("duration", "0s")
+    #             duration_val = int(duration_str.replace("s", ""))
+    #             print(f"DEBUG: Success! Duration: {duration_val}s")
+    #             return duration_val
+    #         else:
+    #              print(f"DEBUG: No routes found in response: {data}")
+    #     except Exception as e:
+    #         print(f"DEBUG: Exception during Google API call: {e}")
+    #         return None
+    #     return None
+    #
+    # def _update_graph_with_google_traffic(self):
+    #     """
+    #     Updates 'travel_time' on major roads using Google API.
+    #     Only runs if use_google_traffic=True.
+    #     """
+    #     print("Fetching Google Traffic data (Limited to major roads)...")
+    #     count = 0 
+    #     limit = 50 # Safety limit, increased slightly
+    #     
+    #     for u, v, k, data in self.G.edges(keys=True, data=True):
+    #         highway = data.get('highway', '')
+    #         # Filter for highways/main roads
+    #         if isinstance(highway, list): highway = highway[0]
+    #         
+    #         if highway in ['motorway', 'trunk', 'primary'] and count < limit:
+    #             print(f"DEBUG: Checking traffic for edge {u}->{v} (Highway: {highway})")
+    #             start = (self.G.nodes[u]['y'], self.G.nodes[u]['x'])
+    #             end = (self.G.nodes[v]['y'], self.G.nodes[v]['x'])
+    #             
+    #             duration = self._fetch_google_traffic_speed(start, end)
+    #             if duration:
+    #                 # Store real-time traffic duration
+    #                 self.G[u][v][k]['traffic_time'] = duration
+    #                 count += 1
+    #             
+    #             # Small delay to prevent hitting API rate limits (QPS)
+    #             time.sleep(0.1)
+    #     print(f"Updated {count} road segments with real-time traffic.")
+    #     self._traffic_segment_count = count
 
-    def _update_graph_with_google_traffic(self):
+    def _update_graph_with_tomtom_traffic(self):
         """
-        Updates 'travel_time' on major roads using Google API.
-        Only runs if use_google_traffic=True.
+        Updates 'travel_time' on major roads using TomTom API.
+        Bulk fetches midpoints of required segments.
+        Only runs if use_tomtom_traffic=True.
         """
-        print("Fetching Google Traffic data (Limited to major roads)...")
-        count = 0 
-        limit = 50 # Safety limit, increased slightly
+        limit = 100  # Adjust as needed depending on API quotas
+        edge_refs = []
+        coords = []
         
         for u, v, k, data in self.G.edges(keys=True, data=True):
             highway = data.get('highway', '')
-            # Filter for highways/main roads
             if isinstance(highway, list): highway = highway[0]
             
-            if highway in ['motorway', 'trunk', 'primary'] and count < limit:
-                print(f"DEBUG: Checking traffic for edge {u}->{v} (Highway: {highway})")
-                start = (self.G.nodes[u]['y'], self.G.nodes[u]['x'])
-                end = (self.G.nodes[v]['y'], self.G.nodes[v]['x'])
+            if highway in ['motorway', 'trunk', 'primary', 'secondary'] and len(coords) < limit:
+                # Use midpoint of edge for TomTom Segment API
+                lat_u, lon_u = self.G.nodes[u]['y'], self.G.nodes[u]['x']
+                lat_v, lon_v = self.G.nodes[v]['y'], self.G.nodes[v]['x']
+                mid_lat = (lat_u + lat_v) / 2.0
+                mid_lon = (lon_u + lon_v) / 2.0
                 
-                duration = self._fetch_google_traffic_speed(start, end)
-                if duration:
-                    # Store real-time traffic duration
-                    self.G[u][v][k]['traffic_time'] = duration
-                    count += 1
+                coords.append((mid_lat, mid_lon))
+                edge_refs.append((u, v, k))
                 
-                # Small delay to prevent hitting API rate limits (QPS)
-                time.sleep(0.1)
-        print(f"Updated {count} road segments with real-time traffic.")
+        print(f"  [GA DEBUG] TomTom: found {len(coords)} major road segments to query (motorway/trunk/primary/secondary)")
+        
+        if not coords:
+            print("  [GA DEBUG] TomTom: No major roads found in graph — traffic skipped.")
+            self._traffic_segment_count = 0
+            return
+            
+        # Fetch bulk traffic via concurrent HTTP requests (ThreadPoolExecutor, not asyncio)
+        traffic_results = get_bulk_traffic_data(self.TOMTOM_API_KEY, coords)
+        
+        print(f"  [GA DEBUG] TomTom: API returned {len(traffic_results)} valid results out of {len(coords)} requests")
+        
+        if not traffic_results:
+            print("  [GA DEBUG] TomTom: No traffic results returned — routing will use flood-weight only.")
+            self._traffic_segment_count = 0
+            return
+        
+        # Map results by (lat, lon) for exact matching back to edge_refs
+        # (ThreadPoolExecutor results are unordered, so we key by coordinates)
+        traffic_map = {}
+        for res in traffic_results:
+             key = (round(res['lat'], 6), round(res['lon'], 6))
+             traffic_map[key] = res
+             
+        count = 0
+        congested_count = 0
+        for i, (u, v, k) in enumerate(edge_refs):
+            lat, lon = coords[i]
+            key = (round(lat, 6), round(lon, 6))
+            
+            if key in traffic_map:
+                res = traffic_map[key]
+                self.G[u][v][k]['traffic_time'] = res['current_time']
+                self.G[u][v][k]['free_flow_time'] = res['free_flow_time']
+                count += 1
+                # A segment is "congested" if actual travel time > free flow time
+                if res['current_time'] > res['free_flow_time']:
+                    congested_count += 1
+                
+        print(f"  [GA DEBUG] TomTom: applied traffic to {count}/{len(edge_refs)} edges "
+              f"({congested_count} congested, {count - congested_count} free-flow)")
         self._traffic_segment_count = count
 
     def get_traffic_geojson(self):
         """
         Returns a GeoJSON FeatureCollection of major road edges that received
-        real-time traffic data from Google. Each feature has:
-          - congestion_factor: actual_time / free_flow_time (1.0 = free, >2 = congested)
-          - highway: road type string
-        Used by the frontend TrafficLayer to colour-code congested roads.
+        real-time traffic data from TomTom.
         """
         features = []
         for u, v, k, data in self.G.edges(keys=True, data=True):
@@ -87,8 +151,12 @@ class SetupMixin:
             ux, uy = self.G.nodes[u]['x'], self.G.nodes[u]['y']
             vx, vy = self.G.nodes[v]['x'], self.G.nodes[v]['y']
             base_len = data.get('length', 1.0)
-            free_flow_time = max(0.1, base_len / 13.8)
-            congestion_factor = round(min(5.0, data['traffic_time'] / free_flow_time), 2)
+            
+            # Use TomTom free flow time if available, otherwise fallback to speed limit estimation
+            free_flow_time = data.get('free_flow_time', max(0.1, base_len / 13.8))
+            traffic_time = data['traffic_time']
+            
+            congestion_factor = round(min(5.0, traffic_time / max(0.1, free_flow_time)), 2)
             features.append({
                 'type': 'Feature',
                 'geometry': {
@@ -98,7 +166,7 @@ class SetupMixin:
                 'properties': {
                     'congestion_factor': congestion_factor,
                     'highway': data.get('highway', 'primary'),
-                    'traffic_time': data['traffic_time'],
+                    'traffic_time': traffic_time,
                 },
             })
         return {'type': 'FeatureCollection', 'features': features}
@@ -118,13 +186,12 @@ class SetupMixin:
             avg_depth = (depth_u + depth_v) / 2.0
             flood_factor = (1.0 + self.FLOOD_PENALTY_FACTOR * avg_depth)
             
-            # 2. Traffic Penalty (Google Data OR Simulation Fallback)
+            # 2. Traffic Penalty (TomTom Data OR Simulation Fallback)
             traffic_factor = 1.0
             
             if 'traffic_time' in data:
-                # If we have real data: Factor = Actual Time / Free Flow Time
-                # Free flow estimate: length / 13.8m/s (50km/h)
-                free_flow_time = max(0.1, base_len / 13.8) # Avoid division by zero
+                # If we have real data from TomTom
+                free_flow_time = data.get('free_flow_time', max(0.1, base_len / 13.8))
                 actual_time = data['traffic_time']
                 
                 if actual_time > free_flow_time:
