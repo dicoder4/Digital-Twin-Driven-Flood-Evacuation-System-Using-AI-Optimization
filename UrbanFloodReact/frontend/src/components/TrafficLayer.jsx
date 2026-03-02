@@ -4,30 +4,29 @@
  * Places 🚦 traffic signal markers at the midpoint of road segments
  * that received real-time congestion data from TomTom.
  *
- * Only shows congested roads (congestion_factor >= 1.2).
- * Labels: Heavy (>2×) | Moderate (1.2–2×)
- * Free-flow roads are intentionally hidden — no clutter for normal traffic.
+ * Smart display logic:
+ *   - If ANY heavy or moderate roads exist → show only those (suppress clear)
+ *   - If ALL roads are clear → show clear pins so user knows data arrived
  */
 import { useMemo } from 'react';
 import { Marker } from 'react-map-gl/maplibre';
 
 function congestionLabel(factor) {
-    if (factor >= 2.0) return { label: 'Heavy', cls: 'traffic-pin-heavy' };
-    if (factor >= 1.05) return { label: 'Moderate', cls: 'traffic-pin-moderate' };
-    return { label: 'Clear', cls: 'traffic-pin-clear' }; // always show a pin for any road with data
+    if (factor >= 2.0) return { label: 'Heavy',    cls: 'traffic-pin-heavy',    priority: 2 };
+    if (factor >= 1.05) return { label: 'Moderate', cls: 'traffic-pin-moderate', priority: 1 };
+    return                      { label: 'Clear',   cls: 'traffic-pin-clear',    priority: 0 };
 }
 
 export function TrafficLayer({ trafficRoadsData }) {
     const markers = useMemo(() => {
         if (!trafficRoadsData?.features?.length) return [];
 
-        return trafficRoadsData.features
+        // Build all markers first
+        const all = trafficRoadsData.features
             .map((f, idx) => {
                 const factor = f.properties?.congestion_factor ?? 1.0;
                 const info = congestionLabel(factor);
-                if (!info) return null;
 
-                // Use midpoint of the edge [lon, lat]
                 const coords = f.geometry?.coordinates;
                 if (!coords || coords.length < 2) return null;
                 const mid = Math.floor(coords.length / 2);
@@ -36,6 +35,11 @@ export function TrafficLayer({ trafficRoadsData }) {
                 return { idx, lon, lat, ...info };
             })
             .filter(Boolean);
+
+        // If any heavy or moderate roads exist, suppress clear pins
+        const hasCongestion = all.some(m => m.priority > 0);
+        return hasCongestion ? all.filter(m => m.priority > 0) : all;
+
     }, [trafficRoadsData]);
 
     if (!markers.length) return null;

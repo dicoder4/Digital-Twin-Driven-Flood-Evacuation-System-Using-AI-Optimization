@@ -4,6 +4,12 @@ import requests
 import numpy as np
 import networkx as nx
 from traffic_data.tomtom import get_bulk_traffic_data
+
+# ── MOCK FLAG — set True to bypass TomTom API and inject fake congestion data ──
+# Useful for testing the visual layer outside peak hours.
+# Set back to False for real traffic data.
+MOCK_TRAFFIC = False
+
 class SetupMixin:
     # def _fetch_google_traffic_speed(self, start_coord, end_coord):
     #     """
@@ -103,6 +109,32 @@ class SetupMixin:
             self._traffic_segment_count = 0
             return
             
+        # ── MOCK MODE: inject fake congestion without hitting API ──────────────
+        if MOCK_TRAFFIC:
+            print("  [GA DEBUG] *** MOCK_TRAFFIC=True — using seeded congestion data ***")
+            import random
+            random.seed(42)  # deterministic so same run = same pins
+            count = 0
+            congested_count = 0
+            free_flow_base = 30.0  # seconds, typical free flow for a short segment
+            for u, v, k in edge_refs:
+                r = random.random()
+                if r < 0.40:        # 40% heavy
+                    factor = random.uniform(2.5, 4.5)
+                elif r < 0.70:      # 30% moderate
+                    factor = random.uniform(1.1, 1.9)
+                else:               # 30% clear
+                    factor = random.uniform(0.9, 1.04)
+                self.G[u][v][k]['traffic_time'] = round(free_flow_base * factor, 1)
+                self.G[u][v][k]['free_flow_time'] = free_flow_base
+                count += 1
+                if factor >= 1.05:
+                    congested_count += 1
+            print(f"  [GA DEBUG] MOCK: applied to {count} edges ({congested_count} congested, {count-congested_count} clear)")
+            self._traffic_segment_count = count
+            return
+        # ── END MOCK ────────────────────────────────────────────────────────────
+
         # Fetch bulk traffic via concurrent HTTP requests (ThreadPoolExecutor, not asyncio)
         traffic_results = get_bulk_traffic_data(self.TOMTOM_API_KEY, coords)
         
