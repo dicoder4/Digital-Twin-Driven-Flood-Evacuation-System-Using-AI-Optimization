@@ -20,6 +20,22 @@ from flood_simulator import UrbanFloodSimulator
 from generate_people import get_population
 from shelter_generator import extract_shelter_candidates, filter_safe_shelters
 from evacuation_ga import GeneticEvacuationPlanner
+from aco import ACOEvacuationPlanner
+from pso import PSOEvacuationPlanner
+
+# ── Algorithm factory ────────────────────────────────────────────────────────
+_PLANNER_MAP = {
+    "ga":  GeneticEvacuationPlanner,
+    "aco": ACOEvacuationPlanner,
+    "pso": PSOEvacuationPlanner,
+}
+
+def _get_planner_class(algorithm: str):
+    """Return the planner class for the given algorithm key (case-insensitive)."""
+    key = algorithm.lower().strip()
+    if key not in _PLANNER_MAP:
+        raise ValueError(f"Unknown algorithm '{algorithm}'. Choose from: {list(_PLANNER_MAP.keys())}")
+    return _PLANNER_MAP[key]
 
 async def get_all_regions():
     """Return the hierarchy tree of regions."""
@@ -98,7 +114,7 @@ async def fetch_map_geojson(hobli_name: str):
     _, edges = ox.graph_to_gdfs(G)
     return json.loads(edges.to_json())
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False):
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga"):
     """Generator for SSE simulation stream."""
     import time
     key = norm_key(hobli)
@@ -152,12 +168,14 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     # ── Post-simulation: run GA once with final flood state ───────────────
     final_evacuation_plan = []
     ga_execution_time = 0.0
+    best_fitness = 0.0
 
+    algo_label = algorithm.upper()
     print(f"\n{'='*60}")
-    print(f"  [GA DEBUG] evacuation_mode = {evacuation_mode} (controls pop scaling only)")
-    print(f"  [GA DEBUG] all_shelters count = {len(all_shelters)}")
+    print(f"  [{algo_label}] evacuation_mode = {evacuation_mode} (controls pop scaling only)")
+    print(f"  [{algo_label}] all_shelters count = {len(all_shelters)}")
 
-    # GA always runs — evacuation_mode only affects 1% pop scaling above
+    # Algorithm always runs — evacuation_mode only affects 1% pop scaling above
     # Recalculate final flood impact for shelter safety classification
     final_impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
     final_flood_gdf = final_impact["flood_gdf"]
@@ -206,30 +224,41 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}
             for nid, pop in at_risk
         ]
-        print(f"  [GA DEBUG] Running GA: {len(at_risk_formatted)} at-risk groups → {len(safe_shelters)} shelters")
+        print(f"  [{algo_label}] Running {algo_label}: {len(at_risk_formatted)} at-risk groups → {len(safe_shelters)} shelters")
 
         ga_start = time.time()
         try:
-            # Scale GA parameters based on problem size for speed
+            # Scale parameters based on problem size for speed
             n_risk = len(at_risk_formatted)
-            gens = max(15, min(50, 3000 // max(n_risk, 1)))
+            gens   = max(15, min(60, 3000 // max(n_risk, 1)))
             pop_sz = min(60, max(20, n_risk * 2))
-            print(f"  [GA DEBUG] Params: pop_size={pop_sz}, generations={gens}")
+            print(f"  [{algo_label}] Params: pop_size/n_particles/n_ants={pop_sz}, iterations/generations={gens}")
 
-            planner_instance = GeneticEvacuationPlanner(
-                at_risk_formatted, safe_shelters, sim.G,
-                pop_size=pop_sz, generations=gens,
-                use_tomtom_traffic=use_traffic
-            )
-            precompute_time = round(time.time() - ga_start, 2)
-            print(f"  [GA DEBUG] Dijkstra precompute done in {precompute_time}s")
+            PlannerClass = _get_planner_class(algorithm)
 
-            evolve_start = time.time()
-            final_evacuation_plan = await loop.run_in_executor(None, planner_instance.run)
+            # ── Run init + evolution in executor ───────────────────────────────
+            # IMPORTANT: PlannerClass.__init__ does Dijkstra precompute AND TomTom
+            # traffic fetching (100 HTTP requests via ThreadPoolExecutor). If called
+            # directly in the async event loop it blocks the SSE stream.
+            # Wrapping BOTH init and run() in a single executor call keeps the loop free.
+            def _init_and_run():
+                instance = PlannerClass(
+                    at_risk_formatted, safe_shelters, sim.G,
+                    pop_size=pop_sz, generations=gens,
+                    n_ants=pop_sz, iterations=gens,
+                    n_particles=pop_sz,
+                    use_tomtom_traffic=use_traffic,
+                )
+                routes = instance.run()
+                return instance, routes
+
+            planner_instance, final_evacuation_plan = await loop.run_in_executor(None, _init_and_run)
+
             ga_execution_time = round(time.time() - ga_start, 2)
-            evolve_time = round(time.time() - evolve_start, 2)
-            print(f"  [GA DEBUG] GA complete: {len(final_evacuation_plan)} routes in "
-                  f"{ga_execution_time}s (precompute={precompute_time}s, evolve={evolve_time}s)")
+            print(f"  [{algo_label}] complete: {len(final_evacuation_plan)} routes in {ga_execution_time}s")
+            best_fitness = round(getattr(planner_instance, 'best_fitness', 0.0), 1)
+            print(f"  [{algo_label}] best_fitness = {best_fitness}")
+
         except Exception as e:
             import traceback
             print(f"  [GA DEBUG] *** GA EXCEPTION: {e} ***")
@@ -278,10 +307,11 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             pass
 
     final_report = {
-        "done":  True,
-        "total": steps,
-        "evacuation_plan": final_evacuation_plan,
-        "traffic_geojson": traffic_geojson,
+        "done":      True,
+        "total":     steps,
+        "algorithm": algorithm.upper(),
+        "evacuation_plan":      final_evacuation_plan,
+        "traffic_geojson":      traffic_geojson,
         "traffic_segment_count": traffic_segment_count,
         "summary": {
             "total_evacuated":         total_assigned,
@@ -291,7 +321,12 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "success_rate_pct":        round(
                 total_assigned / max(total_at_risk_before_ga, 1) * 100, 1
             ),
+            "algorithm":               algorithm.upper(),
             "ga_execution_time":       ga_execution_time,
+            "best_fitness":            best_fitness,
+            "avg_distance_per_person": round(
+                best_fitness / max(total_at_risk_before_ga, 1), 1
+            ),
             "shelter_reports":         shelter_reports,
         },
     }

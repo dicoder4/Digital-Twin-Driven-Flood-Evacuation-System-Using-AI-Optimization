@@ -108,7 +108,7 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                 {/* 5. Shelter markers with built-in hover tooltip */}
                 <ShelterLayer shelters={shelters} />
 
-                {/* 6. Evacuation paths — only for selected shelter, shown when simulation done */}
+                {/* 6. Evacuation paths */}
                 {simulationDone && (
                     <EvacuationLayer
                         evacuationPlan={evacuationPlan}

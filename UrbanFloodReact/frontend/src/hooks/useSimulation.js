@@ -41,11 +41,11 @@ export function useSimulation() {
         setRoadsData(null);
     }, []);
 
-    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic) => {
+    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm = 'ga') => {
         reset();
         setIsRunning(true);
         setSimulationDone(false);
-        setStatusMsg('Simulation running …');
+        setStatusMsg(`Running ${algorithm.toUpperCase()} simulation …`);
 
         const t0 = Date.now();
         timerRef.current = setInterval(() => setElapsedTime(Math.round((Date.now() - t0) / 1000)), 1000);
@@ -56,7 +56,8 @@ export function useSimulation() {
             steps,
             decay_factor: decayFactor,
             evacuation_mode: evacuationMode,
-            use_traffic: useTraffic
+            use_traffic: useTraffic,
+            algorithm,
         });
         const es = new EventSource(`${API_URL}/simulate-stream?${params}`);
         esRef.current = es;

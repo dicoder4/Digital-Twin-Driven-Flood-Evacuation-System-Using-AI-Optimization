@@ -26,7 +26,10 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
     TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY") 
 
     def __init__(self, at_risk_nodes, safe_shelters, G,
-                 pop_size=60, generations=40, mutation_rate=0.15, use_tomtom_traffic=False):
+                 pop_size=60, generations=40, mutation_rate=0.15,
+                 use_tomtom_traffic=False, **kwargs):
+        # **kwargs absorbs ACO/PSO-specific params (n_ants, n_particles, iterations)
+        # when the algorithm factory passes a unified param set — safe to ignore.
         """
         at_risk_nodes : list of {'id': node_id, 'pop': count, 'lat': y, 'lon': x}
         safe_shelters : list of {'id': str, 'node_id': int, 'capacity': int,
@@ -68,6 +71,7 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
 
     def run(self):
         if not self.at_risk_nodes or not self.safe_shelters:
+            self.best_fitness = 0.0
             return []
 
         population = self._init_population()
@@ -93,5 +97,9 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
             population = new_pop
 
         fitness_scores = np.array([self._fitness(c) for c in population])
-        best = population[int(np.argmin(fitness_scores))]
+        best_idx = int(np.argmin(fitness_scores))
+        self.best_fitness = float(fitness_scores[best_idx])
+        best = population[best_idx]
+        print(f"  [GA] Best fitness = {self.best_fitness:.1f}")
         return self._decode(best)
+
