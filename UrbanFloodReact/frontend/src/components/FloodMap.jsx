@@ -9,12 +9,15 @@
  *   - Legend (bottom-right)
  *   - Hobli info chip (top-left)
  */
-import Map, { Source, Layer, NavigationControl } from 'react-map-gl/maplibre';
+import Map, { Source, Layer, NavigationControl, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapPin, BarChart2 } from 'lucide-react';
 import { Legend } from './Legend';
 import { PeopleLayer } from './PeopleLayer';
 import { ShelterLayer } from './ShelterLayer';
+import { EvacuationLayer } from './EvacuationLayer';
+import { TrafficLayer } from './TrafficLayer';
+
 
 // Road risk → colour
 const RISK_COLOUR = {
@@ -54,9 +57,10 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters }) {
+export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins }) {
     const hasFlood = !!(floodData?.features?.length);
-    const hasRisk  = !!(riskRoadsData?.features?.length);
+    const hasRisk = !!(riskRoadsData?.features?.length);
+    const hasTrafficData = showTraffic && !!(trafficRoadsData?.features?.length);
 
     return (
         <main className="map-container">
@@ -75,7 +79,10 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                     </Source>
                 )}
 
-                {/* 2. People dots on roads (above roads, below flood) */}
+                {/* 2. Traffic signal pins — only when toggled ON */}
+                {hasTrafficData && showTrafficPins && <TrafficLayer trafficRoadsData={trafficRoadsData} />}
+
+                {/* 3. People dots on roads (above roads, below flood) */}
                 <PeopleLayer
                     baseRoadsData={baseRoadsData}
                     populationCount={populationCount}
@@ -100,6 +107,28 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
 
                 {/* 5. Shelter markers with built-in hover tooltip */}
                 <ShelterLayer shelters={shelters} />
+
+                {/* 6. Evacuation paths */}
+                {simulationDone && (
+                    <EvacuationLayer
+                        evacuationPlan={evacuationPlan}
+                        selectedShelterId={selectedShelter?.id || null}
+                    />
+                )}
+
+                {/* 7. Destination pin for selected shelter */}
+                {simulationDone && selectedShelter && (
+                    <Marker
+                        longitude={selectedShelter.lon}
+                        latitude={selectedShelter.lat}
+                        anchor="bottom"
+                    >
+                        <div className="evac-dest-pin">
+                            <MapPin size={22} fill="#a855f7" color="white" strokeWidth={1.5} />
+                            <div className="evac-dest-label">{selectedShelter.name}</div>
+                        </div>
+                    </Marker>
+                )}
             </Map>
 
             {/* Floating hobli chip */}
@@ -110,8 +139,26 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                 </div>
             )}
 
+            {/* Live Traffic indicator chip */}
+            {showTraffic && (
+                <div className="map-chip map-chip-traffic">
+                    🚦 Live Traffic{hasTrafficData ? ` · ${trafficRoadsData.features.length} roads` : ' · fetching…'}
+                </div>
+            )}
+
+            {/* Live Traffic toggle button — only shown when traffic data available */}
+            {hasTrafficData && (
+                <button
+                    className={`map-traffic-toggle ${showTrafficPins ? 'map-traffic-toggle--on' : ''}`}
+                    onClick={onToggleTrafficPins}
+                    title={showTrafficPins ? 'Hide traffic lines' : 'Show traffic lines'}
+                >
+                    🚦 {showTrafficPins ? 'Hide Traffic' : 'Show Traffic'}
+                </button>
+            )}
+
             {/* Legend */}
-            <Legend visible={hasFlood || hasRisk} />
+            <Legend visible={hasFlood || hasRisk} showTraffic={showTraffic} />
         </main>
     );
 }

@@ -27,6 +27,9 @@ class UrbanFloodSimulator:
             
         self.people_gdf = gpd.GeoDataFrame(columns=['person_id', 'geometry'], crs=G.graph['crs'])
         self.current_people_count = 0
+        self.node_populations = {} # node_id -> person_count
+        self.shelter_occupancy = {} # shelter_id -> person_count
+        self.total_evacuated = 0
 
     def initialize_flood(self, rainfall_mm):
         """
@@ -138,6 +141,38 @@ class UrbanFloodSimulator:
 
         nx.set_node_attributes(self.G, new_depths, 'water_depth')
         return self.G
+
+    def distribute_population(self, total_pop):
+        """
+        Distribute population across graph nodes.
+        For simplicity, we distribute evenly across all nodes, but this could be
+        weighted by degree or land use.
+        """
+        nodes = list(self.G.nodes())
+        if not nodes: return
+        
+        per_node = total_pop // len(nodes)
+        rem = total_pop % len(nodes)
+        
+        self.node_populations = {n: per_node for n in nodes}
+        # Distribute remainder
+        for i in range(rem):
+            self.node_populations[nodes[i]] += 1
+            
+        print(f"  [flood_sim] Distributed {total_pop} people across {len(nodes)} nodes")
+
+    def get_at_risk_nodes(self, depth_threshold_m=0.15):
+        """
+        Identify nodes where water depth > threshold and there are people present.
+        Returns a list of (node_id, population)
+        """
+        node_depths = nx.get_node_attributes(self.G, 'water_depth')
+        at_risk = []
+        for n, depth in node_depths.items():
+            pop = self.node_populations.get(n, 0)
+            if depth > depth_threshold_m and pop > 0:
+                at_risk.append((n, pop))
+        return at_risk
 
     def calculate_flood_impact(self):
         """

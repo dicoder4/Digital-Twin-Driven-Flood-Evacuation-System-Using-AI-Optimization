@@ -2,13 +2,16 @@
  * SimulationControls.jsx
  * Steps, decay sliders + Run / Pause / Reset buttons + progress bar.
  */
-import { Play, Pause, RefreshCw, Clock, Activity } from 'lucide-react';
+import { Play, Pause, RefreshCw, Clock, Activity, GitCompare } from 'lucide-react';
 
 export function SimulationControls({
-    steps, decayFactor, onSteps, onDecay,
+    steps, decayFactor,
+    onSteps, onDecay,
     isRunning, isPaused, simulationDone,
     currentStep, totalSteps, elapsedTime, progressPct,
     onStart, onTogglePause, onReset,
+    compareMode = false,
+    compareProgress = '',
 }) {
     return (
         <section className="panel">
@@ -30,10 +33,15 @@ export function SimulationControls({
 
             <div className="btn-row">
                 {!isRunning
-                    ? <button className="btn-primary" onClick={onStart}><Play size={13} /> Run</button>
+                    ? <button className="btn-primary" onClick={onStart}>
+                        {compareMode
+                            ? <><GitCompare size={13} /> Run &amp; Compare</>
+                            : <><Play size={13} /> Run Simulation</>
+                        }
+                      </button>
                     : <button className="btn-secondary" onClick={onTogglePause}>
                         {isPaused ? <><Play size={13} /> Resume</> : <><Pause size={13} /> Pause</>}
-                    </button>}
+                      </button>}
                 <button
                     className="btn-ghost"
                     onClick={onReset}
@@ -43,7 +51,13 @@ export function SimulationControls({
                 </button>
             </div>
 
-            {(isRunning || simulationDone) && (
+            {compareProgress && (
+                <div style={{ fontSize: 10, color: '#7c3aed', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <GitCompare size={10} /> {compareProgress}
+                </div>
+            )}
+
+            {(isRunning || simulationDone) && !compareProgress && (
                 <div className="progress-section">
                     <div className="progress-bar-bg">
                         <div className="progress-bar-fill" style={{ width: `${progressPct}%` }} />
@@ -57,3 +71,4 @@ export function SimulationControls({
         </section>
     );
 }
+
