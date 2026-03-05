@@ -112,5 +112,7 @@ export function useSimulation() {
         trafficRoadsData, trafficSegmentCount,
         statusMsg, setStatusMsg, progressPct,
         start, togglePause, reset, clearMap,
+        // Exposed for compare mode: pipe flood frames from /simulate-compare
+        setFloodData, setRoadsData,
     };
 }
