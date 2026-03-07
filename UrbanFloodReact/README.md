@@ -171,3 +171,140 @@ When **Live Traffic** is enabled alongside Evacuation Mode, real-time road conge
 
 5. **Graceful Degradation Without Traffic Data**
    If the TomTom API key is missing, the network returns no results, or all fetched segments are unresolvable (e.g., the hobli has no major roads), the system falls back silently to **flood-weight-only routing**. The GA continues to run normally and evacuation routes remain fully functional — traffic simply does not influence the route cost in that case. This ensures the simulation is never blocked by traffic API failures during critical emergency scenarios.
+
+---
+
+## Shared Base Planner (`base_planner.py`)
+
+All three optimisation algorithms (GA, ACO, PSO) inherit from a common `BaseEvacuationPlanner` class that provides:
+
+| Component | Detail |
+|---|---|
+| **Flood-aware edge weights** | `flood_weight = road_length × (1 + 5 × avg_water_depth) × traffic_factor` |
+| **Dijkstra precomputation** | Single-source shortest path per shelter → `dist_matrix` and `time_matrix` |
+| **Greedy seed chromosome** | Nearest-shelter assignment respecting capacity (used as starting solution) |
+| **Shared fitness function** | `Σ(flood_dist × pop) + 0.5 × Σ(time × pop) + capacity_overflow_penalty` |
+| **Route decode & geometry** | Converts chromosome → GeoJSON paths following the road network |
+| **TomTom traffic integration** | Optional live traffic layer via `SetupMixin` (same as GA) |
+
+This ensures all algorithms are ranked on the **exact same objective** — lower fitness = better evacuation plan.
+
+---
+
+## Ant Colony Optimisation (ACO)
+
+**File:** `aco/core.py`
+
+ACO treats shelter assignment as a multi-dimensional path construction problem. Each "ant" builds a complete assignment (chromosome) for all at-risk groups by choosing shelters probabilistically based on **pheromone** (colony memory) and **heuristic attractiveness** (inverse distance).
+
+| Parameter | Detail |
+|---|---|
+| **Probability** | `P(shelter j for group i) ∝ τ[i,j]^α × η[i,j]^β` |
+| **Pheromone (τ)** | Updated each iteration — better ants deposit more pheromone |
+| **Heuristic (η)** | `1 / dist_matrix[i,j]` — closer shelters are more attractive |
+| **Evaporation (ρ)** | 0.3 — pheromone decays 30% per iteration to avoid stagnation |
+| **Capacity mask** | Over-capacity shelters get their probability zeroed out per ant |
+| **Seeding** | 1 ant per iteration uses the greedy chromosome for exploitation |
+
+**Vectorised implementation:** Probability computation and pheromone deposit use NumPy array operations (`np.add.at`, masked arrays) for performance parity with GA.
+
+---
+
+## Particle Swarm Optimisation (PSO)
+
+**File:** `pso/core.py`
+
+PSO adapts the continuous-domain swarm model for discrete shelter assignment. Each particle is a position vector (shelter indices), and velocity updates drive exploration.
+
+| Parameter | Detail |
+|---|---|
+| **Position** | Integer vector — each element is a shelter index |
+| **Velocity** | Continuous vector ∈ [-v_max, v_max], mapped to switch probability via sigmoid |
+| **Update rule** | `v = w·v + c₁·r₁·(pbest - x) + c₂·r₂·(gbest - x)` |
+| **Switch probability** | `sigmoid(v[d])` — probability of switching gene `d` to personal/global best |
+| **Inertia (w)** | 0.7 — controls momentum vs. exploration |
+| **Cognitive (c₁)** | 1.5 — pull toward personal best |
+| **Social (c₂)** | 1.5 — pull toward global best |
+| **Seeding** | 1 particle initialised with greedy chromosome |
+
+**Vectorised implementation:** Velocity and position updates use full NumPy operations with `np.random.random()` masks, eliminating per-gene Python loops.
+
+---
+
+## Comparison Mode — Head-to-Head Benchmarking
+
+The frontend offers a **⇄ All** button that runs GA → ACO → PSO on the **same flood scenario** (same graph, flood state, and shelters). The backend runs all three in parallel threads after one shared flood simulation, then returns all results in a single SSE frame.
+
+### Comparison Table
+
+Results are displayed side-by-side:
+
+```
+Algorithm   Fitness ↓   Success %   Time
+🏆 ACO      583.6k       100%       20s    ← BEST
+   GA       588.5k       100%       2.6s
+   PSO      583.8k       100%       3.9s
+```
+
+- **Winner** is determined by **lowest fitness** (not success rate, which is often 100%)
+- Each row has a **Show Routes** button to display that algorithm's evacuation routes on the map
+
+### Per-Algorithm Detail View
+
+Clicking an algorithm in the comparison table reveals its full stats:
+- **Evacuated / Unreachable** counts
+- **Success rate** and **execution time**
+- **Traffic roads** count (if Live Traffic was enabled)
+- **Shelter capacity list** — clickable, same as single-run mode (click a shelter → see routes on map)
+
+### Traffic in Comparison Mode
+
+When Live Traffic is enabled, each algorithm's traffic GeoJSON is stored separately. Switching between algorithms in the comparison view also switches the traffic overlay on the map, so you can see how each algorithm's routes interact with real-time congestion.
+
+---
+
+## Algorithm Info Panel
+
+An expandable **ⓘ What are these?** button in the Optimisation Settings panel provides short descriptions of each algorithm:
+- **GA** — Evolves solutions using crossover & mutation. Good general-purpose optimiser.
+- **ACO** — Ants build routes using pheromone trails. Best solution quality.
+- **PSO** — Particles swarm toward best-known solutions. Fastest convergence.
+- **⇄ All** — Runs GA → ACO → PSO sequentially. Compares fitness scores head-to-head.
+
+---
+
+## Project Structure
+
+```
+UrbanFloodReact/
+├── backend/
+│   ├── main.py                     # FastAPI app + SSE endpoints
+│   ├── service.py                  # Simulation orchestration + algorithm dispatch
+│   ├── base_planner.py             # Shared base class for all optimisers
+│   ├── genetic_algorithm/
+│   │   ├── core.py                 # GA implementation
+│   │   ├── setup_mixin.py          # TomTom fetch, Dijkstra, edge weights
+│   │   └── geometry_mixin.py       # Route decode + path geometry
+│   ├── aco/
+│   │   └── core.py                 # ACO implementation (vectorised)
+│   ├── pso/
+│   │   └── core.py                 # PSO implementation (vectorised)
+│   ├── traffic_data/
+│   │   └── tomtom.py               # TomTom API bulk traffic fetcher
+│   └── .env                        # API keys (TOMTOM_API_KEY, etc.)
+├── frontend/
+│   └── src/
+│       ├── App.jsx                 # Main orchestrator
+│       ├── App.css                 # All styles
+│       ├── hooks/
+│       │   └── useSimulation.js    # SSE lifecycle + state
+│       └── components/
+│           ├── FloodMap.jsx        # MapLibre map
+│           ├── EvacuationPanel.jsx  # Stats + comparison + shelter list
+│           ├── EvacuationLayer.jsx  # Route lines + citizen pins
+│           ├── TrafficLayer.jsx    # Traffic congestion overlay
+│           ├── SimulationControls.jsx
+│           ├── ShelterLayer.jsx
+│           └── ...
+└── README.md
+```

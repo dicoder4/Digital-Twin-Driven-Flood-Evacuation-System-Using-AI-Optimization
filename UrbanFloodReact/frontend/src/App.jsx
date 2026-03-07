@@ -215,6 +215,7 @@ export default function App() {
             ...(payload.summary || {}),
             evacuation_plan: payload.evacuation_plan || [],
             traffic_segment_count: payload.traffic_segment_count || 0,
+            traffic_geojson: payload.traffic_geojson || null,
           };
         }
 
@@ -511,8 +512,12 @@ export default function App() {
         }
         simulationDone={sim.simulationDone || !!compareResults}
         selectedShelter={selectedShelter}
-        trafficRoadsData={sim.trafficRoadsData}
-        showTraffic={useTraffic && sim.simulationDone}
+        trafficRoadsData={
+          compareResults && compareActiveAlgo
+            ? (compareResults[compareActiveAlgo]?.traffic_geojson ?? null)
+            : sim.trafficRoadsData
+        }
+        showTraffic={useTraffic && (sim.simulationDone || !!compareResults)}
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
       />
