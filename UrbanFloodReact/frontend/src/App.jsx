@@ -14,15 +14,15 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info } from 'lucide-react';
 import axios from 'axios';
 
-import { useRegions }      from './hooks/useRegions';
-import { useSimulation }   from './hooks/useSimulation';
-import { RegionSelector }  from './components/RegionSelector';
+import { useRegions } from './hooks/useRegions';
+import { useSimulation } from './hooks/useSimulation';
+import { RegionSelector } from './components/RegionSelector';
 import { PopulationPanel } from './components/PopulationPanel';
-import { RainfallPanel }   from './components/RainfallPanel';
+import { RainfallPanel } from './components/RainfallPanel';
 import { SimulationControls } from './components/SimulationControls';
-import { SheltersPanel }   from './components/SheltersPanel';
+import { SheltersPanel } from './components/SheltersPanel';
 import { EvacuationPanel } from './components/EvacuationPanel';
-import { FloodMap }        from './components/FloodMap';
+import { FloodMap } from './components/FloodMap';
 import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';   // ← ESM import (no require() anywhere)
 import './App.css';
@@ -34,48 +34,48 @@ export default function App() {
   });
 
   // ── Region state ─────────────────────────────────────────────
-  const [regionLoading, setRegionLoading]   = useState(false);
-  const [regionLoaded,  setRegionLoaded]    = useState(false);
-  const [loadedHobli,   setLoadedHobli]     = useState('');
-  const [baseRoadsData, setBaseRoadsData]   = useState(null);
-  const [selRec,        setSelRec]          = useState(null);
+  const [regionLoading, setRegionLoading] = useState(false);
+  const [regionLoaded, setRegionLoaded] = useState(false);
+  const [loadedHobli, setLoadedHobli] = useState('');
+  const [baseRoadsData, setBaseRoadsData] = useState(null);
+  const [selRec, setSelRec] = useState(null);
 
   // ── Population / shelter state ────────────────────────────────
-  const [populationCount,   setPopulationCount]   = useState(0);
+  const [populationCount, setPopulationCount] = useState(0);
   const [unsafePeopleCount, setUnsafePeopleCount] = useState(0);
   const [shelterCandidates, setShelterCandidates] = useState([]);
 
   // ── Simulation params ─────────────────────────────────────────
-  const [rainfallMm,    setRainfallMm]    = useState(150);
-  const [steps,         setSteps]         = useState(20);
-  const [decayFactor,   setDecayFactor]   = useState(0.5);
-  const [algoInfoOpen,  setAlgoInfoOpen]  = useState(false);
+  const [rainfallMm, setRainfallMm] = useState(150);
+  const [steps, setSteps] = useState(20);
+  const [decayFactor, setDecayFactor] = useState(0.5);
+  const [algoInfoOpen, setAlgoInfoOpen] = useState(false);
 
   // ── Three independent toggles / selectors ────────────────────
   // 1. Evacuation Mode — ONLY controls 1% population scaling
   const [evacuationMode, setEvacuationMode] = useState(false);
   // 2. Live Traffic — whether TomTom data modifies the road graph
-  const [useTraffic,     setUseTraffic]     = useState(false);
+  const [useTraffic, setUseTraffic] = useState(false);
   // 3. Algorithm — which optimiser runs (always runs, not gated by evac mode)
-  const [algorithm,      setAlgorithm]      = useState('ga');
+  const [algorithm, setAlgorithm] = useState('ga');
 
   // ── Compare mode ──────────────────────────────────────────────
-  const [compareMode,       setCompareMode]       = useState(false);
-  const [compareResults,    setCompareResults]    = useState(null);  // {ga, aco, pso}
-  const [compareRunning,    setCompareRunning]    = useState(false);
-  const [compareProgress,   setCompareProgress]   = useState('');
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareResults, setCompareResults] = useState(null);  // {ga, aco, pso}
+  const [compareRunning, setCompareRunning] = useState(false);
+  const [compareProgress, setCompareProgress] = useState('');
   const [compareActiveAlgo, setCompareActiveAlgo] = useState(null);  // which algo's routes to show
   // Abort ref — allows cancelling compare mid-run
   const compareAbortRef = useRef(false);
 
   // ── UI state ──────────────────────────────────────────────────
-  const [activeTab,        setActiveTab]        = useState('setup');
+  const [activeTab, setActiveTab] = useState('setup');
   const [selectedShelterId, setSelectedShelterId] = useState(null);
-  const [showTrafficPins,   setShowTrafficPins]   = useState(false);
+  const [showTrafficPins, setShowTrafficPins] = useState(false);
 
   // ── Hooks ─────────────────────────────────────────────────────
   const regions = useRegions();
-  const sim     = useSimulation();
+  const sim = useSimulation();
 
   // Recompute shelter safety on every flood update
   const sheltersWithSafety = useMemo(
@@ -106,7 +106,7 @@ export default function App() {
     setShelterCandidates([]);
     setActiveTab('setup');
     try {
-      const res    = await axios.post(`${API_URL}/load-region`, { hobli: regions.selHobli });
+      const res = await axios.post(`${API_URL}/load-region`, { hobli: regions.selHobli });
       const { lat, lon } = res.data;
       setViewState(v => ({ ...v, longitude: lon, latitude: lat, zoom: 14 }));
       const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: regions.selHobli } });
@@ -123,8 +123,8 @@ export default function App() {
   }, [regions.selHobli, sim]);
 
   const handleDistrict = (d) => { regions.setDistrict(d); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
-  const handleTaluk    = (t) => { regions.setTaluk(t);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
-  const handleHobli    = (h) => { regions.setHobli(h);    setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
+  const handleTaluk = (t) => { regions.setTaluk(t); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
+  const handleHobli = (h) => { regions.setHobli(h); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
 
   // ── Start single simulation ───────────────────────────────────
   const handleStart = () => {
@@ -144,100 +144,113 @@ export default function App() {
     setCompareActiveAlgo(null);
   };
 
-  // ── Compare Mode: run GA → ACO → PSO sequentially ─────────────
-  // BUG FIX: was using require('./config') which is CommonJS and fails
-  // in Vite/ESM → EventSource URL was never built → promise never resolved
-  // → page appeared frozen. Now uses the ESM-imported API_URL directly.
-  const handleCompare = useCallback(async () => {
+  // ── Compare Mode: single /simulate-compare SSE stream ────────
+  // Flood simulation runs ONCE on the backend; GA + ACO + PSO then
+  // run in parallel threads. The frontend receives the same flood-step
+  // frames it uses for map animation, then one 'compare_done' frame
+  // containing all three results simultaneously.
+  // This reduces compare time from ~3× to ~1× a single run.
+  const handleCompare = useCallback(() => {
     if (!regionLoaded || compareRunning) return;
     compareAbortRef.current = false;
     setCompareResults(null);
     setCompareRunning(true);
-    const results = {};
-    const algos = ['ga', 'aco', 'pso'];
+    setCompareProgress('Flood simulation running…');
+    sim.reset();
+    sim.setStatusMsg('Compare: flood simulation in progress…');
 
-    for (let i = 0; i < algos.length; i++) {
-      const algo = algos[i];
+    const params = new URLSearchParams({
+      hobli: loadedHobli,
+      rainfall_mm: rainfallMm,
+      steps,
+      decay_factor: decayFactor,
+      evacuation_mode: evacuationMode,
+      use_traffic: useTraffic,
+    });
 
-      // Allow cancellation between rounds
-      if (compareAbortRef.current) break;
+    const es = new EventSource(`${API_URL}/simulate-compare?${params}`);
 
-      setCompareProgress(`Running ${algo.toUpperCase()} (${i + 1}/3)…`);
-      sim.setStatusMsg(`Compare: running ${algo.toUpperCase()} (${i + 1} of 3)…`);
+    // Safety timeout — 10 min for the whole compare run
+    const timeout = setTimeout(() => {
+      es.close();
+      setCompareRunning(false);
+      setCompareProgress('');
+      sim.setStatusMsg('Compare timed out — check backend.');
+    }, 10 * 60 * 1000);
 
-      await new Promise((resolve) => {
-        const params = new URLSearchParams({
-          hobli:           loadedHobli,
-          rainfall_mm:     rainfallMm,
-          steps,
-          decay_factor:    decayFactor,
-          evacuation_mode: evacuationMode,
-          use_traffic:     useTraffic,
-          algorithm:       algo,
-        });
-
-        // ✅ Use already-imported ESM API_URL — NOT require()
-        const es = new EventSource(`${API_URL}/simulate-stream?${params}`);
-
-        // Safety timeout — if backend hangs for >5 min, give up on this algo
-        const timeout = setTimeout(() => {
-          es.close();
-          results[algo] = { error: true, error_msg: 'timeout' };
-          resolve();
-        }, 5 * 60 * 1000);
-
-        es.onmessage = (evt) => {
-          if (compareAbortRef.current) {
-            clearTimeout(timeout);
-            es.close();
-            resolve();
-            return;
-          }
-          try {
-            const data = JSON.parse(evt.data);
-            if (data.done) {
-              clearTimeout(timeout);
-              es.close();
-              // Store summary + evacuation_plan + traffic_segment_count
-              results[algo] = {
-                ...(data.summary || {}),
-                evacuation_plan: data.evacuation_plan || [],
-                traffic_segment_count: data.traffic_segment_count || 0,
-              };
-              resolve();
-            }
-          } catch {
-            // ignore malformed SSE frames
-          }
-        };
-
-        es.onerror = () => {
-          clearTimeout(timeout);
-          es.close();
-          results[algo] = { error: true };
-          resolve();
-        };
-      });
-    }
-
-    const finalResults = Object.keys(results).length > 0 ? results : null;
-    setCompareResults(finalResults);
-    setCompareRunning(false);
-    setCompareProgress('');
-
-    if (!compareAbortRef.current && finalResults) {
-      // Auto-select the best algo's routes on the map (lowest fitness)
-      let bestAlgo = null, bestFit = Infinity;
-      for (const [algo, res] of Object.entries(finalResults)) {
-        const f = res.best_fitness ?? Infinity;
-        if (!res.error && f < bestFit) { bestFit = f; bestAlgo = algo; }
+    es.onmessage = (evt) => {
+      if (compareAbortRef.current) {
+        clearTimeout(timeout);
+        es.close();
+        setCompareRunning(false);
+        setCompareProgress('');
+        sim.setStatusMsg('Compare cancelled.');
+        return;
       }
-      setCompareActiveAlgo(bestAlgo);
-      setActiveTab('evacuation');
-      sim.setStatusMsg(`Compare complete — showing ${bestAlgo?.toUpperCase() ?? ''} routes (best fitness)`);
-    } else {
-      sim.setStatusMsg('Compare cancelled.');
-    }
+
+      try {
+        const data = JSON.parse(evt.data);
+
+        // ── Flood step frame — animate the map as normal ────────────────
+        if (!data.compare_done) {
+          setCompareProgress(`Flood: step ${data.step} / ${data.total}`);
+          sim.setStatusMsg(`Compare: flood step ${data.step} of ${data.total}…`);
+          // Pipe flood / roads data into the shared sim hook for map rendering
+          if (data.flood_geojson?.features?.length > 0) sim.setFloodData(data.flood_geojson);
+          if (data.roads_geojson?.features?.length > 0) sim.setRoadsData(data.roads_geojson);
+          return;
+        }
+
+        // ── compare_done frame — all three results arrive at once ────────
+        clearTimeout(timeout);
+        es.close();
+
+        const rawResults = data.results || {};
+
+        // Reshape: { ga: { summary, evacuation_plan, ... }, aco: ..., pso: ... }
+        // → flat shape that EvacuationPanel already expects
+        const finalResults = {};
+        for (const [algo, payload] of Object.entries(rawResults)) {
+          finalResults[algo] = {
+            ...(payload.summary || {}),
+            evacuation_plan: payload.evacuation_plan || [],
+            traffic_segment_count: payload.traffic_segment_count || 0,
+            traffic_geojson: payload.traffic_geojson || null,
+          };
+        }
+
+        setCompareResults(Object.keys(finalResults).length > 0 ? finalResults : null);
+        setCompareRunning(false);
+        setCompareProgress('');
+
+        if (Object.keys(finalResults).length > 0) {
+          // Auto-select the best algo (lowest fitness = best routes)
+          let bestAlgo = null, bestFit = Infinity;
+          for (const [algo, res] of Object.entries(finalResults)) {
+            const f = res.best_fitness ?? Infinity;
+            if (!res.error && f < bestFit) { bestFit = f; bestAlgo = algo; }
+          }
+          setCompareActiveAlgo(bestAlgo);
+          setActiveTab('evacuation');
+          sim.setStatusMsg(
+            `Compare complete — showing ${bestAlgo?.toUpperCase() ?? ''} routes (best fitness)`
+          );
+        } else {
+          sim.setStatusMsg('Compare finished — no results returned.');
+        }
+
+      } catch {
+        // ignore malformed SSE frames
+      }
+    };
+
+    es.onerror = () => {
+      clearTimeout(timeout);
+      es.close();
+      setCompareRunning(false);
+      setCompareProgress('');
+      sim.setStatusMsg('Compare stream error — check backend.');
+    };
   }, [regionLoaded, compareRunning, loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, sim]);
 
   // Auto-switch to Evacuation tab when single-algo sim completes
@@ -386,7 +399,7 @@ export default function App() {
                         </div>
                         <div className="algo-info-item" style={{ borderLeft: '3px solid #c084fc' }}>
                           <strong style={{ color: '#7c3aed' }}>⇄ All</strong> — Compare Mode
-                          <div className="algo-info-desc">Runs GA → ACO → PSO sequentially on the same flood scenario. Compares fitness scores head-to-head.</div>
+                          <div className="algo-info-desc">Runs GA, ACO & PSO simultaneously in parallel on the same flood scenario. All results appear at once — ~3× faster than sequential.</div>
                         </div>
                       </div>
                     )}
@@ -394,7 +407,7 @@ export default function App() {
                     {/* Live Traffic toggle */}
                     <div className="optim-row" style={{ marginTop: '0.5rem' }}>
                       <div className="optim-row-label">
-                        <div className="evac-toggle-label"><Radio size={11} style={{ display:'inline', verticalAlign:'middle', marginRight:3 }}/>Live Traffic</div>
+                        <div className="evac-toggle-label"><Radio size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />Live Traffic</div>
                         <div className="evac-toggle-sub">TomTom congestion on road graph</div>
                       </div>
                       <button
@@ -409,7 +422,7 @@ export default function App() {
                     {/* Hint */}
                     <div className="evac-toggle-hint" style={{ marginTop: '0.4rem' }}>
                       {compareMode
-                        ? '🤖 GA → ACO → PSO will run sequentially — compare results in Evacuation tab'
+                        ? '⚡ GA + ACO + PSO will run in parallel — results appear together in Evacuation tab'
                         : `🚨 ${algorithm.toUpperCase()} will optimise evacuation routes after the flood simulation`
                       }
                     </div>
@@ -499,8 +512,12 @@ export default function App() {
         }
         simulationDone={sim.simulationDone || !!compareResults}
         selectedShelter={selectedShelter}
-        trafficRoadsData={sim.trafficRoadsData}
-        showTraffic={useTraffic && sim.simulationDone}
+        trafficRoadsData={
+          compareResults && compareActiveAlgo
+            ? (compareResults[compareActiveAlgo]?.traffic_geojson ?? null)
+            : sim.trafficRoadsData
+        }
+        showTraffic={useTraffic && (sim.simulationDone || !!compareResults)}
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
       />

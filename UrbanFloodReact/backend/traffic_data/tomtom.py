@@ -1,7 +1,11 @@
 import time
 import requests
 import concurrent.futures
+from datetime import datetime
 from typing import List, Dict, Tuple, Optional
+
+def _ts() -> str:
+    return datetime.now().strftime('[%H:%M:%S]')
 
 # Constants
 TOMTOM_FLOW_API_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
@@ -44,13 +48,13 @@ def fetch_traffic_for_segment(api_key: str, coord: Tuple[float, float]) -> Optio
                     "lon": lon
                 }
         elif response.status_code == 403:
-            print(f"  [GA DEBUG] TomTom API forbidden for {lat},{lon}. Check API Key.")
+            print(f"{_ts()}  [TomTom] API forbidden for {lat},{lon}. Check API Key.")
         elif response.status_code == 429:
-            print(f"  [GA DEBUG] TomTom API Rate Limited.")
+            print(f"{_ts()}  [TomTom] API Rate Limited.")
         else:
              pass # other errors ignored for this segment
     except Exception as e:
-        print(f"  [GA DEBUG] Error fetching traffic for {lat},{lon}: {e}")
+        print(f"{_ts()}  [TomTom] Error fetching traffic for {lat},{lon}: {e}")
         
     return None
 
@@ -60,13 +64,13 @@ def get_bulk_traffic_data(api_key: str, coords: List[Tuple[float, float]]) -> Li
     coords: List of (lat, lon) tuples representing midpoints of road segments.
     """
     if not api_key:
-         print("  [GA DEBUG] TomTom API key not provided.")
+         print(f"{_ts()}  [TomTom] API key not provided.")
          return []
          
     if not coords:
         return []
 
-    print(f"  [GA DEBUG] Fetching TomTom traffic for {len(coords)} segments via ThreadPoolExecutor...")
+    print(f"{_ts()}  [TomTom] Fetching traffic for {len(coords)} segments via ThreadPoolExecutor...")
     start_time = time.time()
     
     results = []
@@ -83,6 +87,6 @@ def get_bulk_traffic_data(api_key: str, coords: List[Tuple[float, float]]) -> Li
                 results.append(res)
     
     elapsed = round(time.time() - start_time, 2)
-    print(f"  [GA DEBUG] 🚥 TomTom fetched successfully: {len(results)}/{len(coords)} segments in {elapsed}s.")
+    print(f"{_ts()}  [TomTom] 🚥 Fetched successfully: {len(results)}/{len(coords)} segments in {elapsed}s.")
     
     return results

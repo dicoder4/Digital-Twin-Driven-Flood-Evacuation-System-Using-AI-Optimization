@@ -105,6 +105,31 @@ async def simulate_stream(
     )
 
 
+@app.get("/simulate-compare")
+async def simulate_compare(
+    hobli:           str   = Query(...),
+    rainfall_mm:     float = Query(150.0),
+    steps:           int   = Query(20),
+    decay_factor:    float = Query(0.5),
+    evacuation_mode: bool  = Query(False),
+    use_traffic:     bool  = Query(False),
+):
+    """
+    SSE stream for algorithm comparison mode.
+    Runs the flood simulation exactly once, then executes GA, ACO and PSO
+    in parallel threads. Emits normal flood-step frames during the flood phase,
+    then a single 'compare_done' frame with all three algorithm results.
+    """
+    return StreamingResponse(
+        service.run_compare_generator(
+            hobli, rainfall_mm, steps, decay_factor,
+            evacuation_mode, use_traffic,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/shelters/{hobli_name}")
 async def get_shelters(hobli_name: str):
     """
