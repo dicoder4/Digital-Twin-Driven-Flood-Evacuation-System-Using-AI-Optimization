@@ -10,9 +10,10 @@ Thin FastAPI layer. All business logic lives in:
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+import json
 
 from region_manager import initialise, norm_key, REGIONS_TREE
 from generate_people import load_population, POPULATION_CSV
@@ -48,6 +49,11 @@ app.add_middleware(
 # ── Request models ─────────────────────────────────────────────────────────────
 class LoadRegionRequest(BaseModel):
     hobli: str
+
+
+class GenAIChatRequest(BaseModel):
+    message:    str
+    session_id: str = "default"
 
 
 # ══════════════════════════════════════════════════════
@@ -137,6 +143,46 @@ async def get_shelters(hobli_name: str):
     Flood safety is evaluated on the frontend from live simulation state.
     """
     return await service.fetch_shelters(hobli_name)
+
+
+# ══════════════════════════════════════════════════════
+#  GENAI / MCP PIPELINE ENDPOINTS
+# ══════════════════════════════════════════════════════
+
+@app.post("/genai/chat")
+async def genai_chat(req: GenAIChatRequest):
+    """
+    SSE stream for the GenAI chat agent.
+    Each chunk is a JSON object: {"text": "..."}.
+    The stream ends when the generator is exhausted.
+    """
+    from genai.mcp_pipeline import get_pipeline
+
+    pipeline = get_pipeline()
+
+    async def _event_stream():
+        try:
+            async for chunk in pipeline.handle(req.message, req.session_id):
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'text': f'❌ Pipeline error: {exc}', 'error': True})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/genai/reset")
+async def genai_reset(req: GenAIChatRequest):
+    """Reset the conversation history for a given session."""
+    from genai.mcp_pipeline import reset_session
+    reset_session(req.session_id)
+    return {"status": "reset", "session_id": req.session_id}
 
 
 if __name__ == "__main__":

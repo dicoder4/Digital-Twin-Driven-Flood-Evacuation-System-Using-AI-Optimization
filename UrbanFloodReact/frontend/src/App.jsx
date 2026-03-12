@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Bot } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -23,11 +23,20 @@ import { SimulationControls } from './components/SimulationControls';
 import { SheltersPanel } from './components/SheltersPanel';
 import { EvacuationPanel } from './components/EvacuationPanel';
 import { FloodMap } from './components/FloodMap';
+import ChatbotPage from './components/ChatbotPage';
 import { computeShelterSafety } from './utils/geoUtils';
-import { API_URL } from './config';   // ← ESM import (no require() anywhere)
+import { API_URL } from './config';
 import './App.css';
 
 export default function App() {
+  // ── Chatbot page toggle ───────────────────────────────────
+  const [showChatbot, setShowChatbot] = useState(false);
+  // NOTE: do NOT early-return here — that would violate Rules of Hooks.
+  // All hooks must run unconditionally. The page swap happens in JSX below.
+
+  // Hobli pre-fill when user clicks "View Map" from chatbot post-simulation
+  const [chatbotHobliHint, setChatbotHobliHint] = useState(null); // {hobli, rainfall}
+
   // ── Map viewport ─────────────────────────────────────────────
   const [viewState, setViewState] = useState({
     longitude: 77.5946, latitude: 12.9716, zoom: 10,
@@ -263,6 +272,21 @@ export default function App() {
   }, [sim.simulationDone, compareRunning]);
 
   // ── Render ────────────────────────────────────────────────────
+  // Chatbot page swap — placed AFTER all hooks so Rules of Hooks are satisfied.
+  if (showChatbot) return (
+    <ChatbotPage
+      onBack={() => setShowChatbot(false)}
+      onSimulationDone={(hobli, rainfall) => {
+        setRainfallMm(rainfall || 150);
+        setShowChatbot(false);
+        sim.setStatusMsg(
+          `Flood AI ran a simulation for ${hobli} (${rainfall} mm). ` +
+          `Load that region here and press Run to visualise it on the map.`
+        );
+      }}
+    />
+  );
+
   return (
     <div className="app-container">
       {/* ─── Sidebar ───────────────────────────────────────── */}
@@ -521,6 +545,18 @@ export default function App() {
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
       />
+
+      {/* ─── Flood AI Chatbot launch button ──────────────────── */}
+      <button
+        id="flood-ai-chatbot-btn"
+        className="chatbot-launch-btn"
+        onClick={() => setShowChatbot(true)}
+        title="Open SimHelper AI Assistant"
+      >
+        <Bot size={16} />
+        SimHelper
+        <span className="chatbot-launch-pulse" />
+      </button>
     </div>
   );
 }

@@ -8,3 +8,10 @@ scipy
 rtree
 pandas
 openpyxl
+
+# ── GenAI / MCP Pipeline (Phase 1) ───────────────────────────────────────────
+# weather_client.py uses stdlib urllib only — no extra PyPI package needed.
+# ollama_agent.py  uses stdlib urllib only — no extra PyPI package needed.
+# Ollama runtime must be installed separately from https://ollama.com/download
+# After installing Ollama, pull the model:
+#   ollama pull llama3.2:latest

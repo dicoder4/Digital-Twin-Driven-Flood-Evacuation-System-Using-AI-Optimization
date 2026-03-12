@@ -139,6 +139,13 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     pop_data = await get_hobli_population(hobli)
     total_pop = pop_data.get("total_population", 0)
 
+    if total_pop == 0:
+        # No CSV match for this hobli — use a Bengaluru urban hobli default.
+        # The user can override this in the dashboard's Population panel.
+        total_pop = 50_000
+        print(f"{_ts()} [service] WARNING: No population CSV data for '{hobli}' "
+              f"— using fallback {total_pop:,}")
+
     # Scale population if in evacuation mode (1% test)
     if evacuation_mode:
         total_pop = max(1, total_pop // 100)
@@ -412,6 +419,10 @@ async def run_compare_generator(
     # Population
     pop_data  = await get_hobli_population(hobli)
     total_pop = pop_data.get("total_population", 0)
+    if total_pop == 0:
+        total_pop = 50_000
+        print(f"{_ts()} [compare] WARNING: No population CSV data for '{hobli}' "
+              f"— using fallback {total_pop:,}")
     if evacuation_mode:
         total_pop = max(1, total_pop // 100)
         print(f"{_ts()}  [compare] Evacuation Mode ON: scaling population to {total_pop}")
