@@ -8,6 +8,7 @@
  */
 import { useMemo } from 'react';
 import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, Trophy, Zap } from 'lucide-react';
+import { PanelOfExperts } from './PanelOfExperts';
 
 const ALGO_COLORS = {
     ga:  { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', label: 'Genetic Algorithm' },
@@ -41,7 +42,7 @@ function FillBar({ pct }) {
     );
 }
 
-export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null }) {
+export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false }) {
 
     // ── Compare table must be checked FIRST — summary is null after compare ──
     // (compare runs its own EventSources and never sets sim.finalReport)
@@ -367,6 +368,11 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                     </div>
                 )}
             </section>
+
+            {/* ── DRA AI Expert Panel ────────────────────────── */}
+            {isDraMode && summary && (
+                <PanelOfExperts summary={summary} />
+            )}
 
             {/* ── Unreachable Alert ─────────────────────── */}
             {total_at_risk_remaining > 0 && (

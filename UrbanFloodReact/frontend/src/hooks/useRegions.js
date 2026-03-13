@@ -24,11 +24,20 @@ export function useRegions() {
     const taluks = selDistrict ? Object.keys(regionsTree[selDistrict] || {}).sort() : [];
     const hoblis = selDistrict && selTaluk ? (regionsTree[selDistrict]?.[selTaluk] || []) : [];
 
+    // Flat list of all hoblis for DRA mode
+    const allHoblis = [];
+    Object.values(regionsTree).forEach(talukMap => {
+        Object.values(talukMap).forEach(hobliList => {
+            allHoblis.push(...hobliList);
+        });
+    });
+    allHoblis.sort();
+
     const setDistrict = (d) => { setSelDistrict(d); setSelTaluk(''); setSelHobli(''); };
     const setTaluk = (t) => { setSelTaluk(t); setSelHobli(''); };
 
     return {
-        regionsTree, districts, taluks, hoblis,
+        regionsTree, districts, taluks, hoblis, allHoblis,
         selDistrict, selTaluk, selHobli,
         setDistrict, setTaluk, setHobli: setSelHobli,
         fetchError,

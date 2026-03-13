@@ -1703,3 +1703,49 @@ body,
   margin-top: 2px;
   line-height: 1.35;
 }
+
+/* ── Markdown AI Content ──────────────────────────────────── */
+.markdown-body {
+  font-family: inherit;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown-body p {
+  margin-bottom: 0.8em;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.markdown-body ul, .markdown-body ol {
+  margin-bottom: 0.8em;
+  padding-left: 20px;
+}
+
+.markdown-body li {
+  margin-bottom: 0.3em;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  font-weight: 600;
+  color: #0f172a;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.markdown-body h3 {
+  font-size: 14px;
+}
+
+.markdown-body code {
+  background-color: #f1f5f9;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 90%;
+}

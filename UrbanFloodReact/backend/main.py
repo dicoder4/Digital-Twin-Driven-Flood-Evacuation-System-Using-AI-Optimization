@@ -20,6 +20,9 @@ from generate_people import load_population, POPULATION_CSV
 # Import service layer
 import service
 
+from genai.param_resolver import resolve_hobli
+from genai.weather_client import WeatherClient
+
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -53,6 +56,22 @@ class LoadRegionRequest(BaseModel):
 # ══════════════════════════════════════════════════════
 #  ENDPOINTS (Controller Layer)
 # ══════════════════════════════════════════════════════
+
+class ExpertAdviceRequest(BaseModel):
+    persona: str
+    summary_data: dict
+
+@app.post("/expert-advice-stream")
+async def expert_advice_stream(req: ExpertAdviceRequest):
+    import sys, os
+    sys.path.append(os.path.join(os.path.dirname(__file__), "genai"))
+    from expert_panel import stream_advice
+    
+    return StreamingResponse(
+        stream_advice(req.persona, req.summary_data),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
 
 @app.get("/regions")
 async def get_regions():
@@ -137,6 +156,28 @@ async def get_shelters(hobli_name: str):
     Flood safety is evaluated on the frontend from live simulation state.
     """
     return await service.fetch_shelters(hobli_name)
+
+
+@app.get("/weather/current")
+async def get_current_weather(hobli: str = Query(..., description="Hobli name to fetch weather for")):
+    """
+    Fetch current real-time rainfall data for the specified hobli using Open-Meteo.
+    """
+    hobli_info = resolve_hobli(hobli)
+    if not hobli_info:
+        return {"error": f"Could not resolve hobli name: {hobli}"}
+        
+    client = WeatherClient.from_hobli_info(hobli_info)
+    weather_data = client.get_current()
+    if weather_data.get("source") == "error":
+        return {"error": weather_data.get("description", "Unknown error fetching weather.")}
+        
+    return {
+        "hobli": hobli_info.get("display", hobli),
+        "rainfall_mm": weather_data.get("precipitation_mm", 0),
+        "condition": weather_data.get("description", "Unknown"),
+        "temp_c": weather_data.get("temp_c"),
+    }
 
 
 if __name__ == "__main__":

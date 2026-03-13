@@ -23,6 +23,7 @@ import { SimulationControls } from './components/SimulationControls';
 import { SheltersPanel } from './components/SheltersPanel';
 import { EvacuationPanel } from './components/EvacuationPanel';
 import { FloodMap } from './components/FloodMap';
+import { DraSidebar } from './components/DraSidebar';
 import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';   // ← ESM import (no require() anywhere)
 import './App.css';
@@ -72,6 +73,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('setup');
   const [selectedShelterId, setSelectedShelterId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
+  const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
 
   // ── Hooks ─────────────────────────────────────────────────────
   const regions = useRegions();
@@ -132,6 +134,21 @@ export default function App() {
     setCompareResults(null);
     setActiveTab('setup');
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm);
+  };
+
+  // ── DRA Mode: Automatic ACO + Traffic run ────────────────────
+  const handleDraRunEvacuation = () => {
+    if (!regionLoaded) return;
+    setCompareResults(null);
+    
+    // In DRA mode, force these settings regardless of what's in React state
+    // But we still update React state so the UI reflects what's running
+    setAlgorithm('aco');
+    setUseTraffic(true);
+    setEvacuationMode(false);
+    setActiveTab('setup');
+    
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco');
   };
 
   // ── Reset everything ──────────────────────────────────────────
@@ -262,16 +279,49 @@ export default function App() {
     }
   }, [sim.simulationDone, compareRunning]);
 
+  // Handle DRA mode auto-fetch of population & shelters
+  useEffect(() => {
+    if (isDraMode && regionLoaded && loadedHobli) {
+      if (populationCount === 0) {
+        axios.get(`${API_URL}/population/${encodeURIComponent(loadedHobli)}`)
+             .then(res => setPopulationCount(res.data.total_population || 0))
+             .catch(console.error);
+      }
+      if (shelterCandidates.length === 0) {
+        axios.get(`${API_URL}/shelters/${encodeURIComponent(loadedHobli)}`)
+             .then(res => setShelterCandidates(res.data.shelters || []))
+             .catch(console.error);
+      }
+    }
+  }, [isDraMode, regionLoaded, loadedHobli, populationCount, shelterCandidates.length]);
+
   // ── Render ────────────────────────────────────────────────────
   return (
     <div className="app-container">
       {/* ─── Sidebar ───────────────────────────────────────── */}
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <Droplets size={20} className="icon-blue" />
-          <div>
-            <div className="sidebar-title">Urban Flood Model</div>
-            <div className="sidebar-sub">Digital Twin · Flood Simulation · Evacuation</div>
+        <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Droplets size={20} className="icon-blue" />
+            <div>
+              <div className="sidebar-title">Urban Flood Model</div>
+              <div className="sidebar-sub">Digital Twin · Flood Simulation · Evacuation</div>
+            </div>
+          </div>
+          
+          {/* DRA Mode Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', padding: '0.5rem 0.75rem', borderRadius: '0.5rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'white' }}>
+              {isDraMode ? 'Disaster Response Authority Mode Active' : 'Switch to Disaster Response Authority Mode'}
+            </span>
+            <button 
+              className={`evac-toggle-btn ${isDraMode ? 'evac-toggle-on' : ''}`}
+              onClick={() => setIsDraMode(!isDraMode)}
+              style={{ padding: 0, margin: 0, transform: 'scale(0.8)' }}
+              title="Toggle Disaster Response Authority Mode"
+            >
+              <span className="evac-toggle-thumb" />
+            </button>
           </div>
         </div>
 
@@ -293,6 +343,23 @@ export default function App() {
 
           {/* ── SETUP TAB ────────────────────────────────── */}
           {activeTab === 'setup' && (
+            isDraMode ? (
+              <DraSidebar
+                allHoblis={regions.allHoblis}
+                selHobli={regions.selHobli}
+                onHobli={handleHobli}
+                onLoad={handleLoadRegion}
+                loading={regionLoading}
+                loaded={regionLoaded}
+                loadedHobli={loadedHobli}
+                rainfallMm={rainfallMm}
+                onRainfallChange={setRainfallMm}
+                steps={steps}
+                onStepsChange={setSteps}
+                onRunEvacuation={handleDraRunEvacuation}
+                simulationRunning={sim.isRunning}
+              />
+            ) : (
             <>
               <RegionSelector
                 districts={regions.districts}
@@ -470,22 +537,24 @@ export default function App() {
                 </>
               )}
             </>
+            )
           )}
 
-          {activeTab === 'evacuation' && (
-            <EvacuationPanel
-              summary={sim.finalReport?.summary}
-              evacuationMode={evacuationMode}
-              selectedShelterId={selectedShelterId}
-              onSelectShelter={setSelectedShelterId}
-              trafficSegmentCount={sim.trafficSegmentCount}
-              showTraffic={useTraffic}
-              compareResults={compareResults}
-              compareActiveAlgo={compareActiveAlgo}
-              onSetCompareAlgo={setCompareActiveAlgo}
-            />
-          )}
-        </div>
+            {activeTab === 'evacuation' && (
+              <EvacuationPanel
+                summary={sim.finalReport?.summary}
+                evacuationMode={evacuationMode}
+                selectedShelterId={selectedShelterId}
+                onSelectShelter={setSelectedShelterId}
+                trafficSegmentCount={sim.trafficSegmentCount}
+                showTraffic={useTraffic}
+                compareResults={compareResults}
+                compareActiveAlgo={compareActiveAlgo}
+                onSetCompareAlgo={setCompareActiveAlgo}
+                isDraMode={isDraMode}
+              />
+            )}
+          </div>
 
         <div className="status-bar">
           <Activity size={11} />
