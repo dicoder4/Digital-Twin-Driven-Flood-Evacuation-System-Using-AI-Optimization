@@ -35,14 +35,16 @@ export function PopulationPanel({ loadedHobli, onPopulationSet }) {
                     onPopulationSet(res.data.total_population);
                     setUseOverride(false);
                 } else {
-                    // No match → prompt user for manual entry
+                    // No match → auto-apply a sensible default of 5000 people
                     setUseOverride(true);
-                    onPopulationSet(0);
+                    setOverride('5000');
+                    onPopulationSet(5000);
                 }
             })
             .catch(() => {
                 setUseOverride(true);
-                onPopulationSet(0);
+                setOverride('5000');
+                onPopulationSet(5000);
             })
             .finally(() => setLoading(false));
     }, [loadedHobli]);
@@ -87,7 +89,7 @@ export function PopulationPanel({ loadedHobli, onPopulationSet }) {
                     ) : (
                         <div className="pop-source-badge pop-source-manual">
                             <AlertTriangle size={11} />
-                            {hasCSV ? 'Manual override active' : 'No CSV match — enter manually'}
+                            {hasCSV ? 'Manual override active' : 'No CSV match — using default 5000'}
                         </div>
                     )}
 

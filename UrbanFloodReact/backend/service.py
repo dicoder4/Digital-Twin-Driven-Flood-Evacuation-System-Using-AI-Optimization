@@ -120,7 +120,7 @@ async def fetch_map_geojson(hobli_name: str):
     _, edges = ox.graph_to_gdfs(G)
     return json.loads(edges.to_json())
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga"):
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None):
     """Generator for SSE simulation stream."""
     import time
     key = norm_key(hobli)
@@ -136,8 +136,11 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     sim.initialize_from_drains(rainfall_mm)
 
     # 1. Distribute population on nodes
-    pop_data = await get_hobli_population(hobli)
-    total_pop = pop_data.get("total_population", 0)
+    if population is not None:
+        total_pop = population
+    else:
+        pop_data = await get_hobli_population(hobli)
+        total_pop = pop_data.get("total_population", 0)
 
     # Scale population if in evacuation mode (1% test)
     if evacuation_mode:
@@ -385,6 +388,7 @@ async def run_compare_generator(
     decay_factor: float,
     evacuation_mode: bool = False,
     use_traffic: bool = False,
+    population: int | None = None,
 ):
     """
     SSE generator for compare mode:
@@ -410,8 +414,11 @@ async def run_compare_generator(
     sim.initialize_from_drains(rainfall_mm)
 
     # Population
-    pop_data  = await get_hobli_population(hobli)
-    total_pop = pop_data.get("total_population", 0)
+    if population is not None:
+        total_pop = population
+    else:
+        pop_data  = await get_hobli_population(hobli)
+        total_pop = pop_data.get("total_population", 0)
     if evacuation_mode:
         total_pop = max(1, total_pop // 100)
         print(f"{_ts()}  [compare] Evacuation Mode ON: scaling population to {total_pop}")

@@ -48,10 +48,12 @@ class ACOEvacuationPlanner(BaseEvacuationPlanner):
                  rho: float      = 0.1,
                  q: float        = 100.0,
                  use_tomtom_traffic: bool = False,
+             shared_setup=None,
                  **kwargs):
 
         super().__init__(at_risk_nodes, safe_shelters, G,
-                         use_tomtom_traffic=use_tomtom_traffic)
+                 use_tomtom_traffic=use_tomtom_traffic,
+                 shared_setup=shared_setup)
 
         self.n_ants     = n_ants
         self.iterations = iterations

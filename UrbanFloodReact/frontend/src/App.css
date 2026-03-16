@@ -1749,3 +1749,457 @@ body,
   font-family: monospace;
   font-size: 90%;
 }
+
+/* ── Expert Panel Tabs ────────────────────────────────────── */
+.expert-panel-section {
+  padding-bottom: 0;
+}
+
+.expert-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e2e8f0;
+  margin: 0 -14px;
+  padding: 0 14px;
+}
+
+.expert-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.expert-tab:hover {
+  background: #f8fafc;
+}
+
+.expert-tab--active {
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+}
+
+.expert-tab-label {
+  font-size: 11px;
+}
+
+/* ── Chat Interface ───────────────────────────────────────── */
+.chat-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: #faf5ff;
+  border: 1px dashed #c4b5fd;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6d28d9;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  margin-top: 0.75rem;
+}
+
+.chat-toggle-btn:hover {
+  background: #f3e8ff;
+  border-color: #8b5cf6;
+}
+
+.chat-section {
+  padding-bottom: 10px !important;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.chat-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chat-close-btn:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.chat-messages {
+  max-height: 280px;
+  min-height: 80px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.chat-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 20px 10px;
+  line-height: 1.5;
+}
+
+.chat-hint em {
+  color: #6d28d9;
+  font-size: 11px;
+}
+
+.chat-msg {
+  display: flex;
+}
+
+.chat-msg--user {
+  justify-content: flex-end;
+}
+
+.chat-msg--assistant {
+  justify-content: flex-start;
+}
+
+.chat-msg-bubble {
+  max-width: 85%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.chat-msg-user {
+  background: #2563eb;
+  color: white;
+  border-bottom-right-radius: 2px;
+}
+
+.chat-msg-ai {
+  background: #f1f5f9;
+  color: #1e293b;
+  border-bottom-left-radius: 2px;
+  border: 1px solid #e2e8f0;
+}
+
+.chat-msg-ai .markdown-body {
+  font-size: 12px;
+}
+
+.chat-cursor {
+  animation: blink 1s step-end infinite;
+  color: #6d28d9;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 12px;
+  background: white;
+  color: #1e293b;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.chat-input:focus {
+  border-color: #8b5cf6;
+}
+
+.chat-input:disabled {
+  opacity: 0.5;
+}
+
+.chat-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 6px;
+  background: #7c3aed;
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chat-send-btn:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── GenAI Agent Dropdown ─────────────────────────────────── */
+.genai-dropdown {
+  border-top: 2px solid #7c3aed !important;
+  padding-bottom: 8px !important;
+}
+
+.genai-dropdown-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 1px solid #c4b5fd;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.genai-dropdown-toggle:hover {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-color: #a78bfa;
+}
+
+.genai-dropdown-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6d28d9;
+  letter-spacing: 0.3px;
+}
+
+.genai-chevron {
+  color: #7c3aed;
+  transition: transform 0.2s ease;
+}
+
+.genai-chevron--open {
+  transform: rotate(180deg);
+}
+
+.genai-dropdown-content {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Expert Panel Sub-Dropdown ────────────────────────────── */
+.expert-panel-wrapper {
+  margin-top: 6px;
+}
+
+.expert-panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.expert-panel-toggle:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.expert-panel-toggle-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.expert-panel-body {
+  margin-top: 6px;
+}
+
+/* ── App Copilot (Floating) ───────────────────────────────── */
+.copilot-trigger {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 50px;
+  height: 50px;
+  border-radius: 25px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.copilot-trigger:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.5);
+}
+
+.copilot-window {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 320px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  z-index: 9999;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom right;
+}
+
+.copilot-minimized {
+  height: 44px !important;
+}
+
+.copilot-minimized .copilot-body,
+.copilot-minimized .copilot-footer {
+  display: none;
+}
+
+.copilot-header {
+  padding: 12px 16px;
+  background: linear-gradient(to right, #6366f1, #8b5cf6);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer; /* Can click header to toggle if we wanted */
+}
+
+.copilot-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.copilot-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.copilot-actions button {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+.copilot-actions button:hover {
+  color: white;
+}
+
+.copilot-body {
+  height: 350px;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+}
+
+.copilot-footer {
+  padding: 12px;
+  border-top: 1px solid #e2e8f0;
+  background: white;
+  display: flex;
+  gap: 8px;
+}
+
+.chat-line {
+  display: flex;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.chat-line-user {
+  justify-content: flex-end;
+}
+
+.chat-line-ai {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.chat-bubble-user {
+  background: #3b82f6;
+  color: white;
+  border-bottom-right-radius: 2px;
+}
+
+.chat-bubble-ai {
+  background: white;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 2px;
+}
+
+.chat-bubble-ai p {
+  margin: 0 0 6px 0;
+}
+
+.chat-bubble-ai p:last-child {
+  margin-bottom: 0;
+}

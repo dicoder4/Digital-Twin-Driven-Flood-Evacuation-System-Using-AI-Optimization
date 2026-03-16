@@ -103,40 +103,75 @@ Example Output Format:
                                     continue
                         return  # Successfully streamed via Groq, exit function
                     else:
-                        yield f"data: {json.dumps({'text': f'_(Groq API error {response.status_code}, falling back to offline model...)_\\n\\n'})}\n\n"
+                        err_text = "_(Groq API error " + str(response.status_code) + ", falling back to offline model...)_\n\n"
+                        yield "data: " + json.dumps({"text": err_text}) + "\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'text': f'_(Groq connection failed, falling back to offline model...)_\\n\\n'})}\n\n"
+            conn_err_text = "_(Groq connection failed, falling back to offline model...)_\n\n"
+            yield "data: " + json.dumps({"text": conn_err_text}) + "\n\n"
 
-    # Offline Fallback to Ollama
-    payload = {
-        "model": "llama3.2:latest",
-        "system": system_prompt,
-        "prompt": prompt_text,
-        "stream": True
-    }
-    
+    # Offline Fallback — Ollama (two-tier: llama3.2 → gemma3:1b)
     url = "http://localhost:11434/api/generate"
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            async with client.stream("POST", url, json=payload, timeout=None) as response:
-                if response.status_code != 200:
-                    err_msg = ""
-                    async for chunk in response.aiter_bytes():
-                        err_msg += chunk.decode()
-                    yield f"data: {json.dumps({'text': f'Error from Ollama: {err_msg}'})}\n\n"
-                    return
-                
-                async for line in response.aiter_lines():
-                    if line:
-                        try:
-                            data = json.loads(line)
-                            chunk_text = data.get("response", "")
-                            if chunk_text:
-                                yield f"data: {json.dumps({'text': chunk_text})}\n\n"
-                            if data.get("done"):
-                                break
-                        except json.JSONDecodeError:
-                            continue
-    except Exception as e:
-        yield f"data: {json.dumps({'text': f'Failed to connect to local Ollama (llama3.2:latest). Ensure Ollama is running.\\nError: {str(e)}'})}\n\n"
+    nl = "\n\n"   # newline sequence — avoids backslash-in-f-string on Python 3.11
+
+    async def _try_ollama(model_name: str):
+        """
+        Attempt to stream from a local Ollama model.
+        Yields SSE text chunks on success.
+        Yields the special sentinel False if the model is not found.
+        Yields the sentinel Exception if Ollama is unreachable.
+        """
+        payload = {
+            "model": model_name,
+            "system": system_prompt,
+            "prompt": prompt_text,
+            "stream": True,
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, json=payload, timeout=None) as response:
+                    if response.status_code != 200:
+                        err_bytes = b""
+                        async for chunk in response.aiter_bytes():
+                            err_bytes += chunk
+                        err_msg = err_bytes.decode()
+                        if "model" in err_msg.lower() and "not found" in err_msg.lower():
+                            yield False   # model missing — caller should try next
+                            return
+                        err_payload = json.dumps({"text": "_(Ollama error: " + err_msg + ")_" + nl})
+                        yield "data: " + err_payload + nl
+                        return
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                chunk_data = json.loads(line)
+                                chunk_text = chunk_data.get("response", "")
+                                if chunk_text:
+                                    yield "data: " + json.dumps({"text": chunk_text}) + nl
+                                if chunk_data.get("done"):
+                                    return
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as exc:
+            yield exc   # connection error — caller handles
+
+    # --- Try fallback 1: llama3.2:latest (peer's machine) ---
+    model_not_found = False
+    async for chunk in _try_ollama("llama3.2:latest"):
+        if chunk is False:
+            model_not_found = True
+            break
+        if isinstance(chunk, Exception):
+            break
+        yield chunk
+    if not model_not_found:
+        return   # llama3.2 streamed (or errored with a message already yielded)
+
+    # --- Fallback 2: gemma3:1b (available locally) ---
+    switch_msg = json.dumps({"text": "_(llama3.2 not found locally — switching to gemma3:1b...)_" + nl})
+    yield "data: " + switch_msg + nl
+    async for chunk in _try_ollama("gemma3:1b"):
+        if chunk is False or isinstance(chunk, Exception):
+            dead_msg = json.dumps({"text": "_(All local models unavailable. Ensure Ollama is running or set GROQ_API_KEY.)_"})
+            yield "data: " + dead_msg + nl
+            return
+        yield chunk

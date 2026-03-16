@@ -1,32 +1,46 @@
-import { useState } from 'react';
-import { Loader, Anchor, Truck, Megaphone, Cpu } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader, Truck, Anchor, Megaphone, Cpu, CheckCircle, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
 
-export function PanelOfExperts({ summary }) {
-    const [activeExpert, setActiveExpert] = useState(null);
+const TABS = [
+    { key: 'logistics', label: 'Logistics Chief', icon: Truck, color: '#2563eb', bgActive: '#eff6ff', loadingMsg: 'Calculating supply chains...' },
+    { key: 'tactical', label: 'Tactical Commander', icon: Anchor, color: '#d97706', bgActive: '#fffbeb', loadingMsg: 'Analyzing strategic routes...' },
+    { key: 'civic', label: 'Civic Authority', icon: Megaphone, color: '#16a34a', bgActive: '#f0fdf4', loadingMsg: 'Drafting civic communications...' },
+];
+
+export function PanelOfExperts({ summary, evacuationPlan }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState('logistics');
     const [responses, setResponses] = useState({ logistics: '', tactical: '', civic: '' });
     const [loading, setLoading] = useState({ logistics: false, tactical: false, civic: false });
+    const [fetched, setFetched] = useState({ logistics: false, tactical: false, civic: false });
 
-    // Stream function
+    // Auto-fetch on tab switch if not yet loaded (only when panel is open)
+    useEffect(() => {
+        if (isOpen && summary && activeTab && !fetched[activeTab] && !loading[activeTab]) {
+            fetchExpertise(activeTab);
+        }
+    }, [activeTab, summary, isOpen]);
+
     const fetchExpertise = (persona) => {
         if (!summary || loading[persona]) return;
-        
-        setActiveExpert(persona);
+
         setLoading(prev => ({ ...prev, [persona]: true }));
         setResponses(prev => ({ ...prev, [persona]: '' }));
 
-        const ctrl = new AbortController();
-        
         fetch(`${API_URL}/expert-advice-stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ persona, summary_data: summary }),
-            signal: ctrl.signal
+            body: JSON.stringify({
+                persona,
+                summary_data: summary,
+                evacuation_plan: evacuationPlan || [],
+            }),
         }).then(async res => {
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
-            while(true) {
+            while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 const chunk = decoder.decode(value);
@@ -41,9 +55,7 @@ export function PanelOfExperts({ summary }) {
                                     setResponses(prev => ({ ...prev, [persona]: prev[persona] + data.text }));
                                 }
                             }
-                        } catch (e) {
-                            // ignore json parse errors for incomplete chunks
-                        }
+                        } catch (e) { /* ignore */ }
                     }
                 }
             }
@@ -51,81 +63,102 @@ export function PanelOfExperts({ summary }) {
             setResponses(prev => ({ ...prev, [persona]: 'Error connecting to AI: ' + err.message }));
         }).finally(() => {
             setLoading(prev => ({ ...prev, [persona]: false }));
+            setFetched(prev => ({ ...prev, [persona]: true }));
         });
     };
 
+    const activeConfig = TABS.find(t => t.key === activeTab);
+
     return (
-        <section className="panel evac-section" style={{ borderTop: '2px solid #3b82f6', marginTop: '1rem' }}>
-            <h3 className="panel-title" style={{ color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Cpu size={14} /> AI Panel of Experts
-            </h3>
-            
-            <div className="expert-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '10px' }}>
-                {/* Logistics */}
-                <div style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '0.375rem', backgroundColor: activeExpert === 'logistics' ? '#eff6ff' : '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: '#1e293b' }}>
-                        <Truck size={16} color="#2563eb" /> Logistics Chief
-                    </div>
-                    <button 
-                        className="btn-sm btn-primary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                        disabled={loading['logistics'] || !summary}
-                        onClick={() => fetchExpertise('logistics')}>
-                        {loading['logistics'] ? <><Loader size={12} className="spin" /> Thinking...</> : 'Logistics Analysis'}
-                    </button>
-                </div>
+        <div className="expert-panel-wrapper">
+            {/* ── Toggle Header ─────────────────────────────── */}
+            <button
+                className="expert-panel-toggle"
+                onClick={() => setIsOpen(prev => !prev)}
+            >
+                <span className="expert-panel-toggle-title">
+                    <Cpu size={13} /> AI Panel of Experts
+                </span>
+                <ChevronDown
+                    size={13}
+                    className={`genai-chevron ${isOpen ? 'genai-chevron--open' : ''}`}
+                />
+            </button>
 
-                {/* Tactical */}
-                <div style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '0.375rem', backgroundColor: activeExpert === 'tactical' ? '#eff6ff' : '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: '#1e293b' }}>
-                        <Anchor size={16} color="#2563eb" /> Tactical Commander
-                    </div>
-                    <button 
-                        className="btn-sm btn-primary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                        disabled={loading['tactical'] || !summary}
-                        onClick={() => fetchExpertise('tactical')}>
-                        {loading['tactical'] ? <><Loader size={12} className="spin" /> Thinking...</> : 'Tactical Analysis'}
-                    </button>
-                </div>
+            {isOpen && (
+                <div className="expert-panel-body">
+                    {/* ── Tab Buttons ──────────────────────────────── */}
+                    <div className="expert-tabs">
+                        {TABS.map(tab => {
+                            const Icon = tab.icon;
+                            const isActive = activeTab === tab.key;
+                            const isDone = fetched[tab.key] && !loading[tab.key] && responses[tab.key];
+                            const isLoading = loading[tab.key];
 
-                {/* Civic */}
-                <div style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '0.375rem', backgroundColor: activeExpert === 'civic' ? '#eff6ff' : '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: '#1e293b' }}>
-                        <Megaphone size={16} color="#2563eb" /> Civic Authority
+                            return (
+                                <button
+                                    key={tab.key}
+                                    className={`expert-tab ${isActive ? 'expert-tab--active' : ''}`}
+                                    style={{
+                                        borderBottomColor: isActive ? tab.color : 'transparent',
+                                        color: isActive ? tab.color : '#64748b',
+                                        backgroundColor: isActive ? tab.bgActive : 'transparent',
+                                    }}
+                                    onClick={() => setActiveTab(tab.key)}
+                                >
+                                    <Icon size={13} />
+                                    <span className="expert-tab-label">{tab.label.split(' ')[0]}</span>
+                                    {isLoading && <Loader size={10} className="spin" />}
+                                    {isDone && <CheckCircle size={10} style={{ color: '#16a34a' }} />}
+                                </button>
+                            );
+                        })}
                     </div>
-                    <button 
-                        className="btn-sm btn-primary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                        disabled={loading['civic'] || !summary}
-                        onClick={() => fetchExpertise('civic')}>
-                        {loading['civic'] ? <><Loader size={12} className="spin" /> Thinking...</> : 'Civic Analysis'}
-                    </button>
-                </div>
-            </div>
-            
-            {activeExpert && (
-                <div className="expert-content custom-scrollbar" style={{ backgroundColor: '#ffffff', padding: '12px 16px', borderRadius: '6px', fontSize: '13px', minHeight: '150px', maxHeight: '400px', overflowY: 'auto', border: '2px solid #e2e8f0', color: '#334155', lineHeight: '1.6' }}>
-                    {loading[activeExpert] && !responses[activeExpert] && (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#64748b', height: '100px' }}>
-                            <Loader size={16} className="spin" />
-                            <span>{activeExpert === 'logistics' ? 'Calculating supply chains...' : activeExpert === 'tactical' ? 'Analyzing strategic routes...' : 'Drafting civic communications...'}</span>
-                        </div>
-                    )}
-                    
-                    {responses[activeExpert] && (
-                        <div className="markdown-body">
-                            <ReactMarkdown>{responses[activeExpert]}</ReactMarkdown>
-                        </div>
-                    )}
-                    
-                    {loading[activeExpert] && responses[activeExpert] && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '11px', color: '#94a3b8' }}>
-                            <Loader size={10} className="spin" /> Generating...
-                        </div>
-                    )}
+
+                    {/* ── Response Area ─────────────────────────────── */}
+                    <div
+                        className="expert-content custom-scrollbar"
+                        style={{
+                            backgroundColor: '#ffffff',
+                            padding: '12px 16px',
+                            borderRadius: '0 0 6px 6px',
+                            fontSize: '13px',
+                            minHeight: '150px',
+                            maxHeight: '400px',
+                            overflowY: 'auto',
+                            border: '1px solid #e2e8f0',
+                            borderTop: `2px solid ${activeConfig?.color || '#3b82f6'}`,
+                            color: '#334155',
+                            lineHeight: '1.6',
+                        }}
+                    >
+                        {loading[activeTab] && !responses[activeTab] && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#64748b', height: '100px' }}>
+                                <Loader size={16} className="spin" />
+                                <span>{activeConfig?.loadingMsg || 'Analyzing...'}</span>
+                            </div>
+                        )}
+
+                        {responses[activeTab] && (
+                            <div className="markdown-body">
+                                <ReactMarkdown>{responses[activeTab]}</ReactMarkdown>
+                            </div>
+                        )}
+
+                        {loading[activeTab] && responses[activeTab] && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '11px', color: '#94a3b8' }}>
+                                <Loader size={10} className="spin" /> Generating...
+                            </div>
+                        )}
+
+                        {!loading[activeTab] && !responses[activeTab] && fetched[activeTab] && (
+                            <div style={{ color: '#94a3b8', textAlign: 'center', marginTop: '40px' }}>
+                                No response received. Check API connectivity.
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
-        </section>
+        </div>
     );
 }

@@ -60,18 +60,61 @@ class LoadRegionRequest(BaseModel):
 class ExpertAdviceRequest(BaseModel):
     persona: str
     summary_data: dict
+    evacuation_plan: list = []
 
 @app.post("/expert-advice-stream")
 async def expert_advice_stream(req: ExpertAdviceRequest):
-    import sys, os
-    sys.path.append(os.path.join(os.path.dirname(__file__), "genai"))
-    from expert_panel import stream_advice
+    from genai.context_builder import build_expert_context
+    from genai.expert_panel import stream_advice
+    
+    # Enrich the raw summary data with severity tags, route stats, etc.
+    enriched_context = build_expert_context(req.summary_data, req.evacuation_plan)
     
     return StreamingResponse(
-        stream_advice(req.persona, req.summary_data),
+        stream_advice(req.persona, enriched_context),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
+
+
+class ChatRequest(BaseModel):
+    question: str
+    context: dict
+
+@app.post("/evacuation-chat")
+async def evacuation_chat(req: ChatRequest):
+    from genai.evacuation_chat import stream_chat
+    
+    return StreamingResponse(
+        stream_chat(req.question, req.context),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+
+class MCPStateUpdate(BaseModel):
+    summary_data: dict
+    evacuation_plan: list = []
+    hobli: str = ""
+
+@app.post("/mcp-update-state")
+async def mcp_update_state(req: MCPStateUpdate):
+    """Push latest simulation state to the MCP evacuation server's in-memory store."""
+    from genai.mcp_evacuation_server import update_state
+    update_state(req.summary_data, req.evacuation_plan, req.hobli)
+    return {"status": "ok", "message": "MCP state updated"}
+
+
+class CopilotRequest(BaseModel):
+    messages: list
+    available_hoblis: list = []
+    regions_tree: dict = {}
+
+@app.post("/app-copilot")
+async def app_copilot_endpoint(req: CopilotRequest):
+    from genai.app_copilot import ask_copilot
+    return await ask_copilot(req.messages, req.available_hoblis, req.regions_tree)
+
 
 @app.get("/regions")
 async def get_regions():
@@ -112,12 +155,13 @@ async def simulate_stream(
     evacuation_mode: bool = Query(False),
     use_traffic: bool = Query(False),
     algorithm:   str  = Query("ga", description="Optimisation algorithm: 'ga', 'aco', or 'pso'"),
+    population:  int | None = Query(None, description="Override population count"),
 ):
     """SSE stream of flood simulation steps."""
     return StreamingResponse(
         service.run_simulation_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic, algorithm
+            evacuation_mode, use_traffic, algorithm, population
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -132,6 +176,7 @@ async def simulate_compare(
     decay_factor:    float = Query(0.5),
     evacuation_mode: bool  = Query(False),
     use_traffic:     bool  = Query(False),
+    population:      int | None = Query(None),
 ):
     """
     SSE stream for algorithm comparison mode.
@@ -142,7 +187,7 @@ async def simulate_compare(
     return StreamingResponse(
         service.run_compare_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic,
+            evacuation_mode, use_traffic, population
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

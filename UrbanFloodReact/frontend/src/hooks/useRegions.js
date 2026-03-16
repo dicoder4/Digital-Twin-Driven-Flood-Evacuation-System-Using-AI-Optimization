@@ -36,10 +36,13 @@ export function useRegions() {
     const setDistrict = (d) => { setSelDistrict(d); setSelTaluk(''); setSelHobli(''); };
     const setTaluk = (t) => { setSelTaluk(t); setSelHobli(''); };
 
+    // Set all three atomically (used by Copilot's select_region to avoid cascade wiping)
+    const setAll = (d, t, h) => { setSelDistrict(d); setSelTaluk(t); setSelHobli(h); };
+
     return {
         regionsTree, districts, taluks, hoblis, allHoblis,
         selDistrict, selTaluk, selHobli,
-        setDistrict, setTaluk, setHobli: setSelHobli,
+        setDistrict, setTaluk, setHobli: setSelHobli, setAll,
         fetchError,
     };
 }

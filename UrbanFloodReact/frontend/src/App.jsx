@@ -26,6 +26,7 @@ import { FloodMap } from './components/FloodMap';
 import { DraSidebar } from './components/DraSidebar';
 import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';   // ← ESM import (no require() anywhere)
+import { AppCopilot } from './components/AppCopilot';
 import './App.css';
 
 export default function App() {
@@ -48,7 +49,7 @@ export default function App() {
 
   // ── Simulation params ─────────────────────────────────────────
   const [rainfallMm, setRainfallMm] = useState(150);
-  const [steps, setSteps] = useState(20);
+  const [steps, setSteps] = useState(5);
   const [decayFactor, setDecayFactor] = useState(0.5);
   const [algoInfoOpen, setAlgoInfoOpen] = useState(false);
 
@@ -98,25 +99,26 @@ export default function App() {
   );
 
   // ── Load Region ───────────────────────────────────────────────
-  const handleLoadRegion = useCallback(async () => {
-    if (!regions.selHobli) return;
+  const handleLoadRegion = useCallback(async (hobliOverride) => {
+    const targetHobli = typeof hobliOverride === 'string' ? hobliOverride : regions.selHobli;
+    if (!targetHobli) return;
     setRegionLoading(true);
-    sim.setStatusMsg(`Loading ${regions.selHobli} …`);
+    sim.setStatusMsg(`Loading ${targetHobli} …`);
     sim.clearMap();
     setPopulationCount(0);
     setUnsafePeopleCount(0);
     setShelterCandidates([]);
     setActiveTab('setup');
     try {
-      const res = await axios.post(`${API_URL}/load-region`, { hobli: regions.selHobli });
+      const res = await axios.post(`${API_URL}/load-region`, { hobli: targetHobli });
       const { lat, lon } = res.data;
       setViewState(v => ({ ...v, longitude: lon, latitude: lat, zoom: 14 }));
-      const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: regions.selHobli } });
+      const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: targetHobli } });
       setBaseRoadsData(mapRes.data);
-      setLoadedHobli(regions.selHobli);
+      setLoadedHobli(targetHobli);
       setRegionLoaded(true);
       setSelRec(null);
-      sim.setStatusMsg(`${regions.selHobli} ready. Configure simulation and run.`);
+      sim.setStatusMsg(`${targetHobli} ready. Configure simulation and run.`);
     } catch (err) {
       sim.setStatusMsg(`Error: ${err.response?.data?.detail || err.message}`);
     } finally {
@@ -128,12 +130,35 @@ export default function App() {
   const handleTaluk = (t) => { regions.setTaluk(t); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
   const handleHobli = (h) => { regions.setHobli(h); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
 
+  // ── Copilot: select region (finds district+taluk from tree) ───
+  const handleSelectRegion = useCallback((hobli) => {
+    const tree = regions.regionsTree || {};
+    let foundDistrict = null, foundTaluk = null;
+    for (const [dist, taluks] of Object.entries(tree)) {
+      for (const [taluk, hoblis] of Object.entries(taluks)) {
+        if (hoblis.includes(hobli)) { foundDistrict = dist; foundTaluk = taluk; break; }
+      }
+      if (foundDistrict) break;
+    }
+    // Set all three atomically to avoid cascade wiping
+    if (foundDistrict && foundTaluk) {
+      regions.setAll(foundDistrict, foundTaluk, hobli);
+    }
+    setRegionLoaded(false);
+    sim.reset();
+    setPopulationCount(0);
+    setUnsafePeopleCount(0);
+    setShelterCandidates([]);
+    // Load the region into backend memory and navigate to config
+    handleLoadRegion(hobli).then(() => setActiveTab('config'));
+  }, [regions, handleLoadRegion, sim]);
+
   // ── Start single simulation ───────────────────────────────────
   const handleStart = () => {
     if (!regionLoaded) return;
     setCompareResults(null);
     setActiveTab('setup');
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm);
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount);
   };
 
   // ── DRA Mode: Automatic ACO + Traffic run ────────────────────
@@ -148,7 +173,7 @@ export default function App() {
     setEvacuationMode(false);
     setActiveTab('setup');
     
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco');
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco', populationCount);
   };
 
   // ── Reset everything ──────────────────────────────────────────
@@ -167,7 +192,7 @@ export default function App() {
   // frames it uses for map animation, then one 'compare_done' frame
   // containing all three results simultaneously.
   // This reduces compare time from ~3× to ~1× a single run.
-  const handleCompare = useCallback(() => {
+  const handleCompare = useCallback((overrideHobli, overrideRainfall, overrideEvac, overrideTraffic) => {
     if (!regionLoaded || compareRunning) return;
     compareAbortRef.current = false;
     setCompareResults(null);
@@ -176,14 +201,20 @@ export default function App() {
     sim.reset();
     sim.setStatusMsg('Compare: flood simulation in progress…');
 
+    const runHobli = overrideHobli || loadedHobli;
+    if (!runHobli) return;
+
     const params = new URLSearchParams({
-      hobli: loadedHobli,
-      rainfall_mm: rainfallMm,
+      hobli: runHobli,
+      rainfall_mm: overrideRainfall !== undefined ? overrideRainfall : rainfallMm,
       steps,
       decay_factor: decayFactor,
-      evacuation_mode: evacuationMode,
-      use_traffic: useTraffic,
+      evacuation_mode: overrideEvac !== undefined ? overrideEvac : evacuationMode,
+      use_traffic: overrideTraffic !== undefined ? overrideTraffic : useTraffic,
     });
+    if (populationCount !== null && populationCount !== undefined) {
+      params.append('population', populationCount);
+    }
 
     const es = new EventSource(`${API_URL}/simulate-compare?${params}`);
 
@@ -552,6 +583,7 @@ export default function App() {
                 compareActiveAlgo={compareActiveAlgo}
                 onSetCompareAlgo={setCompareActiveAlgo}
                 isDraMode={isDraMode}
+                evacuationPlan={sim.evacuationPlan || []}
               />
             )}
           </div>
@@ -589,6 +621,62 @@ export default function App() {
         showTraffic={useTraffic && (sim.simulationDone || !!compareResults)}
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
+      />
+
+      <AppCopilot 
+        availableHoblis={regions.allHoblis || []}
+        regionsTree={regions.regionsTree || {}}
+        populationCount={populationCount}
+        onNavigate={(tab) => {
+          if (tab === 'evacuate' || tab === 'evacuation') {
+            setActiveTab('evacuation');
+            return;
+          }
+          if (tab === 'compare') {
+            setCompareMode(true);
+            setActiveTab('setup');
+            return;
+          }
+          setActiveTab('setup');
+        }}
+        onSelectRegion={handleSelectRegion}
+        onUpdateParams={({ algorithm: algo, rainfall, evacuationMode: evac, useTraffic: traffic }) => {
+          if (algo) setAlgorithm(algo);
+          if (rainfall) setRainfallMm(rainfall);
+          if (evac !== undefined) setEvacuationMode(evac);
+          if (traffic !== undefined) setUseTraffic(traffic);
+        }}
+        onRunSimulation={(newHobli, newRainfall, algo, evac, traffic) => {
+          const runHobli = newHobli || loadedHobli;
+          // Sync sidebar state so UI reflects what's actually running
+          if (algo) setAlgorithm(algo);
+          if (newRainfall) setRainfallMm(newRainfall);
+          if (evac !== undefined) setEvacuationMode(evac);
+          if (traffic !== undefined) setUseTraffic(traffic);
+          if (runHobli) {
+            setActiveTab('setup');
+            if (algo === 'all') {
+              setCompareMode(true);
+              // Wait for React state to settle slightly since compare reads 'steps' and 'decayFactor'
+              // but we pass our immediate overrides for the rest.
+              setTimeout(() => {
+                handleCompare(runHobli, newRainfall, evac, traffic);
+              }, 0);
+            } else {
+              setCompareMode(false);
+              sim.start(
+                runHobli,
+                newRainfall || 150,
+                5,    // steps
+                0.05,   // decay
+                evac || false,
+                traffic || false,
+                algo || 'aco',
+                populationCount // pass population count to simulation
+              );
+            }
+          }
+        }}
       />
     </div>
   );
