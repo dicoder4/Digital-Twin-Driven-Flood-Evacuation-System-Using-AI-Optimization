@@ -142,7 +142,7 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
             {/* Live Traffic indicator chip */}
             {showTraffic && (
                 <div className="map-chip map-chip-traffic">
-                    🚦 Live Traffic{hasTrafficData ? ` · ${trafficRoadsData.features.length} roads` : ' · fetching…'}
+                    🚦 Live Traffic
                 </div>
             )}
 

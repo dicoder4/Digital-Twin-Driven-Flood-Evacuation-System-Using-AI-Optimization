@@ -283,6 +283,20 @@ export default function App() {
           sim.setStatusMsg(
             `Compare complete — showing ${bestAlgo?.toUpperCase() ?? ''} routes (best fitness)`
           );
+
+          // Sync the "winner" result to MCP server
+          if (bestAlgo) {
+            const winner = finalResults[bestAlgo];
+            fetch(`${API_URL}/mcp-update-state`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                summary_data: winner,
+                evacuation_plan: winner.evacuation_plan || [],
+                hobli: runHobli,
+              }),
+            }).catch(() => {});
+          }
         } else {
           sim.setStatusMsg('Compare finished — no results returned.');
         }

@@ -25,7 +25,10 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mcp.server.fastmcp import FastMCP
-from context_builder import build_expert_context
+try:
+    from genai.context_builder import build_expert_context
+except ImportError:
+    from context_builder import build_expert_context
 
 # ── Create MCP Server ─────────────────────────────────────────────────────────
 mcp = FastMCP("Urban Flood Evacuation AI Server")
