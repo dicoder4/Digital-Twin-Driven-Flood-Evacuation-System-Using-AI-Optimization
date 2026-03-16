@@ -1,7 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { Bot, X, Send, ChevronUp, Loader } from 'lucide-react';
+import { Bot, X, Send, ChevronUp, Loader, Maximize2, Minimize2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
+
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 320;
+const DEFAULT_SIZE = { width: 320, height: 506 };
+const EXPANDED_SIZE = { width: 560, height: 760 };
+const WINDOW_MARGIN = 24;
 
 /** Multi-select toggle chips with a Confirm button */
 function OptionChips({ options, disabled, onConfirm }) {
@@ -85,7 +91,159 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isResizing, setIsResizing] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+    const [windowState, setWindowState] = useState({
+        width: DEFAULT_SIZE.width,
+        height: DEFAULT_SIZE.height,
+        left: null, // null means use CSS fixed positioning (bottom/right)
+        top: null
+    });
+
     const endRef = useRef(null);
+    const interactionRef = useRef(null); // stores startX, startY, startW, startH, startL, startT, direction
+    const preExpandStateRef = useRef(null);
+
+    const clampSizeToViewport = (nextSize) => {
+        const maxWidth = Math.max(MIN_WIDTH, window.innerWidth - (WINDOW_MARGIN * 2));
+        const maxHeight = Math.max(MIN_HEIGHT, window.innerHeight - (WINDOW_MARGIN * 2));
+        return {
+            width: Math.min(maxWidth, Math.max(MIN_WIDTH, nextSize.width)),
+            height: Math.min(maxHeight, Math.max(MIN_HEIGHT, nextSize.height)),
+        };
+    };
+
+    const stopInteraction = () => {
+        globalThis.removeEventListener('mousemove', onMouseMove);
+        globalThis.removeEventListener('mouseup', stopInteraction);
+        interactionRef.current = null;
+        setIsResizing(false);
+        setIsDragging(false);
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+    };
+
+    const onMouseMove = (event) => {
+        if (!interactionRef.current) return;
+        const { type, direction, startX, startY, startW, startH, startL, startT } = interactionRef.current;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+
+        if (type === 'drag') {
+            setWindowState(prev => ({
+                ...prev,
+                left: startL + dx,
+                top: startT + dy
+            }));
+            return;
+        }
+
+        // type === 'resize'
+        let nextW = startW;
+        let nextH = startH;
+        let nextL = startL;
+        let nextT = startT;
+
+        if (direction.includes('e')) nextW = startW + dx;
+        if (direction.includes('w')) {
+            nextW = startW - dx;
+            nextL = startL + dx;
+        }
+        if (direction.includes('s')) nextH = startH + dy;
+        if (direction.includes('n')) {
+            nextH = startH - dy;
+            nextT = startT + dy;
+        }
+
+        // Enforce Min Size
+        if (nextW < MIN_WIDTH) {
+            if (direction.includes('w')) nextL = startL + (startW - MIN_WIDTH);
+            nextW = MIN_WIDTH;
+        }
+        if (nextH < MIN_HEIGHT) {
+            if (direction.includes('n')) nextT = startT + (startH - MIN_HEIGHT);
+            nextH = MIN_HEIGHT;
+        }
+
+        setWindowState({ width: nextW, height: nextH, left: nextL, top: nextT });
+    };
+
+    const startResize = (event, direction) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (isMinimized) return;
+
+        const rect = event.currentTarget.closest('.copilot-window').getBoundingClientRect();
+        setIsResizing(true);
+        interactionRef.current = {
+            type: 'resize',
+            direction,
+            startX: event.clientX,
+            startY: event.clientY,
+            startWidth: windowState.width,
+            startHeight: windowState.height,
+            startW: rect.width,
+            startH: rect.height,
+            startL: rect.left,
+            startT: rect.top
+        };
+
+        document.body.style.userSelect = 'none';
+        
+        let cursor = 'nwse-resize';
+        if (direction === 'n' || direction === 's') cursor = 'ns-resize';
+        if (direction === 'e' || direction === 'w') cursor = 'ew-resize';
+        if (direction === 'ne' || direction === 'sw') cursor = 'nesw-resize';
+        
+        document.body.style.cursor = cursor;
+        globalThis.addEventListener('mousemove', onMouseMove);
+        globalThis.addEventListener('mouseup', stopInteraction);
+    };
+
+    const startDrag = (event) => {
+        if (isMinimized || isResizing || event.target.closest('.copilot-actions')) return;
+        event.preventDefault();
+        
+        const rect = event.currentTarget.closest('.copilot-window').getBoundingClientRect();
+        setIsDragging(true);
+        interactionRef.current = {
+            type: 'drag',
+            startX: event.clientX,
+            startY: event.clientY,
+            startL: rect.left,
+            startT: rect.top
+        };
+
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'move';
+        globalThis.addEventListener('mousemove', onMouseMove);
+        globalThis.addEventListener('mouseup', stopInteraction);
+    };
+
+    const toggleExpand = () => {
+        if (isExpanded) {
+            if (preExpandStateRef.current) {
+                setWindowState(preExpandStateRef.current);
+            } else {
+                setWindowState(prev => ({ ...prev, width: DEFAULT_SIZE.width, height: DEFAULT_SIZE.height }));
+            }
+            setIsExpanded(false);
+            return;
+        }
+
+        // Get current rect to preserve L/T if active
+        const rect = document.querySelector('.copilot-window')?.getBoundingClientRect();
+        preExpandStateRef.current = { ...windowState };
+        
+        setWindowState({
+            width: EXPANDED_SIZE.width,
+            height: EXPANDED_SIZE.height,
+            left: rect ? rect.left - (EXPANDED_SIZE.width - rect.width) / 2 : null,
+            top: rect ? rect.top - (EXPANDED_SIZE.height - rect.height) / 2 : null
+        });
+        setIsExpanded(true);
+    };
 
     // ... lines omitted for space ...
 
@@ -95,6 +253,12 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
             endRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages, isOpen, isMinimized, isTyping]);
+
+    useEffect(() => {
+        return () => {
+            stopInteraction();
+        };
+    }, []);
 
     const handleSend = async () => {
         if (!input.trim() || isTyping) return;
@@ -219,15 +383,49 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
         );
     }
 
+    const chatBodyHeight = Math.max(170, windowState.height - 156);
+
+    const windowStyle = {
+        width: `${windowState.width}px`,
+        height: isMinimized ? '44px' : `${windowState.height}px`,
+    };
+    if (windowState.left !== null) {
+        windowStyle.left = `${windowState.left}px`;
+        windowStyle.top = `${windowState.top}px`;
+        windowStyle.right = 'auto';
+        windowStyle.bottom = 'auto';
+        windowStyle.transform = 'none';
+    }
+
     return (
-        <div className={`copilot-window ${isMinimized ? 'copilot-minimized' : ''}`}>
+        <div
+            className={`copilot-window ${isMinimized ? 'copilot-minimized' : ''} ${isExpanded ? 'copilot-expanded' : ''} ${isResizing || isDragging ? 'copilot-resizing' : ''}`}
+            style={windowStyle}
+        >
+            {/* Draggable Borders/Handles (Free Resize like Word) */}
+            {!isMinimized && (
+                <>
+                    <div className="resizer resizer-n" onMouseDown={e => startResize(e, 'n')} />
+                    <div className="resizer resizer-e" onMouseDown={e => startResize(e, 'e')} />
+                    <div className="resizer resizer-s" onMouseDown={e => startResize(e, 's')} />
+                    <div className="resizer resizer-w" onMouseDown={e => startResize(e, 'w')} />
+                    <div className="resizer resizer-nw" onMouseDown={e => startResize(e, 'nw')} />
+                    <div className="resizer resizer-ne" onMouseDown={e => startResize(e, 'ne')} />
+                    <div className="resizer resizer-se" onMouseDown={e => startResize(e, 'se')} />
+                    <div className="resizer resizer-sw" onMouseDown={e => startResize(e, 'sw')} />
+                </>
+            )}
+
             {/* Header */}
-            <div className="copilot-header">
+            <div className="copilot-header" onMouseDown={startDrag}>
                 <div className="copilot-title">
                     <Bot size={18} />
                     <span>App Copilot</span>
                 </div>
                 <div className="copilot-actions">
+                    <button onClick={toggleExpand} title={isExpanded ? 'Restore size' : 'Expand'}>
+                        {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                    </button>
                     <button onClick={() => setIsMinimized(!isMinimized)} title={isMinimized ? "Expand" : "Minimize"}>
                         <ChevronUp size={16} style={{ transform: isMinimized ? 'rotate(180deg)' : 'none' }} />
                     </button>
@@ -240,7 +438,7 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
             {/* Chat Body (hidden if minimized) */}
             {!isMinimized && (
                 <>
-                    <div className="copilot-body custom-scrollbar">
+                    <div className="copilot-body custom-scrollbar" style={{ height: `${chatBodyHeight}px` }}>
                         {messages.map((msg, idx) => (
                             <div key={idx} className={`chat-line ${msg.role === 'user' ? 'chat-line-user' : 'chat-line-ai'}`}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
@@ -315,6 +513,8 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
                             <Send size={16} />
                         </button>
                     </div>
+
+                    {/* No legacy handle needed, multiple resizers added above */}
                 </>
             )}
         </div>

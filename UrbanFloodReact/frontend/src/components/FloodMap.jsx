@@ -34,14 +34,15 @@ const BASE_ROAD_PAINT = {
 };
 
 // Flood area fill — dark blue (distinct from green people dots)
+// Flood area fill — Premium high-fidelity palette
 const FLOOD_FILL_PAINT = {
     'fill-color': [
         'interpolate', ['linear'], ['coalesce', ['get', 'intensity'], 0.2],
-        0.2, 'rgba(29,78,216,0.35)',
-        0.6, 'rgba(30,58,138,0.58)',
-        1.0, 'rgba(15,23,79,0.80)',
+        0.2, 'rgba(59, 130, 246, 0.75)', // Shallow Blue
+        0.6, 'rgba(11, 146, 243, 0.45)',  // Moderate Blue
+        1.0, 'rgba(2, 45, 125, 0.85)',    // Deep Navy (High Intensity)
     ],
-    'fill-outline-color': 'rgba(30,58,138,0.6)',
+    'fill-outline-color': 'rgba(30, 58, 138, 0.45)',
 };
 
 // Flooded roads: colour from `risk` field
@@ -139,19 +140,12 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                 </div>
             )}
 
-            {/* Live Traffic indicator chip */}
-            {showTraffic && (
-                <div className="map-chip map-chip-traffic">
-                    🚦 Live Traffic
-                </div>
-            )}
-
-            {/* Live Traffic toggle button — only shown when traffic data available */}
+            {/* Live Traffic UI — functions as both status AND control */}
             {hasTrafficData && (
                 <button
                     className={`map-traffic-toggle ${showTrafficPins ? 'map-traffic-toggle--on' : ''}`}
                     onClick={onToggleTrafficPins}
-                    title={showTrafficPins ? 'Hide traffic lines' : 'Show traffic lines'}
+                    title={showTrafficPins ? 'Hide traffic signal indicators' : 'Show traffic signal indicators'}
                 >
                     🚦 {showTrafficPins ? 'Hide Traffic' : 'Show Traffic'}
                 </button>

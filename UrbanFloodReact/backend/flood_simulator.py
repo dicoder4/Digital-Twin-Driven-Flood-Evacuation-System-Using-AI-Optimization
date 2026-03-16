@@ -233,7 +233,7 @@ class UrbanFloodSimulator:
             flood_gdf = gpd.GeoDataFrame(features, crs=self.G.graph['crs'])
 
         # --- Flooded roads layer (absolute depth thresholds) ---
-        road_geoms, road_risks, road_depths = [], [], []
+        road_geoms, road_risks, road_depths, road_hashes = [], [], [], []
 
         for u, v, k, data in self.G.edges(keys=True, data=True):
             u_depth = node_depths.get(u, 0.0)
@@ -252,6 +252,7 @@ class UrbanFloodSimulator:
 
                 road_geoms.append(geom)
                 road_depths.append(round(avg_depth_cm, 1))
+                road_hashes.append((u, v)) # store for node id extraction
 
                 # Absolute thresholds — not relative — so colors spread meaningfully
                 if avg_depth_cm < 20.0:
@@ -265,7 +266,9 @@ class UrbanFloodSimulator:
             roads_gdf = gpd.GeoDataFrame({
                 'geometry': road_geoms,
                 'risk': road_risks,
-                'depth_cm': road_depths
+                'depth_cm': road_depths,
+                'u_id': [h[0] for h in road_hashes],
+                'v_id': [h[1] for h in road_hashes]
             }, crs=self.G.graph['crs'])
         else:
             roads_gdf = gpd.GeoDataFrame(

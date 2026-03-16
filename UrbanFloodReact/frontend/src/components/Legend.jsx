@@ -18,9 +18,9 @@ export function Legend({ visible, showTraffic }) {
                     <LegendRow color="#ef4444" label="High (> 15 cm)" />
 
                     <p className="legend-section" style={{ marginTop: 8 }}>FLOOD AREA</p>
-                    <LegendRow color="rgba(56,189,248,0.4)" label="Shallow (< 5 cm)" box />
-                    <LegendRow color="rgba(14,165,233,0.6)" label="Moderate (5–15 cm)" box />
-                    <LegendRow color="rgba(2,132,199,0.8)" label="Deep (> 15 cm)" box />
+                    <LegendRow color="rgba(147, 197, 253, 0.45)" label="Shallow (< 5 cm)" box />
+                    <LegendRow color="rgba(59, 130, 246, 0.75)" label="Moderate (5–15 cm)" box />
+                    <LegendRow color="rgba(3, 23, 174, 0.85)" label="Deep (> 15 cm)" box />
                 </>
             )}
 

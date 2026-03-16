@@ -496,10 +496,10 @@ body,
   padding: 12px 14px;
   font-size: 11px;
   color: var(--text);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(6px);
-  min-width: 160px;
-  pointer-events: none;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  min-width: 170px;
+  z-index: 1000;
 }
 
 .legend-title {
@@ -2057,7 +2057,7 @@ body,
 .copilot-trigger {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  left: calc(var(--sidebar-w) + 24px);
   width: 50px;
   height: 50px;
   border-radius: 25px;
@@ -2081,7 +2081,7 @@ body,
 .copilot-window {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  left: calc(var(--sidebar-w) + 24px);
   width: 320px;
   background: white;
   border-radius: 12px;
@@ -2091,8 +2091,14 @@ body,
   flex-direction: column;
   z-index: 9999;
   overflow: hidden;
+  max-width: calc(100vw - var(--sidebar-w) - 48px);
+  max-height: calc(100vh - 48px);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  transform-origin: bottom right;
+  transform-origin: bottom left;
+}
+
+.copilot-resizing {
+  transition: none;
 }
 
 .copilot-minimized {
@@ -2202,4 +2208,58 @@ body,
 
 .chat-bubble-ai p:last-child {
   margin-bottom: 0;
+}
+
+.copilot-resize-handle {
+  display: none; /* replaced by 8-point resizers */
+}
+
+/* 8-point Resizers */
+.resizer {
+  position: absolute;
+  z-index: 10;
+}
+
+/* Edge resizers */
+.resizer-n { top: -4px; left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
+.resizer-s { bottom: -4px; left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
+.resizer-e { top: 10px; bottom: 10px; right: -4px; width: 8px; cursor: ew-resize; }
+.resizer-w { top: 10px; bottom: 10px; left: -4px; width: 8px; cursor: ew-resize; }
+
+/* Corner resizers (Small squares like Word) */
+.resizer-nw, .resizer-ne, .resizer-se, .resizer-sw {
+  width: 12px;
+  height: 12px;
+  background: white;
+  border: 1px solid #6366f1;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.resizer-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.resizer-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.resizer-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+.resizer-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+
+.copilot-header {
+  padding: 12px 16px;
+  background: linear-gradient(to right, #6366f1, #8b5cf6);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.copilot-header:active {
+  cursor: grabbing;
+}
+
+.copilot-resizing {
+  transition: none !important;
+}
+
+.copilot-resizing .copilot-body {
+  pointer-events: none; /* prevent iframe interactions during resize if any */
 }
