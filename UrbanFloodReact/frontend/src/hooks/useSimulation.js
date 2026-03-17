@@ -72,7 +72,13 @@ export function useSimulation() {
             if (data.done) {
                 es.close(); esRef.current = null;
                 clearInterval(timerRef.current); timerRef.current = null;
-                setIsRunning(false); setSimulationDone(true);
+                setIsRunning(false);
+                if (data.error) {
+                    setSimulationDone(false);
+                    setStatusMsg(`Simulation failed: ${data.error}`);
+                    return;
+                }
+                setSimulationDone(true);
                 if (data.summary) {
                     setFinalReport(data);
                     const evac = data.summary.total_evacuated || 0;

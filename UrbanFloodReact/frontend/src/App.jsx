@@ -207,7 +207,7 @@ export default function App() {
     sim.reset();
     sim.setStatusMsg('Compare: flood simulation in progress…');
 
-    const runHobli = overrideHobli || loadedHobli;
+    const runHobli = (typeof overrideHobli === 'string' ? overrideHobli : null) || loadedHobli;
     if (!runHobli) return;
 
     const params = new URLSearchParams({
@@ -258,6 +258,14 @@ export default function App() {
         // ── compare_done frame — all three results arrive at once ────────
         clearTimeout(timeout);
         es.close();
+
+        if (data.error) {
+          setCompareResults(null);
+          setCompareRunning(false);
+          setCompareProgress('');
+          sim.setStatusMsg(`Compare failed: ${data.error}`);
+          return;
+        }
 
         const rawResults = data.results || {};
 

@@ -126,9 +126,22 @@ async def fetch_map_geojson(hobli_name: str):
 async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None):
     """Generator for SSE simulation stream."""
     import time
+    loop = asyncio.get_event_loop()
+    if not hobli or hobli.strip() == "[object Object]":
+        raise HTTPException(status_code=400, detail="Invalid hobli name '[object Object]'. Please reload region.")
     key = norm_key(hobli)
     if key not in REGION_CACHE:
-        raise HTTPException(status_code=400, detail=f"Region '{hobli}' not loaded.")
+        try:
+            await loop.run_in_executor(None, get_region, key)
+        except Exception as e:
+            err_frame = {
+                "compare_done": True,
+                "total": steps,
+                "results": {},
+                "error": f"Region '{hobli}' not loaded: {e}",
+            }
+            yield f"data: {json.dumps(err_frame)}\n\n"
+            return
 
     entry  = REGION_CACHE[key]
     G_ref  = entry["G"]
@@ -155,8 +168,6 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     # 2. Pre-fetch shelters
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
-
-    loop = asyncio.get_event_loop()
 
     # ── Streaming loop: flood physics only, no GA ─────────────────────────
     for i in range(steps):
@@ -412,10 +423,16 @@ async def run_compare_generator(
     """
     import time
     import concurrent.futures
+    loop = asyncio.get_event_loop()
 
+    if not hobli or hobli.strip() == "[object Object]":
+        raise HTTPException(status_code=400, detail="Invalid hobli name '[object Object]'. Please reload region.")
     key = norm_key(hobli)
     if key not in REGION_CACHE:
-        raise HTTPException(status_code=400, detail=f"Region '{hobli}' not loaded.")
+        try:
+            await loop.run_in_executor(None, get_region, key)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Region '{hobli}' not loaded: {e}")
 
     entry  = REGION_CACHE[key]
     G_ref  = entry["G"]
@@ -439,8 +456,6 @@ async def run_compare_generator(
     # Shelters
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
-
-    loop = asyncio.get_event_loop()
 
     # ── Phase 1: stream flood steps (identical to single-algo mode) ──────────
     print(f"{_ts()}  [compare] Starting flood simulation ({steps} steps)")
