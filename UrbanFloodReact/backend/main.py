@@ -21,7 +21,7 @@ from generate_people import load_population, POPULATION_CSV
 import service
 
 from genai.param_resolver import resolve_hobli
-from genai.mcp_weather_client import WeatherClient
+from genai.weather_client import WeatherClient
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────

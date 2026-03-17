@@ -35,20 +35,20 @@ Your role: Analyze the provided evacuation summary and routes, and issue concret
 Instructions:
 1. Specify exactly where to place NDRF (National Disaster Response Force) personnel based on high risk or capacity constraints.
 2. Specify where to deploy life boats based on flooded routes.
-3. Specify where to assign traffic cops to manage the evacuation routes to prevent blockages.
+3. Specify where to assign traffic cops to manage the evacuation routes to prevent blockages. USE the specific road names provided in 'pressure_junctures' (look for 'location_name').
 4. Keep the response highly structured and actionable. Do not provide generic observations.
 5. IMPORTANT: Do NOT explain your reasoning, and do NOT summarize or describe the input data. Provide ONLY the action plan output.
 
 Example Output Format:
 **NDRF Deployment:**
 - Station 10 personnel at Shelter Alpha to assist with overcrowding.
-- Deploy 5 personnel to the Main Bridge for crowd control.
+- Deploy 5 personnel to high-flow junction at [Location Name].
 
 **Life Boat Deployment:**
-- Deploy 3 life boats along Route A due to high water levels.
+- Deploy 3 life boats along flooded segments near [Location Name].
 
 **Traffic Management:**
-- Assign cops at Intersection X and Y to redirect traffic away from flooded routes.""",
+- Assign cops at [Location Name A] and [Location Name B] to manage heavy converging flow from multiple evacuation routes.""",
 
     "civic": """You are the Civic Authority for a Digital Twin-Driven Flood Evacuation System. The purpose of this project is to optimize the evacuation of citizens from flood-prone areas to safe shelters.
 Your role: Generate a standardized government situation report and draft a brief public warning based on the flood evacuation data.

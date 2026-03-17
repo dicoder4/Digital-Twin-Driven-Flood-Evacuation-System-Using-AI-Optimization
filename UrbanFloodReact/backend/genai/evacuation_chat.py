@@ -27,15 +27,14 @@ Context structure guide:
   Fields: origin_node, to_shelter, evacuees (group size), distance_m, path_points (waypoints), fallback_route.
   Sorted by evacuees descending — the first entry is the largest evacuation group.
 - `pressure_junctures`: Critical bottlenecks detected in the road network.
-  Fields: node_id, lat, lon, total_evacuees, route_count, flood_depth.
-  Use this to answer questions about traffic pressure or high-risk junctions.
+  Fields: node_id, location_name, lat, lon, total_evacuees, route_count, flood_depth.
+  Use 'location_name' to provide specific street/junction names to the user.
 - `shelters_by_inflow`: Shelters ranked by total evacuees received (sum of all routes to that shelter).
 - `route_overview`: Aggregated route stats (total routes, avg/max distance, fallback count).
 - `shelters`: Per-shelter occupancy, capacity, and status (CRITICAL / HIGH / MODERATE / EMPTY).
 
 What you CANNOT answer from this data (be explicit if asked):
-- Which exact Street Name (e.g., 'MG Road') had the most people — only Node IDs are available.
-- Specific per-second traffic delays (TomTom gives real-time, but only the aggregate routing is exported here).
+- Specific per-second traffic delays (TomTom gives real-time, but only the aggregate routing is used here).
 For these, suggest users look at the Live Map for visual street-level labels."""
 
 

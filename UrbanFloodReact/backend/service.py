@@ -39,6 +39,9 @@ _PLANNER_MAP = {
 def _get_planner_class(algorithm: str):
     """Return the planner class for the given algorithm key (case-insensitive)."""
     key = algorithm.lower().strip()
+    if key == "all":
+        # Fallback to ACO if 'all' leaks into single simulation path
+        return ACOEvacuationPlanner
     if key not in _PLANNER_MAP:
         raise ValueError(f"Unknown algorithm '{algorithm}'. Choose from: {list(_PLANNER_MAP.keys())}")
     return _PLANNER_MAP[key]

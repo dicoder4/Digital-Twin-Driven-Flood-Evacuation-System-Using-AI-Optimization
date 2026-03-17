@@ -181,8 +181,8 @@ def build_expert_context(summary_data: dict, evacuation_plan: list = None) -> di
         "route_details contains one entry per evacuation route (group of people from one "
         "at-risk cluster to one shelter). 'distance_m' is the road-network distance. "
         "'path_points' is the number of coordinate waypoints along the road path. "
-        "Street names are NOT available — only shelter names and distances are known. "
-        "Flood depth per junction and per-segment TomTom delays are not stored in this state."
+        "Street names for critical pressure_junctures are fully available via 'location_name'. "
+        "Detailed street names for every segment of every path are NOT stored here to save space."
     )
 
     return context
