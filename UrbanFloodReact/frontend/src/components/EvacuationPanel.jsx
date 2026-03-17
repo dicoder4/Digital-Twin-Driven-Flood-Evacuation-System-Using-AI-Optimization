@@ -6,8 +6,10 @@
  *  - Clickable shelter rows → reveals routes on map for that shelter
  *  - Unreachable population alert
  */
-import { useMemo } from 'react';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, Trophy, Zap } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu } from 'lucide-react';
+import { PanelOfExperts } from './PanelOfExperts';
+import { EvacuationChat } from './EvacuationChat';
 
 const ALGO_COLORS = {
     ga:  { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', label: 'Genetic Algorithm' },
@@ -41,7 +43,8 @@ function FillBar({ pct }) {
     );
 }
 
-export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null }) {
+export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [] }) {
+    const [genaiOpen, setGenaiOpen] = useState(false);
 
     // ── Compare table must be checked FIRST — summary is null after compare ──
     // (compare runs its own EventSources and never sets sim.finalReport)
@@ -273,6 +276,43 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                         )}
                     </>
                 )}
+
+                {/* ── GenAI Agent (compare mode) ─────────────────── */}
+                {ad && (
+                    <section className="panel evac-section genai-dropdown">
+                        <button
+                            className="genai-dropdown-toggle"
+                            onClick={() => setGenaiOpen(prev => !prev)}
+                        >
+                            <span className="genai-dropdown-title">
+                                <Cpu size={14} />
+                                GenAI Agent
+                            </span>
+                            <ChevronDown
+                                size={14}
+                                className={`genai-chevron ${genaiOpen ? 'genai-chevron--open' : ''}`}
+                            />
+                        </button>
+                        {genaiOpen && (
+                            <div className="genai-dropdown-content">
+                                <PanelOfExperts
+                                    summary={ad}
+                                    evacuationPlan={compareActiveAlgo ? (compareResults[compareActiveAlgo]?.evacuation_plan ?? []) : []}
+                                />
+                                <EvacuationChat context={{ 
+                                    mode: 'compare',
+                                    active_algo: compareActiveAlgo,
+                                    // Strip the heavy geojson/plan data so context doesn't explode
+                                    summaries: Object.keys(compareResults).reduce((acc, k) => {
+                                        const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
+                                        acc[k] = rest;
+                                        return acc;
+                                    }, {})
+                                }} />
+                            </div>
+                        )}
+                    </section>
+                )}
             </div>
         );
     }
@@ -367,6 +407,31 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                     </div>
                 )}
             </section>
+
+            {/* ── GenAI Agent ────────────────────────────────── */}
+            {summary && (
+                <section className="panel evac-section genai-dropdown">
+                    <button
+                        className="genai-dropdown-toggle"
+                        onClick={() => setGenaiOpen(prev => !prev)}
+                    >
+                        <span className="genai-dropdown-title">
+                            <Cpu size={14} />
+                            GenAI Agent
+                        </span>
+                        <ChevronDown
+                            size={14}
+                            className={`genai-chevron ${genaiOpen ? 'genai-chevron--open' : ''}`}
+                        />
+                    </button>
+                    {genaiOpen && (
+                        <div className="genai-dropdown-content">
+                            <PanelOfExperts summary={summary} evacuationPlan={evacuationPlan} />
+                            <EvacuationChat context={summary} />
+                        </div>
+                    )}
+                </section>
+            )}
 
             {/* ── Unreachable Alert ─────────────────────── */}
             {total_at_risk_remaining > 0 && (

@@ -8,3 +8,9 @@ scipy
 rtree
 pandas
 openpyxl
+numpy
+requests
+httpx
+python-dotenv
+google-generativeai
+mcp

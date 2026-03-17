@@ -9,7 +9,7 @@
  *   shelters      array|null    — precomputed [{...candidate, safe}] from App
  *   onCandidates  (arr)=>void   — called when raw candidates are fetched
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShieldCheck, Loader, MapPin, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../config';
@@ -40,6 +40,15 @@ export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
             setLoading(false);
         }
     };
+
+    // Auto-fetch shelters when the region changes
+    useEffect(() => {
+        if (loadedHobli) {
+            load();
+        } else {
+            onCandidates([]);
+        }
+    }, [loadedHobli]);
 
     const safeCount  = shelters?.filter(s => s.safe).length ?? 0;
     const totalCount = shelters?.length ?? 0;

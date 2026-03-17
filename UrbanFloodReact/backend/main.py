@@ -20,6 +20,9 @@ from generate_people import load_population, POPULATION_CSV
 # Import service layer
 import service
 
+from genai.param_resolver import resolve_hobli
+from genai.weather_client import WeatherClient
+
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -53,6 +56,65 @@ class LoadRegionRequest(BaseModel):
 # ══════════════════════════════════════════════════════
 #  ENDPOINTS (Controller Layer)
 # ══════════════════════════════════════════════════════
+
+class ExpertAdviceRequest(BaseModel):
+    persona: str
+    summary_data: dict
+    evacuation_plan: list = []
+
+@app.post("/expert-advice-stream")
+async def expert_advice_stream(req: ExpertAdviceRequest):
+    from genai.context_builder import build_expert_context
+    from genai.expert_panel import stream_advice
+    
+    # Enrich the raw summary data with severity tags, route stats, etc.
+    enriched_context = build_expert_context(req.summary_data, req.evacuation_plan)
+    
+    return StreamingResponse(
+        stream_advice(req.persona, enriched_context),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+
+class ChatRequest(BaseModel):
+    question: str
+    context: dict
+
+@app.post("/evacuation-chat")
+async def evacuation_chat(req: ChatRequest):
+    from genai.evacuation_chat import stream_chat
+    
+    return StreamingResponse(
+        stream_chat(req.question, req.context),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+
+class MCPStateUpdate(BaseModel):
+    summary_data: dict
+    evacuation_plan: list = []
+    hobli: str = ""
+
+@app.post("/mcp-update-state")
+async def mcp_update_state(req: MCPStateUpdate):
+    """Push latest simulation state to the MCP evacuation server's in-memory store."""
+    from genai.mcp_evacuation_server import update_state
+    update_state(req.summary_data, req.evacuation_plan, req.hobli)
+    return {"status": "ok", "message": "MCP state updated"}
+
+
+class CopilotRequest(BaseModel):
+    messages: list
+    available_hoblis: list = []
+    regions_tree: dict = {}
+
+@app.post("/app-copilot")
+async def app_copilot_endpoint(req: CopilotRequest):
+    from genai.app_copilot import ask_copilot
+    return await ask_copilot(req.messages, req.available_hoblis, req.regions_tree)
+
 
 @app.get("/regions")
 async def get_regions():
@@ -93,12 +155,13 @@ async def simulate_stream(
     evacuation_mode: bool = Query(False),
     use_traffic: bool = Query(False),
     algorithm:   str  = Query("ga", description="Optimisation algorithm: 'ga', 'aco', or 'pso'"),
+    population:  int | None = Query(None, description="Override population count"),
 ):
     """SSE stream of flood simulation steps."""
     return StreamingResponse(
         service.run_simulation_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic, algorithm
+            evacuation_mode, use_traffic, algorithm, population
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -113,6 +176,7 @@ async def simulate_compare(
     decay_factor:    float = Query(0.5),
     evacuation_mode: bool  = Query(False),
     use_traffic:     bool  = Query(False),
+    population:      int | None = Query(None),
 ):
     """
     SSE stream for algorithm comparison mode.
@@ -123,7 +187,7 @@ async def simulate_compare(
     return StreamingResponse(
         service.run_compare_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic,
+            evacuation_mode, use_traffic, population
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -137,6 +201,28 @@ async def get_shelters(hobli_name: str):
     Flood safety is evaluated on the frontend from live simulation state.
     """
     return await service.fetch_shelters(hobli_name)
+
+
+@app.get("/weather/current")
+async def get_current_weather(hobli: str = Query(..., description="Hobli name to fetch weather for")):
+    """
+    Fetch current real-time rainfall data for the specified hobli using Open-Meteo.
+    """
+    hobli_info = resolve_hobli(hobli)
+    if not hobli_info:
+        return {"error": f"Could not resolve hobli name: {hobli}"}
+        
+    client = WeatherClient.from_hobli_info(hobli_info)
+    weather_data = client.get_current()
+    if weather_data.get("source") == "error":
+        return {"error": weather_data.get("description", "Unknown error fetching weather.")}
+        
+    return {
+        "hobli": hobli_info.get("display", hobli),
+        "rainfall_mm": weather_data.get("precipitation_mm", 0),
+        "condition": weather_data.get("description", "Unknown"),
+        "temp_c": weather_data.get("temp_c"),
+    }
 
 
 if __name__ == "__main__":

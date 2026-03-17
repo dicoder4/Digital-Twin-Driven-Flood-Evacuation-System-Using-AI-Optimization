@@ -289,9 +289,15 @@ UrbanFloodReact/
 │   │   └── core.py                 # ACO implementation (vectorised)
 │   ├── pso/
 │   │   └── core.py                 # PSO implementation (vectorised)
+│   ├── genai/                      # GenAI Orchestration
+│   │   ├── app_copilot.py          # Dashboard Copilot (Tool Use)
+│   │   ├── evacuation_chat.py      # Post-sim Q&A (Context-aware)
+│   │   ├── expert_panel.py         # Multi-persona advice stream
+│   │   ├── mcp_evacuation_server.py# MCP Server for external agents
+│   │   └── context_builder.py      # Data enrichment for LLMs
 │   ├── traffic_data/
 │   │   └── tomtom.py               # TomTom API bulk traffic fetcher
-│   └── .env                        # API keys (TOMTOM_API_KEY, etc.)
+│   └── .env                        # API keys (GEMINI_API_KEY, GROQ_API_KEY, etc.)
 ├── frontend/
 │   └── src/
 │       ├── App.jsx                 # Main orchestrator
@@ -300,7 +306,10 @@ UrbanFloodReact/
 │       │   └── useSimulation.js    # SSE lifecycle + state
 │       └── components/
 │           ├── FloodMap.jsx        # MapLibre map
-│           ├── EvacuationPanel.jsx  # Stats + comparison + shelter list
+│           ├── AppCopilot.jsx      # Copilot UI component
+│           ├── EvacuationChat.jsx  # AI Chat UI component
+│           ├── EvacuationPanel.jsx # Stats + comparison + shelter list
+│           ├── ...
 │           ├── EvacuationLayer.jsx  # Route lines + citizen pins
 │           ├── TrafficLayer.jsx    # Traffic congestion overlay
 │           ├── SimulationControls.jsx

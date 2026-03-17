@@ -23,8 +23,10 @@ import { SimulationControls } from './components/SimulationControls';
 import { SheltersPanel } from './components/SheltersPanel';
 import { EvacuationPanel } from './components/EvacuationPanel';
 import { FloodMap } from './components/FloodMap';
+import { DraSidebar } from './components/DraSidebar';
 import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';   // ← ESM import (no require() anywhere)
+import { AppCopilot } from './components/AppCopilot';
 import './App.css';
 
 export default function App() {
@@ -47,7 +49,7 @@ export default function App() {
 
   // ── Simulation params ─────────────────────────────────────────
   const [rainfallMm, setRainfallMm] = useState(150);
-  const [steps, setSteps] = useState(20);
+  const [steps, setSteps] = useState(5);
   const [decayFactor, setDecayFactor] = useState(0.5);
   const [algoInfoOpen, setAlgoInfoOpen] = useState(false);
 
@@ -72,6 +74,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('setup');
   const [selectedShelterId, setSelectedShelterId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
+  const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
 
   // ── Hooks ─────────────────────────────────────────────────────
   const regions = useRegions();
@@ -96,25 +99,26 @@ export default function App() {
   );
 
   // ── Load Region ───────────────────────────────────────────────
-  const handleLoadRegion = useCallback(async () => {
-    if (!regions.selHobli) return;
+  const handleLoadRegion = useCallback(async (hobliOverride) => {
+    const targetHobli = typeof hobliOverride === 'string' ? hobliOverride : regions.selHobli;
+    if (!targetHobli) return;
     setRegionLoading(true);
-    sim.setStatusMsg(`Loading ${regions.selHobli} …`);
+    sim.setStatusMsg(`Loading ${targetHobli} …`);
     sim.clearMap();
     setPopulationCount(0);
     setUnsafePeopleCount(0);
     setShelterCandidates([]);
     setActiveTab('setup');
     try {
-      const res = await axios.post(`${API_URL}/load-region`, { hobli: regions.selHobli });
+      const res = await axios.post(`${API_URL}/load-region`, { hobli: targetHobli });
       const { lat, lon } = res.data;
       setViewState(v => ({ ...v, longitude: lon, latitude: lat, zoom: 14 }));
-      const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: regions.selHobli } });
+      const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: targetHobli } });
       setBaseRoadsData(mapRes.data);
-      setLoadedHobli(regions.selHobli);
+      setLoadedHobli(targetHobli);
       setRegionLoaded(true);
       setSelRec(null);
-      sim.setStatusMsg(`${regions.selHobli} ready. Configure simulation and run.`);
+      sim.setStatusMsg(`${targetHobli} ready. Configure simulation and run.`);
     } catch (err) {
       sim.setStatusMsg(`Error: ${err.response?.data?.detail || err.message}`);
     } finally {
@@ -126,12 +130,56 @@ export default function App() {
   const handleTaluk = (t) => { regions.setTaluk(t); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
   const handleHobli = (h) => { regions.setHobli(h); setRegionLoaded(false); sim.reset(); setPopulationCount(0); setUnsafePeopleCount(0); setShelterCandidates([]); };
 
+  // ── Copilot: select region (finds district+taluk from tree) ───
+  const handleSelectRegion = useCallback((hobli) => {
+    const tree = regions.regionsTree || {};
+    let foundDistrict = null, foundTaluk = null;
+    for (const [dist, taluks] of Object.entries(tree)) {
+      for (const [taluk, hoblis] of Object.entries(taluks)) {
+        if (hoblis.includes(hobli)) { foundDistrict = dist; foundTaluk = taluk; break; }
+      }
+      if (foundDistrict) break;
+    }
+    // Set all three atomically to avoid cascade wiping
+    if (foundDistrict && foundTaluk) {
+      regions.setAll(foundDistrict, foundTaluk, hobli);
+    }
+    setRegionLoaded(false);
+    sim.reset();
+    setPopulationCount(0);
+    setUnsafePeopleCount(0);
+    setShelterCandidates([]);
+    // Load the region into backend memory, auto-fetch population, then navigate to config
+    handleLoadRegion(hobli).then(() => {
+      setActiveTab('config');
+      // Auto-fetch population so it is ready before the Copilot fires run_simulation
+      axios.get(`${API_URL}/population/${encodeURIComponent(hobli)}`)
+        .then(res => { if (res.data.total_population > 0) setPopulationCount(res.data.total_population); })
+        .catch(() => {}); // silent — user can still set it manually
+    });
+  }, [regions, handleLoadRegion, sim]);
+
   // ── Start single simulation ───────────────────────────────────
   const handleStart = () => {
     if (!regionLoaded) return;
     setCompareResults(null);
     setActiveTab('setup');
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm);
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount);
+  };
+
+  // ── DRA Mode: Automatic ACO + Traffic run ────────────────────
+  const handleDraRunEvacuation = () => {
+    if (!regionLoaded) return;
+    setCompareResults(null);
+    
+    // In DRA mode, force these settings regardless of what's in React state
+    // But we still update React state so the UI reflects what's running
+    setAlgorithm('aco');
+    setUseTraffic(true);
+    setEvacuationMode(false);
+    setActiveTab('setup');
+    
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco', populationCount);
   };
 
   // ── Reset everything ──────────────────────────────────────────
@@ -150,7 +198,7 @@ export default function App() {
   // frames it uses for map animation, then one 'compare_done' frame
   // containing all three results simultaneously.
   // This reduces compare time from ~3× to ~1× a single run.
-  const handleCompare = useCallback(() => {
+  const handleCompare = useCallback((overrideHobli, overrideRainfall, overrideEvac, overrideTraffic) => {
     if (!regionLoaded || compareRunning) return;
     compareAbortRef.current = false;
     setCompareResults(null);
@@ -159,14 +207,20 @@ export default function App() {
     sim.reset();
     sim.setStatusMsg('Compare: flood simulation in progress…');
 
+    const runHobli = overrideHobli || loadedHobli;
+    if (!runHobli) return;
+
     const params = new URLSearchParams({
-      hobli: loadedHobli,
-      rainfall_mm: rainfallMm,
+      hobli: runHobli,
+      rainfall_mm: overrideRainfall !== undefined ? overrideRainfall : rainfallMm,
       steps,
       decay_factor: decayFactor,
-      evacuation_mode: evacuationMode,
-      use_traffic: useTraffic,
+      evacuation_mode: overrideEvac !== undefined ? overrideEvac : evacuationMode,
+      use_traffic: overrideTraffic !== undefined ? overrideTraffic : useTraffic,
     });
+    if (populationCount !== null && populationCount !== undefined && populationCount > 0) {
+      params.append('population', populationCount);
+    }
 
     const es = new EventSource(`${API_URL}/simulate-compare?${params}`);
 
@@ -235,6 +289,20 @@ export default function App() {
           sim.setStatusMsg(
             `Compare complete — showing ${bestAlgo?.toUpperCase() ?? ''} routes (best fitness)`
           );
+
+          // Sync the "winner" result to MCP server
+          if (bestAlgo) {
+            const winner = finalResults[bestAlgo];
+            fetch(`${API_URL}/mcp-update-state`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                summary_data: winner,
+                evacuation_plan: winner.evacuation_plan || [],
+                hobli: runHobli,
+              }),
+            }).catch(() => {});
+          }
         } else {
           sim.setStatusMsg('Compare finished — no results returned.');
         }
@@ -262,16 +330,49 @@ export default function App() {
     }
   }, [sim.simulationDone, compareRunning]);
 
+  // Handle DRA mode auto-fetch of population & shelters
+  useEffect(() => {
+    if (isDraMode && regionLoaded && loadedHobli) {
+      if (populationCount === 0) {
+        axios.get(`${API_URL}/population/${encodeURIComponent(loadedHobli)}`)
+             .then(res => setPopulationCount(res.data.total_population || 0))
+             .catch(console.error);
+      }
+      if (shelterCandidates.length === 0) {
+        axios.get(`${API_URL}/shelters/${encodeURIComponent(loadedHobli)}`)
+             .then(res => setShelterCandidates(res.data.shelters || []))
+             .catch(console.error);
+      }
+    }
+  }, [isDraMode, regionLoaded, loadedHobli, populationCount, shelterCandidates.length]);
+
   // ── Render ────────────────────────────────────────────────────
   return (
     <div className="app-container">
       {/* ─── Sidebar ───────────────────────────────────────── */}
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <Droplets size={20} className="icon-blue" />
-          <div>
-            <div className="sidebar-title">Urban Flood Model</div>
-            <div className="sidebar-sub">Digital Twin · Flood Simulation · Evacuation</div>
+        <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Droplets size={20} className="icon-blue" />
+            <div>
+              <div className="sidebar-title">Urban Flood Model</div>
+              <div className="sidebar-sub">Digital Twin · Flood Simulation · Evacuation</div>
+            </div>
+          </div>
+          
+          {/* DRA Mode Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', padding: '0.5rem 0.75rem', borderRadius: '0.5rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'white' }}>
+              {isDraMode ? 'Disaster Response Authority Mode Active' : 'Switch to Disaster Response Authority Mode'}
+            </span>
+            <button 
+              className={`evac-toggle-btn ${isDraMode ? 'evac-toggle-on' : ''}`}
+              onClick={() => setIsDraMode(!isDraMode)}
+              style={{ padding: 0, margin: 0, transform: 'scale(0.8)' }}
+              title="Toggle Disaster Response Authority Mode"
+            >
+              <span className="evac-toggle-thumb" />
+            </button>
           </div>
         </div>
 
@@ -293,6 +394,23 @@ export default function App() {
 
           {/* ── SETUP TAB ────────────────────────────────── */}
           {activeTab === 'setup' && (
+            isDraMode ? (
+              <DraSidebar
+                allHoblis={regions.allHoblis}
+                selHobli={regions.selHobli}
+                onHobli={handleHobli}
+                onLoad={handleLoadRegion}
+                loading={regionLoading}
+                loaded={regionLoaded}
+                loadedHobli={loadedHobli}
+                rainfallMm={rainfallMm}
+                onRainfallChange={setRainfallMm}
+                steps={steps}
+                onStepsChange={setSteps}
+                onRunEvacuation={handleDraRunEvacuation}
+                simulationRunning={sim.isRunning}
+              />
+            ) : (
             <>
               <RegionSelector
                 districts={regions.districts}
@@ -470,22 +588,25 @@ export default function App() {
                 </>
               )}
             </>
+            )
           )}
 
-          {activeTab === 'evacuation' && (
-            <EvacuationPanel
-              summary={sim.finalReport?.summary}
-              evacuationMode={evacuationMode}
-              selectedShelterId={selectedShelterId}
-              onSelectShelter={setSelectedShelterId}
-              trafficSegmentCount={sim.trafficSegmentCount}
-              showTraffic={useTraffic}
-              compareResults={compareResults}
-              compareActiveAlgo={compareActiveAlgo}
-              onSetCompareAlgo={setCompareActiveAlgo}
-            />
-          )}
-        </div>
+            {activeTab === 'evacuation' && (
+              <EvacuationPanel
+                summary={sim.finalReport?.summary}
+                evacuationMode={evacuationMode}
+                selectedShelterId={selectedShelterId}
+                onSelectShelter={setSelectedShelterId}
+                trafficSegmentCount={sim.trafficSegmentCount}
+                showTraffic={useTraffic}
+                compareResults={compareResults}
+                compareActiveAlgo={compareActiveAlgo}
+                onSetCompareAlgo={setCompareActiveAlgo}
+                isDraMode={isDraMode}
+                evacuationPlan={sim.evacuationPlan || []}
+              />
+            )}
+          </div>
 
         <div className="status-bar">
           <Activity size={11} />
@@ -520,6 +641,62 @@ export default function App() {
         showTraffic={useTraffic && (sim.simulationDone || !!compareResults)}
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
+      />
+
+      <AppCopilot 
+        availableHoblis={regions.allHoblis || []}
+        regionsTree={regions.regionsTree || {}}
+        populationCount={populationCount}
+        onNavigate={(tab) => {
+          if (tab === 'evacuate' || tab === 'evacuation') {
+            setActiveTab('evacuation');
+            return;
+          }
+          if (tab === 'compare') {
+            setCompareMode(true);
+            setActiveTab('setup');
+            return;
+          }
+          setActiveTab('setup');
+        }}
+        onSelectRegion={handleSelectRegion}
+        onUpdateParams={({ algorithm: algo, rainfall, evacuationMode: evac, useTraffic: traffic }) => {
+          if (algo) setAlgorithm(algo);
+          if (rainfall) setRainfallMm(rainfall);
+          if (evac !== undefined) setEvacuationMode(evac);
+          if (traffic !== undefined) setUseTraffic(traffic);
+        }}
+        onRunSimulation={(newHobli, newRainfall, algo, evac, traffic) => {
+          const runHobli = newHobli || loadedHobli;
+          // Sync sidebar state so UI reflects what's actually running
+          if (algo) setAlgorithm(algo);
+          if (newRainfall) setRainfallMm(newRainfall);
+          if (evac !== undefined) setEvacuationMode(evac);
+          if (traffic !== undefined) setUseTraffic(traffic);
+          if (runHobli) {
+            setActiveTab('setup');
+            if (algo === 'all') {
+              setCompareMode(true);
+              // Wait for React state to settle slightly since compare reads 'steps' and 'decayFactor'
+              // but we pass our immediate overrides for the rest.
+              setTimeout(() => {
+                handleCompare(runHobli, newRainfall, evac, traffic);
+              }, 0);
+            } else {
+              setCompareMode(false);
+              sim.start(
+                runHobli,
+                newRainfall || 150,
+                5,    // steps
+                0.05,   // decay
+                evac || false,
+                traffic || false,
+                algo || 'aco',
+                populationCount // pass population count to simulation
+              );
+            }
+          }
+        }}
       />
     </div>
   );

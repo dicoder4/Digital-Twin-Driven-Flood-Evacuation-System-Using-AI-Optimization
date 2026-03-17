@@ -41,7 +41,7 @@ def load_coords_from_json(path: Path, district: str) -> dict:
         lons = [c[1] for c in coords]
         n = len(coords)
         if n > 1:
-            print(f"  [coords] '{names_map[key]}' has {n} points → centroid used")
+            print(f"  [coords] '{names_map[key]}' has {n} points -> centroid used")
         result[key] = {
             "lat":           round(sum(lats) / n, 6),
             "lon":           round(sum(lons) / n, 6),

@@ -41,7 +41,7 @@ export function useSimulation() {
         setRoadsData(null);
     }, []);
 
-    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm = 'ga') => {
+    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm = 'ga', populationCount = null) => {
         reset();
         setIsRunning(true);
         setSimulationDone(false);
@@ -59,6 +59,10 @@ export function useSimulation() {
             use_traffic: useTraffic,
             algorithm,
         });
+        if (populationCount !== null && populationCount > 0) {
+            params.append('population', populationCount);
+        }
+        
         const es = new EventSource(`${API_URL}/simulate-stream?${params}`);
         esRef.current = es;
 
@@ -80,6 +84,19 @@ export function useSimulation() {
                 if (data.evacuation_plan?.length) setEvacuationPlan(data.evacuation_plan);
                 if (data.traffic_geojson?.features?.length) setTrafficRoadsData(data.traffic_geojson);
                 if (data.traffic_segment_count) setTrafficSegmentCount(data.traffic_segment_count);
+
+                // Push state to MCP server (fire-and-forget)
+                if (data.summary) {
+                    fetch(`${API_URL}/mcp-update-state`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            summary_data: data.summary,
+                            evacuation_plan: data.evacuation_plan || [],
+                            hobli: hobli,
+                        }),
+                    }).catch(() => {}); // silent — MCP is optional
+                }
                 return;
             }
             setCurrentStep(data.step);

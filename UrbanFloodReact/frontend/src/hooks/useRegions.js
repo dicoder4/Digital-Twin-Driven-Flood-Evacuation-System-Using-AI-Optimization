@@ -24,13 +24,25 @@ export function useRegions() {
     const taluks = selDistrict ? Object.keys(regionsTree[selDistrict] || {}).sort() : [];
     const hoblis = selDistrict && selTaluk ? (regionsTree[selDistrict]?.[selTaluk] || []) : [];
 
+    // Flat list of all hoblis for DRA mode
+    const allHoblis = [];
+    Object.values(regionsTree).forEach(talukMap => {
+        Object.values(talukMap).forEach(hobliList => {
+            allHoblis.push(...hobliList);
+        });
+    });
+    allHoblis.sort();
+
     const setDistrict = (d) => { setSelDistrict(d); setSelTaluk(''); setSelHobli(''); };
     const setTaluk = (t) => { setSelTaluk(t); setSelHobli(''); };
 
+    // Set all three atomically (used by Copilot's select_region to avoid cascade wiping)
+    const setAll = (d, t, h) => { setSelDistrict(d); setSelTaluk(t); setSelHobli(h); };
+
     return {
-        regionsTree, districts, taluks, hoblis,
+        regionsTree, districts, taluks, hoblis, allHoblis,
         selDistrict, selTaluk, selHobli,
-        setDistrict, setTaluk, setHobli: setSelHobli,
+        setDistrict, setTaluk, setHobli: setSelHobli, setAll,
         fetchError,
     };
 }

@@ -120,7 +120,7 @@ async def fetch_map_geojson(hobli_name: str):
     _, edges = ox.graph_to_gdfs(G)
     return json.loads(edges.to_json())
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga"):
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None):
     """Generator for SSE simulation stream."""
     import time
     key = norm_key(hobli)
@@ -136,8 +136,11 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     sim.initialize_from_drains(rainfall_mm)
 
     # 1. Distribute population on nodes
-    pop_data = await get_hobli_population(hobli)
-    total_pop = pop_data.get("total_population", 0)
+    if population is not None:
+        total_pop = population
+    else:
+        pop_data = await get_hobli_population(hobli)
+        total_pop = pop_data.get("total_population", 0)
 
     # Scale population if in evacuation mode (1% test)
     if evacuation_mode:
@@ -185,13 +188,17 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     # Recalculate final flood impact for shelter safety classification
     final_impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
     final_flood_gdf = final_impact["flood_gdf"]
+    final_roads_gdf = final_impact["roads_gdf"]
     final_flood_geojson = (
         json.loads(final_flood_gdf.to_json()) if not final_flood_gdf.empty else None
     )
+    final_roads_geojson = (
+        json.loads(final_roads_gdf.to_json()) if not final_roads_gdf.empty else None
+    )
     print(f"{_ts()}  [DEBUG] final flood features = {len(final_flood_geojson['features']) if final_flood_geojson else 0}")
 
-    # Filter shelters: prefer safe ones; fall back to all if all are flooded
-    shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, None)
+    # Filter shelters: only truly safe shelters are eligible for evacuation
+    shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, final_roads_geojson)
     safe_shelters = [s for s in shelters_with_safety if s["safe"]]
     safe_count = len(safe_shelters)
     print(f"{_ts()}  [DEBUG] safe shelters after filter = {safe_count} / {len(shelters_with_safety)}")
@@ -199,9 +206,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         print(f"{_ts()}    shelter: {s['name']} | safe={s['safe']} | cap={s['capacity']} | node_id={s.get('node_id')}")
 
     if not safe_shelters:
-        # All shelters are in flood zone — use all of them (least-bad choice)
-        print(f"{_ts()}  [DEBUG] WARNING: all shelters flooded — using all candidates as fallback")
-        safe_shelters = shelters_with_safety if shelters_with_safety else all_shelters
+        print(f"{_ts()}  [DEBUG] WARNING: no safe shelters available — evacuation routing will be skipped")
 
     at_risk = sim.get_at_risk_nodes()
     print(f"{_ts()}  [DEBUG] at_risk nodes = {len(at_risk)}")
@@ -291,11 +296,12 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "type":     s.get("type", "unknown"),
             "occupancy": sim.shelter_occupancy.get(s["id"], 0),
             "capacity":  s["capacity"],
+            "safe":      s.get("safe", True),
             "occupancy_pct": round(
                 min(sim.shelter_occupancy.get(s["id"], 0) / max(s["capacity"], 1) * 100, 100), 1
             ),
         }
-        for s in all_shelters
+        for s in shelters_with_safety
     ]
 
     # Correctly compute at-risk remaining: pre-GA count minus what GA evacuated
@@ -385,6 +391,7 @@ async def run_compare_generator(
     decay_factor: float,
     evacuation_mode: bool = False,
     use_traffic: bool = False,
+    population: int | None = None,
 ):
     """
     SSE generator for compare mode:
@@ -410,8 +417,11 @@ async def run_compare_generator(
     sim.initialize_from_drains(rainfall_mm)
 
     # Population
-    pop_data  = await get_hobli_population(hobli)
-    total_pop = pop_data.get("total_population", 0)
+    if population is not None:
+        total_pop = population
+    else:
+        pop_data  = await get_hobli_population(hobli)
+        total_pop = pop_data.get("total_population", 0)
     if evacuation_mode:
         total_pop = max(1, total_pop // 100)
         print(f"{_ts()}  [compare] Evacuation Mode ON: scaling population to {total_pop}")
@@ -447,15 +457,18 @@ async def run_compare_generator(
     # ── Phase 2: final flood state & shelter classification ──────────────────
     final_impact      = await loop.run_in_executor(None, sim.calculate_flood_impact)
     final_flood_gdf   = final_impact["flood_gdf"]
+    final_roads_gdf   = final_impact["roads_gdf"]
     final_flood_geojson = (
         json.loads(final_flood_gdf.to_json()) if not final_flood_gdf.empty else None
     )
+    final_roads_geojson = (
+        json.loads(final_roads_gdf.to_json()) if not final_roads_gdf.empty else None
+    )
 
-    shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, None)
+    shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, final_roads_geojson)
     safe_shelters        = [s for s in shelters_with_safety if s["safe"]]
     if not safe_shelters:
-        print(f"{_ts()}  [compare] WARNING: all shelters flooded — using all as fallback")
-        safe_shelters = shelters_with_safety if shelters_with_safety else all_shelters
+        print(f"{_ts()}  [compare] WARNING: no safe shelters available — planner execution will be skipped")
 
     at_risk = sim.get_at_risk_nodes()
     if not at_risk:
@@ -582,11 +595,12 @@ async def run_compare_generator(
                     "type":         s.get("type", "unknown"),
                     "occupancy":     shelter_occ.get(s["id"], 0),
                     "capacity":      s["capacity"],
+                    "safe":          s.get("safe", True),
                     "occupancy_pct": round(
                         min(shelter_occ.get(s["id"], 0) / max(s["capacity"], 1) * 100, 100), 1
                     ),
                 }
-                for s in all_shelters
+                for s in shelters_with_safety
             ]
 
             traffic_geojson       = None

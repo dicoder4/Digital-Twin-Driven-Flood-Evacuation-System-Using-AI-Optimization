@@ -147,7 +147,9 @@ def filter_safe_shelters(
     result = []
     for s in candidates:
         pt = Point(s["lon"], s["lat"])
-        in_flood = flood_union is not None and flood_union.contains(pt)
+        # covers() is boundary-inclusive; prevents shelters on flood polygon edges
+        # from being misclassified as safe.
+        in_flood = flood_union is not None and flood_union.covers(pt)
         near_high = s.get("node_id") in high_risk_nodes if s.get("node_id") else False
         result.append({**s, "safe": not (in_flood or near_high)})
 
@@ -185,13 +187,21 @@ def _build_flood_union(flood_geojson: Optional[dict]):
 
 def _build_high_risk_nodes(roads_geojson: Optional[dict]) -> set:
     """
-    Return a set of node_ids inferred as 'high risk'.
-    Since we only have edge geometries here (not graph node ids), we use None —
-    the node_id based check is a best-effort; flood polygon check is primary.
+    Return a set of node_ids where associated road risk is 'high'.
     """
-    # Edge geometries don't carry node ids in the GeoJSON.
-    # We rely on flood polygon containment as the primary safety check.
-    return set()
+    if not roads_geojson or not roads_geojson.get("features"):
+        return set()
+    
+    high_risk_ids = set()
+    for feat in roads_geojson["features"]:
+        props = feat.get("properties", {})
+        if props.get("risk") == "high":
+            u = props.get("u_id")
+            v = props.get("v_id")
+            if u: high_risk_ids.add(u)
+            if v: high_risk_ids.add(v)
+            
+    return high_risk_ids
 
 
 def _generate_synthetic_shelters(G, count: int) -> list[dict]:

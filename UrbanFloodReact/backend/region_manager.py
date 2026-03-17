@@ -108,7 +108,7 @@ def get_region(hobli_key: str) -> dict:
         print(f"  [osmnx] Downloading graph for {coords['original_name']} …")
         G = ox.graph_from_point((lat, lon), dist=2000, dist_type="bbox", network_type="drive")
         ox.save_graphml(G, str(graph_f))
-        print(f"  [osmnx] Saved → {graph_f.name}")
+        print(f"  [osmnx] Saved -> {graph_f.name}")
 
     # 2. Drains & lakes
     drain_nodes, lake_nodes = [], []
@@ -124,7 +124,7 @@ def get_region(hobli_key: str) -> dict:
         lake_nodes  = _extract_lakes(G, center)
         with open(feat_f, "wb") as f:
             pickle.dump({"drains": drain_nodes, "lakes": lake_nodes}, f)
-        print(f"  [cache] Features saved → {feat_f.name}")
+        print(f"  [cache] Features saved -> {feat_f.name}")
 
     entry = {"G": G, "drain_nodes": drain_nodes, "lake_nodes": lake_nodes}
     REGION_CACHE[hobli_key] = entry

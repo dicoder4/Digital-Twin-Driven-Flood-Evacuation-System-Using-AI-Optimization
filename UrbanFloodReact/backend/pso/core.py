@@ -53,10 +53,12 @@ class PSOEvacuationPlanner(BaseEvacuationPlanner):
                  c2: float        = 2.0,
                  v_max: float     = 4.0,
                  use_tomtom_traffic: bool = False,
+             shared_setup=None,
                  **kwargs):
 
         super().__init__(at_risk_nodes, safe_shelters, G,
-                         use_tomtom_traffic=use_tomtom_traffic)
+                 use_tomtom_traffic=use_tomtom_traffic,
+                 shared_setup=shared_setup)
 
         self.n_particles = n_particles
         self.iterations  = iterations

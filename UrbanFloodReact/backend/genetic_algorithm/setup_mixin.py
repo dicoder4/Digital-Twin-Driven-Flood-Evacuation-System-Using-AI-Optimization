@@ -84,7 +84,7 @@ class SetupMixin:
         Bulk fetches midpoints of required segments.
         Only runs if use_tomtom_traffic=True.
         """
-        limit = 100  # Adjust as needed depending on API quotas
+        limit = 15  # Reduced to conserve API quotas
         edge_refs = []
         coords = []
         
