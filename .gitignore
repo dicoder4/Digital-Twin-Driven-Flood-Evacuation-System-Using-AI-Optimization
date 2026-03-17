@@ -7,4 +7,6 @@ cache/
 # UrbanFloodReact specific
 UrbanFloodReact/backend/cache/
 UrbanFloodReact/backend/__pycache__/
+UrbanFloodReact/backend/genai/mcp_state.json
+
 
