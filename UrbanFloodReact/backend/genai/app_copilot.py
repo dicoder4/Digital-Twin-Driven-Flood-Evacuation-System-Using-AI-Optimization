@@ -110,7 +110,7 @@ def _build_tools(available_hoblis: list, flat_taluks: dict) -> list:
                     name="ask_clarification",
                     description=(
                         "Ask the user a question with clickable option buttons. "
-                        "Use this to offer simulation parameter choices (algorithm, traffic, evacuation mode) "
+                        "Use this to offer simulation parameter choices (algorithm, traffic, evacuation mode, weather) "
                         "OR to disambiguate a Taluk into a specific Hobli."
                     ),
                     parameters=genai.protos.Schema(
@@ -127,6 +127,20 @@ def _build_tools(available_hoblis: list, flat_taluks: dict) -> list:
                             ),
                         },
                         required=["message", "options"],
+                    ),
+                ),
+                genai.protos.FunctionDeclaration(
+                    name="get_weather",
+                    description="Fetch current real-time rainfall (mm) for a specific Hobli.",
+                    parameters=genai.protos.Schema(
+                        type=genai.protos.Type.OBJECT,
+                        properties={
+                            "hobli": genai.protos.Schema(
+                                type=genai.protos.Type.STRING,
+                                description="The exact Hobli name.",
+                            )
+                        },
+                        required=["hobli"],
                     ),
                 ),
             ]
@@ -155,7 +169,7 @@ NOTE: Location fuzzy-matching is handled by the system automatically.
 You will receive location tool calls pre-resolved. Focus on:
 1. Navigation requests → call `navigate`
 2. Parameter confirmation → call `ask_clarification` with options:
-   ["▶ Start with defaults (ACO, 150mm)", "🔄 Start with GA instead", "🔄 Start with PSO instead", "📊 Start Compare Mode (GA vs ACO vs PSO)", "🚗 Enable live traffic", "⚡ Enable evac mode (1% population, faster)"]
+   ["▶ Start with defaults (ACO, 150mm)", "🔄 Start with GA instead", "🔄 Start with PSO instead", "📊 Start Compare Mode (GA vs ACO vs PSO)", "🚗 Enable live traffic", "⚡ Enable evac mode (1% population, faster)", "☁️ Use real-time rainfall"]
 3. Running simulations with specified params → call `run_simulation`
 4. General workflow questions → answer concisely
 """

@@ -131,6 +131,7 @@ class GeometryMixin:
                 'to_shelter': shelter['id'],
                 'pop':        pop,
                 'path':       path_coords,
+                'path_nodes': path_nodes if not fallback else [],
                 'fallback':   fallback,   # True = straight-line (disconnected nodes)
             })
         return results

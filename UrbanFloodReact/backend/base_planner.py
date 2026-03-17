@@ -129,5 +129,39 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
     # run() must be implemented by each concrete planner
     # ─────────────────────────────────────────────────────────────────────────
 
+    def calculate_pressure_points(self, results: list, top_n: int = 5):
+        """
+        Post-process the evacuation plan to find critical junctions (pressure points)
+        where many evacuees converge.
+        """
+        node_loads = defaultdict(int)
+        node_routes = defaultdict(int)
+        
+        for route in results:
+            pop = route.get('pop', 0)
+            path_nodes = route.get('path_nodes', [])
+            for node in path_nodes:
+                node_loads[node] += pop
+                node_routes[node] += 1
+        
+        # Filter for "junctions": nodes where more than one route cluster passes through
+        # OR extremely high load nodes.
+        junctures = []
+        for node, load in node_loads.items():
+            if node_routes[node] > 1 or load > 500: # Thresholds for significance
+                data = self.G.nodes[node]
+                junctures.append({
+                    "node_id": node,
+                    "lat": data.get('y'),
+                    "lon": data.get('x'),
+                    "total_evacuees": load,
+                    "route_count": node_routes[node],
+                    "flood_depth": data.get('water_depth', 0)
+                })
+        
+        # Sort by load descending
+        junctures.sort(key=lambda x: x['total_evacuees'], reverse=True)
+        return junctures[:top_n]
+
     def run(self):
         raise NotImplementedError("Subclass must implement run()")

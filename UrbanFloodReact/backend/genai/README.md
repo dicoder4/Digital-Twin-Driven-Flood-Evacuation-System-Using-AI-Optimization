@@ -5,27 +5,22 @@ This directory contains the Generative AI (GenAI) integration scripts that power
 ## Overview of Components
 
 ### 1. Context Builder (`context_builder.py`)
-Enriches raw simulation output into structured context for LLM consumption:
-- Classifies shelter severity: **CRITICAL** (≥90%), **HIGH** (≥60%), **MODERATE**, **EMPTY**
-- Computes evacuation route statistics (avg/max/min distances, routes to critical shelters)
-- Provides a `shelter_overview` with remaining capacity totals
+Enriches raw simulation output into structured tactical context:
+- **Pressure Junctures**: Identifies critical bottlenecks where multiple evacuation paths converge or high volume meets flood risk.
+- **Route Depth**: Provides detailed path information for the **top 25** evacuation groups (origin node, volume, distance).
+- **Shelter Severity**: Classifies shelters: **CRITICAL** (≥90%), **HIGH** (≥60%), **MODERATE**, **EMPTY**.
+- **Data Availability**: Injects notes for the LLM regarding what is (and isn't) available (e.g., street names vs. node IDs).
 
 ### 2. Panel of Experts (`expert_panel.py`)
-Streams actionable intelligence from three distinct AI personas:
-- **Logistics Chief**: Analyzes shelter capacity and proposes resource allocation/transfer plans.
-- **Tactical Commander**: Inspects evacuation routes and issues NDRF deployment instructions.
-- **Civic Authority**: Generates situation reports and drafts public warnings.
-
-**Model Fallback Chain:**
-1. **Groq API** (`llama-3.1-8b-instant`) — primary, cloud-hosted, ~750 tok/s
-2. **Ollama** (`llama3.2:latest`) — fallback 1 (peer's machine)
-3. **Ollama** (`gemma3:1b`) — fallback 2 (local, 815 MB)
+Streams actionable intelligence via **Gemini 2.5 Flash** (fallback to Groq):
+- **Logistics Chief**: Analyzes shelter capacity/inflow and proposes resource transfer plans.
+- **Tactical Commander**: Inspects evacuation routes and **Pressure Junctures** to issue NDRF/Traffic deployment instructions.
+- **Civic Authority**: Generates situation reports and drafts official public warnings.
 
 ### 3. Evacuation Chat (`evacuation_chat.py`)
-Free-form natural language Q&A about the evacuation simulation data:
-- User asks "Why is Hebbal School overloaded?" → LLM answers using only simulation context
-- Same Groq → Ollama fallback chain
-- Streaming SSE response
+Free-form natural language Q&A grounded in simulation data:
+- **Grounded Answers**: Uses the enriched context (routes, pressure points, shelters) to prevent hallucinations.
+- **Streaming SSE**: Real-time response generation via Gemini 2.5 Flash.
 
 ### 4. MCP Evacuation Server (`mcp_evacuation_server.py`)
 Exposes the GenAI module as **MCP tools and resources** for agentic AI access:
@@ -33,11 +28,13 @@ Exposes the GenAI module as **MCP tools and resources** for agentic AI access:
 **Tools:**
 | Tool | Description |
 |---|---|
-| `get_simulation_state` | Returns current simulation summary & shelter overview |
-| `get_shelter_status` | Detailed shelter occupancy with severity classification |
-| `get_route_summary` | Evacuation route statistics (distances, group sizes) |
-| `get_expert_analysis(persona)` | AI expert advice (logistics/tactical/civic) |
-| `ask_evacuation_question(question)` | Free-form Q&A about evacuation data |
+| `get_simulation_state` | Returns current summary, success rate, and weighted success. |
+| `get_shelter_status` | Detailed shelter occupancy with severity classification. |
+| `get_route_summary` | Statistics + specific details for top evacuation routes. |
+| `get_pressure_junctures` | Lists detected bottlenecks (converging paths & flood risk). |
+| `get_realtime_weather` | Fetches live rainfall/temp data for the region (Open-Meteo). |
+| `generate_evacuation_strategy`| LLM-generated tactical plan based on digital twin state. |
+| `ask_evacuation_question` | Free-form Q&A about evacuation data. |
 
 **Resources:**
 | URI | Description |
@@ -57,12 +54,12 @@ Fetches real-time weather information using the Model Context Protocol (MCP):
 
 ## Setup Instructions
 
-1. **Environment Variables**: Make sure your `.env` file contains your Groq API key:
+1. **Environment Variables**: Make sure your `.env` file contains:
    ```env
-   GROQ_API_KEY=your_key_here
+   GEMINI_API_KEY=your_gemini_key
+   GROQ_API_KEY=your_groq_key
    ```
-2. **Offline Fallback**: Ensure Ollama is installed with `llama3.2:latest` or `gemma3:1b` pulled.
-3. **MCP Requirements**: `pip install mcp` for the MCP server/client SDK.
+2. **MCP Requirements**: `pip install mcp` and `google-generativeai` for the SDKs.
 
 
 ---
@@ -79,7 +76,8 @@ The **App Copilot** is an agentic LLM that lives in the main dashboard. It can "
   - **Fuzzy Location Matching**: "Take me to Hebbel" automatically resolves to "Hebbal" and selects the region in the sidebar.
   - **Parameter Tuning**: "Set rainfall to 200mm and turn on live traffic" instantly updates the configuration state.
   - **Workflow Automation**: "Run a comparison for Marathahalli" will select the region, set the algorithm to 'All', and trigger the parallel simulation.
-  - **Interactive Options**: When a command is ambiguous, the Copilot presents clickable "Option Chips" (e.g., *[▶ Start with defaults]* or *[📊 Start Compare Mode]*) to guide the user.
+  - **Real-Time Weather**: "Set rainfall to match current weather" calls the weather tool and updates parameters instantly.
+  - **Interactive Options**: When a command is ambiguous, the Copilot presents clickable "Option Chips" (e.g., *[☁️ Use real-time rainfall]* or *[📊 Start Compare Mode]*) to guide the user.
 
 - **Example Prompts**:
   - *"Go to Yelahanka and run GA with 180mm rainfall"*
@@ -124,6 +122,12 @@ The system includes a dedicated **Model Context Protocol (MCP)** server, allowin
 - `get_route_summary`: Provides technical stats on the computed evacuation paths.
 - `get_expert_analysis`: Forces a specific persona (Logistics/Tactical/Civic) to analyze the current data.
 - `ask_evacuation_question`: Allows the external agent to ask free-form questions about the dashboard's state.
+
+### Route Recommendations Changes
+- Digital Twin Integration: The context_builder translates real-time coordinates, flood depths, and shelter capacities into a structured tactical summary.
+- Routing Integration: Every specific route (top 25 paths) is now "visible" to the AI, including origin nodes, destination names, and population volumes.
+- Strategy Generation: The system doesn't just show data; it performs mathematical preprocessing to identify Pressure Junctures (bottlenecks) and feeds these to the LLM for tactical planning.
+- Expert Personas: You have specialized agents (Logistics Chief, Tactical Commander, Civic Authority) that utilize this data for structured, professional reporting.
 
 ### Running the MCP Server
 To expose the Digital Twin to external agents:

@@ -4,7 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { CloudRain, Calendar, ChevronDown } from 'lucide-react';
+import { CloudRain, Calendar, ChevronDown, Loader } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
 import { API_URL } from '../config';
 
@@ -13,6 +13,26 @@ export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
     const [records, setRecords] = useState([]);
     const [selDate, setSelDate] = useState('');
     const [selRec, setSelRec] = useState(null);
+    const [fetchingWeather, setFetchingWeather] = useState(false);
+    const [weatherStatus, setWeatherStatus] = useState('');
+
+    const handleFetchWeather = async () => {
+        if (!loadedHobli) return;
+        setFetchingWeather(true);
+        try {
+            const res = await axios.get(`${API_URL}/weather/current`, { params: { hobli: loadedHobli } });
+            if (res.data.error) {
+                alert(res.data.error);
+            } else {
+                onRainfallChange(res.data.rainfall_mm || 0);
+                setWeatherStatus(`${res.data.condition} (${res.data.rainfall_mm}mm)`);
+            }
+        } catch (err) {
+            alert("Failed to fetch weather data.");
+        } finally {
+            setFetchingWeather(false);
+        }
+    };
 
     // Re-fetch whenever a new hobli is loaded
     useEffect(() => {
@@ -71,13 +91,56 @@ export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
                 )
             ) : (
                 <>
-                    <label className="field-label">Rainfall (mm) — {rainfallMm}</label>
+                    <label className="field-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Rainfall (mm)</span>
+                        <span style={{ fontWeight: 600, color: '#2563eb' }}>{rainfallMm} mm</span>
+                    </label>
                     <input
-                        type="range" min={5} max={500} step={5}
+                        type="range" min={0} max={500} step={5}
                         value={rainfallMm}
-                        onChange={e => onRainfallChange(Number(e.target.value))}
+                        onChange={e => {
+                            onRainfallChange(Number(e.target.value));
+                            setWeatherStatus('');
+                        }}
                         className="slider"
                     />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+                        <span>0 mm</span><span>500 mm</span>
+                    </div>
+
+                    <button
+                        className="btn-secondary"
+                        onClick={handleFetchWeather}
+                        disabled={fetchingWeather || !loadedHobli}
+                        style={{
+                            marginTop: '1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            width: '100%',
+                            fontSize: '12px',
+                            padding: '8px'
+                        }}
+                    >
+                        {fetchingWeather ? <Loader size={13} className="spin" /> : <CloudRain size={13} />}
+                        {fetchingWeather ? 'Fetching Weather...' : 'Fetch Real-Time Weather'}
+                    </button>
+
+                    {weatherStatus && (
+                        <div style={{
+                            marginTop: '8px',
+                            fontSize: '11px',
+                            color: '#059669',
+                            backgroundColor: '#ecfdf5',
+                            padding: '6px',
+                            borderRadius: '4px',
+                            textAlign: 'center',
+                            border: '1px solid #10b981'
+                        }}>
+                            ✓ {weatherStatus}
+                        </div>
+                    )}
                 </>
             )}
         </section>

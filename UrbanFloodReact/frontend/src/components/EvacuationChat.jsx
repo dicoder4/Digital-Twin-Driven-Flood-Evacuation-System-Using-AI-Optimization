@@ -3,7 +3,7 @@ import { MessageCircle, Send, Loader, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
 
-export function EvacuationChat({ context }) {
+export function EvacuationChat({ context, evacuationPlan = [] }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
@@ -30,7 +30,7 @@ export function EvacuationChat({ context }) {
         fetch(`${API_URL}/evacuation-chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, context }),
+            body: JSON.stringify({ question, context, evacuation_plan: evacuationPlan }),
         }).then(async res => {
             const reader = res.body.getReader();
             const decoder = new TextDecoder();

@@ -270,11 +270,16 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             best_fitness = round(getattr(planner_instance, 'best_fitness', 0.0), 1)
             print(f"{_ts()}  [{algo_label}] best_fitness = {best_fitness}")
 
+            # Calculate pressure points (converging routes / bottlenecks)
+            pressure_points = planner_instance.calculate_pressure_points(final_evacuation_plan)
+            print(f"{_ts()}  [{algo_label}] extracted {len(pressure_points)} pressure junctures")
+
         except Exception as e:
             import traceback
             print(f"{_ts()}  [DEBUG] *** {algo_label} EXCEPTION: {e} ***")
             traceback.print_exc()
             ga_execution_time = round(time.time() - ga_start, 2)
+            pressure_points = []
 
         # Update shelter occupancy from GA result
         for move in final_evacuation_plan:
@@ -340,6 +345,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
                 best_fitness / max(total_at_risk_before_ga, 1), 1
             ),
             "shelter_reports":         shelter_reports,
+            "pressure_points":         pressure_points,
         },
     }
     try:

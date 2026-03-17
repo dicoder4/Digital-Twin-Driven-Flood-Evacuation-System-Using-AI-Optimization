@@ -644,6 +644,7 @@ export default function App() {
       />
 
       <AppCopilot 
+        loadedHobli={loadedHobli}
         availableHoblis={regions.allHoblis || []}
         regionsTree={regions.regionsTree || {}}
         populationCount={populationCount}

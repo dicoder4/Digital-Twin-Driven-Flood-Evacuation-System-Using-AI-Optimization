@@ -14,7 +14,9 @@ Tools exposed:
     2. get_expert_analysis    — Gets AI expert advice (logistics/tactical/civic)
     3. ask_evacuation_question — Free-form Q&A about evacuation data
     4. get_shelter_status      — Detailed shelter occupancy & severity breakdown
-    5. get_route_summary       — Statistics about computed evacuation routes
+    5. get_route_summary       — Statistics and details about computed evacuation routes
+    6. get_pressure_junctures   — Critical bottlenecks (converging routes/flood risk)
+    7. generate_evacuation_strategy — AI-generated tactical strategy
 """
 
 import sys
@@ -27,8 +29,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mcp.server.fastmcp import FastMCP
 try:
     from genai.context_builder import build_expert_context
+    from genai.param_resolver import resolve_hobli
+    from genai.weather_client import WeatherClient
 except ImportError:
     from context_builder import build_expert_context
+    from param_resolver import resolve_hobli
+    from weather_client import WeatherClient
 
 # ── Create MCP Server ─────────────────────────────────────────────────────────
 mcp = FastMCP("Urban Flood Evacuation AI Server")
@@ -114,6 +120,45 @@ def get_simulation_state() -> str:
 
 
 @mcp.tool()
+def get_realtime_weather(hobli_name: str = None) -> str:
+    """
+    Fetch the current real-time rainfall and weather data for a given region.
+    This helps the AI understand if current weather conditions justify
+    starting an evacuation or increasing readiness.
+    
+    Args:
+        hobli_name: Optional. Name of the Hobli. If omitted, uses the currently loaded region.
+    """
+    if not hobli_name:
+        state = _load_state()
+        hobli_name = state.get("hobli")
+        
+    if not hobli_name:
+        return "Error: No region specified and no simulation region currently loaded."
+
+    info = resolve_hobli(hobli_name)
+    if not info:
+        return f"Error: Could not find coordinates for Hobli '{hobli_name}'."
+        
+    try:
+        client = WeatherClient.from_hobli_info(info)
+        data = client.get_current()
+        
+        if data.get("source") == "error":
+            return f"Error fetching weather: {data.get('description')}"
+            
+        return (
+            f"Current Weather for {info['display']}:\n"
+            f"- Temperature: {data['temp_c']}°C\n"
+            f"- Rainfall: {data['precipitation_mm']} mm\n"
+            f"- Condition: {data['description']}\n"
+            f"Use these parameters to configure the simulation rainfall if needed."
+        )
+    except Exception as e:
+        return f"Error connecting to weather service: {str(e)}"
+
+
+@mcp.tool()
 def get_shelter_status() -> str:
     """
     Get detailed shelter occupancy status for all shelters in the simulation.
@@ -166,7 +211,7 @@ def get_route_summary() -> str:
     if not ctx:
         return "No simulation data available."
 
-    routes = ctx.get("routes", {})
+    routes = ctx.get("route_overview", {})
     if not routes:
         return "No route data available. The simulation may not have generated routes."
 
@@ -177,11 +222,118 @@ def get_route_summary() -> str:
         "Routes to Critical Shelters: " + str(routes.get("routes_to_critical_shelters", 0)),
         "Avg Distance: " + str(routes.get("avg_distance_m", 0)) + " m",
         "Max Distance: " + str(routes.get("max_distance_m", 0)) + " m",
-        "Min Distance: " + str(routes.get("min_distance_m", 0)) + " m",
         "Largest Group: " + str(routes.get("largest_group_size", 0)) + " people",
+        "",
+        "=== Top Evacuation Routes (by volume) ==="
     ]
+    
+    details = ctx.get("route_details", [])
+    for i, r in enumerate(details):
+        fb_tag = " [NON-NETWORK FALLBACK]" if r.get("fallback_route") else ""
+        lines.append(f"{i+1}. Origin Node {r.get('origin_node')} → {r.get('to_shelter')}: {r.get('evacuees')} people ({r.get('distance_m')}m){fb_tag}")
+        
+    if not details:
+        lines.append("(No individual route details available)")
+        
     return "\n".join(lines)
 
+
+@mcp.tool()
+def get_pressure_junctures() -> str:
+    """
+    Get identified 'pressure junctures' (bottlenecks) where multiple evacuation 
+    routes converge or where high volume meets flood risk.
+    """
+    ctx = _get_enriched_context()
+    junctures = ctx.get("pressure_junctures", [])
+    
+    if not junctures:
+        return "No significant pressure junctures identified for current simulation."
+        
+    lines = ["=== Critical Pressure Junctures (Bottlenecks) ==="]
+    for i, j in enumerate(junctures):
+        lines.append(
+            f"{i+1}. Location: {j['lat']}, {j['lon']} (Node {j['node_id']})\n"
+            f"   - Volume: {j['total_evacuees']} people over {j['route_count']} routes\n"
+            f"   - Condition: {j['flood_depth']}m water depth"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def generate_evacuation_strategy() -> str:
+    """
+    Generate a comprehensive evacuation strategy based on the current Digital Twin state.
+    Uses Gemini to analyze the simulation data and produce a tactical plan including:
+    - Priority shelter redirections (handling overloaded shelters)
+    - Route load rebalancing (managing large evacuee groups)
+    - Time-phased action steps (immediate vs secondary actions)
+    Call this tool to get an overarching strategic plan for the crisis.
+    """
+    ctx = _get_enriched_context()
+    if not ctx:
+        return "No simulation data available. Run a simulation first."
+
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+
+    if not gemini_key and not groq_key:
+        return "Error: Neither GEMINI_API_KEY nor GROQ_API_KEY is set in the environment."
+
+    system_prompt = """You are the Chief Strategy Officer for a Digital Twin-Driven Flood Evacuation System.
+Analyze the provided real-time simulation data and generate a comprehensive tactical evacuation strategy.
+
+Your strategy MUST include exactly three sections:
+1. **Priority Shelter Redirections**: Identify critically overloaded shelters and propose specific, mathematically viable redirections to shelters with remaining capacity. Use real capacity bounds and shelter names.
+2. **Route Load Rebalancing**: Analyze the largest evacuee groups and potential bottlenecks. Suggest specific interventions (e.g., staggering departures, deploying extra transport, NDRF escorts) for these high-volume routes.
+3. **Time-Phased Action Plan**: Provide a chronological step-by-step execution plan broken into Immediate (0-2 hours), Near-Term (2-6 hours), and Ongoing actions.
+
+Rules:
+- Base all recommendations STRICTLY on the numbers provided in the context.
+- Use shelter names and exact evacuee/capacity numbers.
+- Be concise, authoritative, and format with clear markdown headers and bullet points.
+- Do NOT output preamble, just the three sections."""
+
+    context_text = json.dumps(ctx, indent=2)
+    prompt_text = f"Simulation Data:\n{context_text}\n\nGenerate the strategy:"
+
+    # Primary: Gemini
+    if gemini_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+            response = model.generate_content(prompt_text)
+            return response.text if response.text else "Strategy generation returned an empty response."
+        except Exception as e:
+            if not groq_key:
+                return f"Error generating strategy via Gemini: {e}"
+            # Fall through to Groq if Gemini fails but Groq is available
+
+    # Fallback: Groq
+    if groq_key:
+        import httpx
+        try:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {groq_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": "llama-3.1-8b-instant",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt_text},
+                ],
+            }
+            resp = httpx.post(url, headers=headers, json=payload, timeout=30.0)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            return f"Error generating strategy via Groq fallback: {e}"
+
+    return "Failed to generate strategy."
 
 @mcp.tool()
 def get_expert_analysis(persona: str) -> str:

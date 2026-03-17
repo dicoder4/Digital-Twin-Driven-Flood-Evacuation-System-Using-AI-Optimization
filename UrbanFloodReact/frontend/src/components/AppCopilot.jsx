@@ -83,7 +83,7 @@ function OptionChips({ options, disabled, onConfirm }) {
     );
 }
 
-export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNavigate, onSelectRegion, onRunSimulation, onUpdateParams }) {
+export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populationCount, onNavigate, onSelectRegion, onRunSimulation, onUpdateParams }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [messages, setMessages] = useState([
@@ -309,6 +309,21 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
                     const traffic = args.use_traffic ? ' · traffic on' : '';
                     const evac = args.evacuation_mode ? ' · evac mode' : '';
                     actionMsg = `*[Running **${algo}** for **${args.hobli}** @ ${args.rainfall_mm || 150}mm${traffic}${evac}]*`;
+                } else if (funcName === 'get_weather') {
+                    const hob = args.hobli || loadedHobli;
+                    if (!hob) {
+                        actionMsg = `*[Error: No region selected to fetch weather for]*`;
+                    } else {
+                        const wRes = await fetch(`${API_URL}/weather/current?hobli=${encodeURIComponent(hob)}`);
+                        const wData = await wRes.json();
+                        if (wData.error) {
+                            actionMsg = `*[Error: ${wData.error}]*`;
+                        } else {
+                            const rain = Math.round(wData.rainfall_mm);
+                            onUpdateParams({ rainfall: rain });
+                            actionMsg = `*[Live weather for **${hob}**: **${rain}mm** (${wData.condition}) — sidebar updated ✓]*`;
+                        }
+                    }
                 } else {
                     actionMsg = `*[Attempted unknown action: ${funcName}]*`;
                 }
@@ -467,6 +482,21 @@ export function AppCopilot({ availableHoblis, regionsTree, populationCount, onNa
                                                 if (txt.includes('traffic')) pTraffic = true;
                                                 if (txt.includes('evacuation') || txt.includes('evac mode')) pEvac = true;
                                                 if (txt.includes('150mm')) pRain = 150;
+
+                                                if (txt.includes('real-time rainfall')) {
+                                                    // Trigger instant weather fetch
+                                                    const hob = loadedHobli;
+                                                    if (hob) {
+                                                        fetch(`${API_URL}/weather/current?hobli=${encodeURIComponent(hob)}`)
+                                                            .then(r => r.json())
+                                                            .then(wData => {
+                                                                if (!wData.error) {
+                                                                    const r = Math.round(wData.rainfall_mm);
+                                                                    onUpdateParams && onUpdateParams({ rainfall: r });
+                                                                }
+                                                            });
+                                                    }
+                                                }
 
                                                 if (onUpdateParams) {
                                                     onUpdateParams({ 

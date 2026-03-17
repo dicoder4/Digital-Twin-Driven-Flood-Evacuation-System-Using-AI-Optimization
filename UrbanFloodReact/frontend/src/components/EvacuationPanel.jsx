@@ -427,7 +427,7 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                     {genaiOpen && (
                         <div className="genai-dropdown-content">
                             <PanelOfExperts summary={summary} evacuationPlan={evacuationPlan} />
-                            <EvacuationChat context={summary} />
+                            <EvacuationChat context={summary} evacuationPlan={evacuationPlan} />
                         </div>
                     )}
                 </section>
