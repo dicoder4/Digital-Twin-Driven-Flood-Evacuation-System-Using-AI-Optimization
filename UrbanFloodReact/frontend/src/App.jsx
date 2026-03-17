@@ -149,8 +149,14 @@ export default function App() {
     setPopulationCount(0);
     setUnsafePeopleCount(0);
     setShelterCandidates([]);
-    // Load the region into backend memory and navigate to config
-    handleLoadRegion(hobli).then(() => setActiveTab('config'));
+    // Load the region into backend memory, auto-fetch population, then navigate to config
+    handleLoadRegion(hobli).then(() => {
+      setActiveTab('config');
+      // Auto-fetch population so it is ready before the Copilot fires run_simulation
+      axios.get(`${API_URL}/population/${encodeURIComponent(hobli)}`)
+        .then(res => { if (res.data.total_population > 0) setPopulationCount(res.data.total_population); })
+        .catch(() => {}); // silent — user can still set it manually
+    });
   }, [regions, handleLoadRegion, sim]);
 
   // ── Start single simulation ───────────────────────────────────
@@ -212,7 +218,7 @@ export default function App() {
       evacuation_mode: overrideEvac !== undefined ? overrideEvac : evacuationMode,
       use_traffic: overrideTraffic !== undefined ? overrideTraffic : useTraffic,
     });
-    if (populationCount !== null && populationCount !== undefined) {
+    if (populationCount !== null && populationCount !== undefined && populationCount > 0) {
       params.append('population', populationCount);
     }
 

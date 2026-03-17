@@ -59,7 +59,7 @@ export function useSimulation() {
             use_traffic: useTraffic,
             algorithm,
         });
-        if (populationCount !== null) {
+        if (populationCount !== null && populationCount > 0) {
             params.append('population', populationCount);
         }
         
