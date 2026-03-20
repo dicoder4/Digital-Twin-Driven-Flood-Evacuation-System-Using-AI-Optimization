@@ -127,28 +127,12 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     """Generator for SSE simulation stream."""
     import time
     loop = asyncio.get_event_loop()
-<<<<<<< Updated upstream
-    if not hobli or hobli.strip() == "[object Object]":
-        raise HTTPException(status_code=400, detail="Invalid hobli name '[object Object]'. Please reload region.")
-=======
->>>>>>> Stashed changes
     key = norm_key(hobli)
     if key not in REGION_CACHE:
         try:
             await loop.run_in_executor(None, get_region, key)
         except Exception as e:
-<<<<<<< Updated upstream
-            err_frame = {
-                "compare_done": True,
-                "total": steps,
-                "results": {},
-                "error": f"Region '{hobli}' not loaded: {e}",
-            }
-            yield f"data: {json.dumps(err_frame)}\n\n"
-            return
-=======
             raise HTTPException(status_code=400, detail=f"Region '{hobli}' not loaded: {e}")
->>>>>>> Stashed changes
 
     entry  = REGION_CACHE[key]
     G_ref  = entry["G"]
