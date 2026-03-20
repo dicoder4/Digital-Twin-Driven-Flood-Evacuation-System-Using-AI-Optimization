@@ -37,6 +37,17 @@ What you CANNOT answer from this data (be explicit if asked):
 - Specific per-second traffic delays (TomTom gives real-time, but only the aggregate routing is used here).
 For these, suggest users look at the Live Map for visual street-level labels."""
 
+from genai.mcp_evacuation_server import (
+    narrate_best_route,
+    analyze_road_conditions,
+    get_rescue_guidelines
+)
+
+AGENT_TOOLS = [
+    narrate_best_route, 
+    analyze_road_conditions, 
+    get_rescue_guidelines
+]
 
 async def stream_chat(question: str, context_data: dict):
     """
@@ -56,12 +67,15 @@ async def stream_chat(question: str, context_data: dict):
             model = genai.GenerativeModel(
                 model_name="gemini-2.5-flash",
                 system_instruction=CHAT_SYSTEM_PROMPT,
+                tools=AGENT_TOOLS
             )
-            response = model.generate_content(user_prompt, stream=True)
-            for chunk in response:
-                text = getattr(chunk, "text", None)
-                if text:
-                    yield "data: " + json.dumps({"text": text}) + nl
+            chat = model.start_chat(enable_automatic_function_calling=True)
+            response = chat.send_message(user_prompt, stream=False)
+            try:
+                if response.text:
+                    yield "data: " + json.dumps({"text": response.text}) + nl
+            except ValueError:
+                pass # Ignore parts with no text
             return  # success
         except Exception as e:
             err_text = f"_(Gemini error: {e} — falling back to Groq...)_\n\n"
