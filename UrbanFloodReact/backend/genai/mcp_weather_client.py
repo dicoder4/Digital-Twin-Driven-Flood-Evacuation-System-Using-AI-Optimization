@@ -1,63 +1,69 @@
-import asyncio
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client, StdioServerParameters
+import httpx
 import sys
 import os
+import asyncio
 
-from param_resolver import resolve_hobli
+# Add parent directory for imports if run as script
+if __name__ == "__main__":
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-async def main():
-    if len(sys.argv) < 2:
-        print("Usage: python mcp_weather_client.py <hobli_name>")
-        return
+from genai.param_resolver import resolve_hobli
 
-    hobli_name = sys.argv[1]
+class WeatherClient:
+    """
+    Consolidated Weather Client for the Urban Flood system.
+    Provides real-time weather data using Open-Meteo, which supports global coordinates.
+    """
+    def __init__(self, lat: float, lon: float):
+        self.lat = lat
+        self.lon = lon
+    
+    @classmethod
+    def from_hobli_info(cls, info: dict):
+        if not info or "lat" not in info:
+            raise ValueError("Invalid hobli info provided to WeatherClient")
+        return cls(info["lat"], info["lon"])
+        
+    def get_current(self) -> dict:
+        """
+        Fetch current weather parameters.
+        Returns a dict with temp_c, precipitation_mm, and description.
+        """
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={self.lat}&longitude={self.lon}&current=temperature_2m,precipitation&timezone=auto"
+        try:
+            # Note: Using httpx.get (sync) to maintain compatibility with existing sync backend paths
+            resp = httpx.get(url, timeout=10.0)
+            resp.raise_for_status()
+            data = resp.json()
+            curr = data.get("current", {})
+            return {
+                "temp_c": curr.get("temperature_2m", 25),
+                "precipitation_mm": curr.get("precipitation", 0),
+                "description": "Live data from Open-Meteo",
+                "source": "open-meteo"
+            }
+        except Exception as e:
+            return {
+                "source": "error",
+                "description": f"Failed to fetch weather: {str(e)}",
+                "temp_c": 25,
+                "precipitation_mm": 0
+            }
+
+async def fetch_weather_mcp_style(hobli_name: str):
+    """Async helper for MCP tools or async endpoints."""
     info = resolve_hobli(hobli_name)
     if not info:
-        print(f"Error: Could not find coordinates for Hobli '{hobli_name}'.")
-        return
-        
-    lat = info["lat"]
-    lon = info["lon"]
+        return {"error": f"Region {hobli_name} not found"}
     
-    print(f"Connecting to prebuilt MCP weather server for {info['display']} ({lat}, {lon})...")
-    
-    # We use the prebuilt MCP weather server via NPX
-    # The official Anthropic server is @modelcontextprotocol/server-weather
-    server_params = StdioServerParameters(
-        command="npx.cmd" if os.name == "nt" else "npx",
-        args=["-y", "@modelcontextprotocol/server-weather"],
-        env=None
-    )
-
-    try:
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                
-                print("Connected! Fetching current weather forecast (get-forecast)...")
-                try:
-                    result = await session.call_tool("get-forecast", arguments={"latitude": lat, "longitude": lon})
-                    print("\n--- Weather Forecast Result ---")
-                    for content in result.content:
-                        if content.type == "text":
-                            print(content.text)
-                except Exception as eval_err:
-                    print(f"Error calling get-forecast tool: {eval_err}")
-                    
-                print("\nFetching weather alerts (get-alerts)...")
-                try:
-                    alerts_result = await session.call_tool("get-alerts", arguments={"state": "CA"}) # Just an example if NWS requires state code
-                    print("\n--- Weather Alerts Result ---")
-                    for content in alerts_result.content:
-                        if content.type == "text":
-                            print(content.text)
-                except Exception as e:
-                    pass
-
-    except Exception as e:
-        print(f"Failed to connect to MCP server or fetch weather: {e}")
-        print("Note: The official @modelcontextprotocol/server-weather uses NWS data, which only supports US coordinates.")
+    client = WeatherClient.from_hobli_info(info)
+    # Since get_current is currently sync, we wrap it or just call it
+    return client.get_current()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Test CLI usage
+    if len(sys.argv) > 1:
+        res = asyncio.run(fetch_weather_mcp_style(sys.argv[1]))
+        print(f"Weather for {sys.argv[1]}: {res}")
+    else:
+        print("Usage: python mcp_weather_client.py <hobli_name>")

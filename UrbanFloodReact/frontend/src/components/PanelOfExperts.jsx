@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Loader, Truck, Anchor, Megaphone, Cpu, CheckCircle, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Loader, Truck, Anchor, Megaphone, Cpu, CheckCircle, ChevronDown, Play } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
 
@@ -15,13 +15,6 @@ export function PanelOfExperts({ summary, evacuationPlan }) {
     const [responses, setResponses] = useState({ logistics: '', tactical: '', civic: '' });
     const [loading, setLoading] = useState({ logistics: false, tactical: false, civic: false });
     const [fetched, setFetched] = useState({ logistics: false, tactical: false, civic: false });
-
-    // Auto-fetch on tab switch if not yet loaded (only when panel is open)
-    useEffect(() => {
-        if (isOpen && summary && activeTab && !fetched[activeTab] && !loading[activeTab]) {
-            fetchExpertise(activeTab);
-        }
-    }, [activeTab, summary, isOpen]);
 
     const fetchExpertise = (persona) => {
         if (!summary || loading[persona]) return;
@@ -130,8 +123,38 @@ export function PanelOfExperts({ summary, evacuationPlan }) {
                             borderTop: `2px solid ${activeConfig?.color || '#3b82f6'}`,
                             color: '#334155',
                             lineHeight: '1.6',
+                            display: 'flex',
+                            flexDirection: 'column'
                         }}
                     >
+                        {/* Manual Trigger Button (shown only if not loaded/loading) */}
+                        {!fetched[activeTab] && !loading[activeTab] && !responses[activeTab] && (
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <button
+                                    onClick={() => fetchExpertise(activeTab)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        padding: '10px 20px',
+                                        backgroundColor: activeConfig?.color || '#3b82f6',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: '500',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                                    onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+                                >
+                                    <Play size={14} fill="white" />
+                                    Generate {activeConfig?.label} Report
+                                </button>
+                            </div>
+                        )}
+
                         {loading[activeTab] && !responses[activeTab] && (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#64748b', height: '100px' }}>
                                 <Loader size={16} className="spin" />
@@ -152,8 +175,15 @@ export function PanelOfExperts({ summary, evacuationPlan }) {
                         )}
 
                         {!loading[activeTab] && !responses[activeTab] && fetched[activeTab] && (
-                            <div style={{ color: '#94a3b8', textAlign: 'center', marginTop: '40px' }}>
-                                No response received. Check API connectivity.
+                            <div style={{ color: '#ef4444', textAlign: 'center', marginTop: '40px' }}>
+                                No response received. Please check your API key.
+                                <br/>
+                                <button 
+                                    onClick={() => fetchExpertise(activeTab)}
+                                    style={{ marginTop: '10px', padding: '6px 12px', borderRadius: '4px', border: '1px solid currentColor', background: 'transparent', color: 'inherit', cursor: 'pointer' }}
+                                >
+                                    Retry
+                                </button>
                             </div>
                         )}
                     </div>

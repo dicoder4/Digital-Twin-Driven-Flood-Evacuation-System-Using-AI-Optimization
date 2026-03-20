@@ -80,13 +80,25 @@ async def expert_advice_stream(req: ExpertAdviceRequest):
 class ChatRequest(BaseModel):
     question: str
     context: dict
+    evacuation_plan: list = []
 
 @app.post("/evacuation-chat")
 async def evacuation_chat(req: ChatRequest):
     from genai.evacuation_chat import stream_chat
+    try:
+        from genai.context_builder import build_expert_context
+    except ImportError:
+        from context_builder import build_expert_context
+    
+    # If it is a compare mode context, it's already structured for the LLM.
+    if req.context.get("mode") == "compare":
+        enriched_context = req.context
+    else:
+        # Build the full enriched context (with route details) for standard queries.
+        enriched_context = build_expert_context(req.context, req.evacuation_plan)
     
     return StreamingResponse(
-        stream_chat(req.question, req.context),
+        stream_chat(req.question, enriched_context),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
