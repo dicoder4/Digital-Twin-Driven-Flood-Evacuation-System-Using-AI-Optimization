@@ -244,6 +244,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     print(f"{_ts()}  [DEBUG] total at-risk pop before GA = {total_at_risk_before_ga}")
 
     planner_instance = None  # sentinel for traffic geojson extraction
+    pressure_points = []
     if at_risk and safe_shelters:
         at_risk_formatted = [
             {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}

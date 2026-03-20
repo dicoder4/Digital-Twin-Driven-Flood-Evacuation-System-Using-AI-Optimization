@@ -21,7 +21,7 @@ class WeatherClient:
         """
         try:
             # We use Open-Meteo's current API for temperature and precipitation
-            url = f"https://api.open-meteo.com/v1/forecast?latitude={self.lat}&longitude={self.lon}&current=temperature_2m,precipitation,weather_code"
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={self.lat}&longitude={self.lon}&current=temperature_2m,precipitation,weather_code&timezone=auto"
             
             resp = requests.get(url, timeout=10)
             resp.raise_for_status()
