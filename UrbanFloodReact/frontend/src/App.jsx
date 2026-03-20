@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -27,8 +27,9 @@ import { DraSidebar } from './components/DraSidebar';
 import { PanelOfExperts } from './components/PanelOfExperts';
 import { EvacuationChat } from './components/EvacuationChat';
 import { computeShelterSafety } from './utils/geoUtils';
-import { API_URL } from './config';   // ← ESM import (no require() anywhere)
+import { API_URL } from './config';
 import { AppCopilot } from './components/AppCopilot';
+import { AutomationPanel } from './components/AutomationPanel';
 import './App.css';
 
 export default function App() {
@@ -404,6 +405,10 @@ export default function App() {
             disabled={!sim.simulationDone && !compareResults}
             title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
           ><Cpu size={11} /> AI Agent</button>
+          <button
+            className={`sidebar-tab ${activeTab === 'automation' ? 'active' : ''}`}
+            onClick={() => setActiveTab('automation')}
+          ><CloudRain size={11} /> Sentinel</button>
         </div>
 
         <div className="sidebar-content custom-scrollbar">
@@ -651,7 +656,18 @@ export default function App() {
                         <Cpu size={32} className="evac-empty-icon" style={{marginBottom: "1rem", color: "#64748b"}} />
                         <p style={{color: "#64748b", textAlign: "center", lineHeight: "1.5"}}>Run a simulation to interact with the AI Evacuation Agent.</p>
                     </div>
-                )}
+                  )}
+              </div>
+          )}
+
+          {activeTab === 'automation' && (
+              <div className="evac-panel" style={{height: "100%", paddingBottom: "2rem"}}>
+                  <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
+                      sim.setStatusMsg("Sentinel Auto-Triggered!");
+                      await handleLoadRegion(autoHobli);
+                      sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
+                      setActiveTab('evacuation');
+                  }} />
               </div>
           )}
         </div>
