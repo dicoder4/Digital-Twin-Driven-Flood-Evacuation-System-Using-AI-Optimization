@@ -601,6 +601,7 @@ export default function App() {
 
           {activeTab === 'evacuation' && (
             <EvacuationPanel
+              locationName={loadedHobli}
               summary={sim.finalReport?.summary}
               evacuationMode={evacuationMode}
               selectedShelterId={selectedShelterId}

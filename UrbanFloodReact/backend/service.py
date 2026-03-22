@@ -7,6 +7,8 @@ between the API (Controller) and the Data/Simulators (Model).
 
 import asyncio
 import json
+import os
+import math
 import time as _time_module
 from datetime import datetime
 import pandas as pd
@@ -94,6 +96,216 @@ async def process_load_region(hobli_name: str):
         "lon":      coords["lon"],
         "district": coords["district"],
     }
+
+def _haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the great circle distance in kilometers between two points."""
+    R = 6371  # Earth radius in kilometers
+    dLat = math.radians(lat2 - lat1)
+    dLon = math.radians(lon2 - lon1)
+    a = math.sin(dLat / 2) * math.sin(dLat / 2) + \
+        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * \
+        math.sin(dLon / 2) * math.sin(dLon / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+async def fetch_resources(location: str):
+    """
+    Look up IDRN resources for the given location string.
+    If no matches found (or location is 'Unknown'), return default set (Bengaluru).
+    """
+    try:
+        # CONSOLE DEBUGGING
+        print(f"\n[DEBUG] fetch_resources CALLED with location='{location}'", flush=True)
+
+        # Load activity mapping from JSON if not cached
+        if not hasattr(fetch_resources, "activity_map"):
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            json_path = os.path.join(root, "backend/data/resource_definitions.json")
+            if not os.path.exists(json_path):
+                 json_path = "UrbanFloodReact/backend/data/resource_definitions.json"
+                 
+            fetch_resources.activity_map = {}
+            if os.path.exists(json_path):
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                    for activity, categories in data.items():
+                        for cat_name, items in categories.items():
+                            for item in items: # Assuming dict with {code, name} or legacy string
+                                if isinstance(item, dict):
+                                    item_name = item.get('name', '').lower()
+                                else:
+                                    item_name = str(item).lower()
+                                fetch_resources.activity_map[item_name] = activity
+
+        # Load CSV data
+        # We force reload if cache is empty to handle previous failures
+        if hasattr(fetch_resources, "cache") and not fetch_resources.cache.empty:
+            df = fetch_resources.cache
+            print(f"[DEBUG] Using cached DF. Shape: {df.shape}", flush=True)
+        else:
+            # Robust Path Resolution
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Load Logistics and Tactical CSVs
+            dfs = []
+            
+            # 1. Logistics
+            log_path = os.path.join(base_dir, "data", "logistics_resources.csv")
+            if os.path.exists(log_path):
+                print(f"[DEBUG] Loading Logistics form: {log_path}", flush=True)
+                try:
+                    cdf = pd.read_csv(log_path)
+                    cdf["Category"] = "Logistics" # Ensure category is set if missing
+                    dfs.append(cdf)
+                except Exception as e:
+                    print(f"[DEBUG] Failed to load Logistics CSV: {e}", flush=True)
+
+            # 2. Tactical (Tactical has 'Category' column usually, but we enforce/fill)
+            tac_path = os.path.join(base_dir, "data", "tactical_resources.csv")
+            if os.path.exists(tac_path):
+                print(f"[DEBUG] Loading Tactical form: {tac_path}", flush=True)
+                try:
+                    cdf = pd.read_csv(tac_path)
+                    # Often tactical CSV has 'Category' column as 'Tactical'
+                    if "Category" not in cdf.columns:
+                        cdf["Category"] = "Tactical"
+                    dfs.append(cdf)
+                except Exception as e:
+                    print(f"[DEBUG] Failed to load Tactical CSV: {e}", flush=True)
+            
+            # 3. Fallback to IDRN if both missing? Or exclude?
+            # User specifically asked for Logistics & Tactical.
+            # Only if both are missing, we might try IDRN.
+            
+            if dfs:
+                df = pd.concat(dfs, ignore_index=True)
+                df = df.fillna("N/A")
+                fetch_resources.cache = df
+                print(f"[DEBUG] Loaded {len(df)} rows from Logistics+Tactical CSVs.", flush=True)
+            else:
+                 # Fallback to old behavior (IDRN)
+                 candidates = [
+                    os.path.join(base_dir, "data", "idrn_resources_scraped.csv"),   # backend/data/...
+                    os.path.join(base_dir, "..", "data", "idrn_resources_scraped.csv"), # ../data/...
+                    os.path.join(os.getcwd(), "UrbanFloodReact", "backend", "data", "idrn_resources_scraped.csv"),
+                    os.path.join(os.getcwd(), "backend", "data", "idrn_resources_scraped.csv"),
+                    "data/idrn_resources_scraped.csv",
+                 ]
+                 csv_path = None
+                 for p in candidates:
+                    if os.path.exists(p):
+                        csv_path = p
+                        break
+                
+                 if csv_path:
+                    print(f"[DEBUG] LOADING RESOURCES FROM FALLBACK: {csv_path}", flush=True)
+                    try:
+                        df = pd.read_csv(csv_path)
+                        df = df.fillna("N/A")
+                        fetch_resources.cache = df
+                        print(f"[DEBUG] Loaded {len(df)} rows successfully.", flush=True)
+                    except Exception as e:
+                        print(f"[DEBUG] ERROR READING CSV: {e}", flush=True)
+                        return []
+                 else:
+                    print(f"[DEBUG] CRITICAL: RESOURCE CSV NOT FOUND.", flush=True)
+                    return []
+
+        # Get target coordinates for distance calculation
+        target_lat, target_lon = None, None
+        norm_loc = norm_key(location)
+        
+        # Check standard coordinate map
+        if norm_loc in HOBLI_COORDS:
+             coords = HOBLI_COORDS[norm_loc]
+             # Handle dictionary structure {lat, lon, ...} or simple tuple if changed
+             if isinstance(coords, dict):
+                 target_lat, target_lon = coords.get('lat'), coords.get('lon')
+             else:
+                 target_lat, target_lon = coords[0], coords[1]
+             print(f"[DEBUG] Found specific coordinates for '{norm_loc}': {target_lat}, {target_lon}", flush=True)
+        
+        # Fallback for known major locations or default center
+        elif location.lower() == "bengaluru":
+             target_lat, target_lon = 12.9716, 77.5946
+             print("[DEBUG] Using default Bengaluru center coordinates", flush=True)
+        else:
+            print(f"[DEBUG] WARNING: Location '{location}' (key: {norm_loc}) not found in HOBLI_COORDS.", flush=True)
+            # Default to generic center to allow distance calculation for "nearby" logic
+            target_lat, target_lon = 12.9716, 77.5946 
+            print("[DEBUG] Using generic default coordinates for distance calc.", flush=True)
+
+        # STRATEGY: Return ALL Items, Sorted by Distance, with Category
+        filtered = df.copy()
+        distances = []
+        cats = []
+        
+        t_lat = float(target_lat) if target_lat is not None else None
+        t_lon = float(target_lon) if target_lon is not None else None
+        
+        for idx, row in filtered.iterrows():
+            try:
+                lat_str = str(row.get("Latitude", "0")).replace(',', '').strip()
+                lon_str = str(row.get("Longitude", "0")).replace(',', '').strip()
+                
+                r_lat = float(lat_str) if lat_str else 0.0
+                r_lon = float(lon_str) if lon_str else 0.0
+                
+                if t_lat is None or r_lat == 0 or r_lon == 0:
+                    d = 99999.0
+                else:
+                    d = _haversine_distance(t_lat, t_lon, r_lat, r_lon)
+                
+                distances.append(d)
+                
+                if d < 5.0:
+                    cats.append("Immediate")
+                elif d < 15.0:
+                    cats.append("Extended")
+                else:
+                    cats.append("Distant")
+            except:
+                distances.append(99999.0)
+                cats.append("Distant")
+        
+        filtered['temp_dist'] = distances
+        filtered['dist_cat'] = cats
+        
+        # Sort: Closest first
+        filtered = filtered.sort_values('temp_dist', ascending=True)
+        
+        results = []
+        for idx, row in filtered.iterrows():
+            try:
+                item_name = str(row.get("Item Name", "Unknown Item"))
+                dist_val = row['temp_dist']
+                dist_str = f"{dist_val:.1f} km" if dist_val < 90000 else "N/A"
+                
+                activity_cat = fetch_resources.activity_map.get(item_name.lower(), "General Resource")
+                
+                results.append({
+                    "item": item_name,
+                    "qty": str(row.get("Quantity", "N/A")), 
+                    "source": str(row.get("Department", "Unknown Source")),
+                    "contact": str(row.get("Contact Name", "")),
+                    "phone": str(row.get("Phone", "")),
+                    "distance": dist_str,
+                    "distance_val": dist_val,
+                    "category_distance": row['dist_cat'], # Immediate/Extended/Distant
+                    "type": str(row.get("Category", "Other")),
+                    "activity": activity_cat,
+                    "address": str(row.get("Address", "N/A"))
+                })
+            except Exception as e:
+                continue
+        
+        print(f"[DEBUG] fetch_resources returning {len(results)} items (Logistics & Tactical combined). Top dist: {results[0]['distance']}", flush=True)
+        return results
+    except Exception as e:
+        print(f"[DEBUG] CRITICAL EXCEPTION in fetch_resources: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return []
 
 async def fetch_rainfall_records(hobli_name: str):
     """Retrieve and sort rainfall records."""
@@ -337,6 +549,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         "traffic_geojson":      traffic_geojson,
         "traffic_segment_count": traffic_segment_count,
         "summary": {
+            "simulation_location":     hobli,
             "total_evacuated":         total_assigned,
             "total_at_risk_remaining": at_risk_remaining,
             "total_at_risk_initial":   total_at_risk_before_ga,

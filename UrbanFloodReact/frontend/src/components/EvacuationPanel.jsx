@@ -43,7 +43,7 @@ function FillBar({ pct }) {
     );
 }
 
-export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [] }) {
+export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [] }) {
     const [genaiOpen, setGenaiOpen] = useState(false);
 
     // ── Compare table must be checked FIRST — summary is null after compare ──
@@ -296,6 +296,7 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                         {genaiOpen && (
                             <div className="genai-dropdown-content">
                                 <PanelOfExperts
+                                    locationName={locationName}
                                     summary={ad}
                                     evacuationPlan={compareActiveAlgo ? (compareResults[compareActiveAlgo]?.evacuation_plan ?? []) : []}
                                 />
@@ -426,7 +427,11 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                     </button>
                     {genaiOpen && (
                         <div className="genai-dropdown-content">
-                            <PanelOfExperts summary={summary} evacuationPlan={evacuationPlan} />
+                            <PanelOfExperts 
+                                locationName={locationName}
+                                summary={summary} 
+                                evacuationPlan={evacuationPlan} 
+                            />
                             <EvacuationChat context={summary} evacuationPlan={evacuationPlan} />
                         </div>
                     )}

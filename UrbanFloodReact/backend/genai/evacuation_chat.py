@@ -35,7 +35,24 @@ Context structure guide:
 
 What you CANNOT answer from this data (be explicit if asked):
 - Specific per-second traffic delays (TomTom gives real-time, but only the aggregate routing is used here).
-For these, suggest users look at the Live Map for visual street-level labels."""
+For these, suggest users look at the Live Map for visual street-level labels.
+
+IMPORTANT: You also have access to the "OFFICIAL RELIEF STANDARDS (Govt of Karnataka)". 
+If the user asks about resource needs (Water, Food, Toilets), use these strict standards:
+- 3 Liters/person/day for drinking.
+- 15-20 Liters/person/day for hygiene.
+- 1 Toilet per 30 persons.
+- 3.5 sq.m shelter area per person.
+"""
+
+
+def _load_guidelines_text() -> str:
+    """Helper to load guidelines for the chat context."""
+    try:
+        from genai.expert_panel import get_resource_guidelines
+        return get_resource_guidelines()
+    except ImportError:
+        return ""
 
 
 async def stream_chat(question: str, context_data: dict):
@@ -43,8 +60,19 @@ async def stream_chat(question: str, context_data: dict):
     Stream an answer to a free-form user question about the evacuation.
     Primary: Gemini 2.5 Flash  →  Fallback: Groq llama-3.1-8b-instant.
     """
+    # 1. Load Standards
+    guidelines_text = _load_guidelines_text()
+
+    # 2. Build Context
     context_text = json.dumps(context_data, indent=2)
-    user_prompt = f"Evacuation Context:\n{context_text}\n\nUser Question: {question}"
+    user_prompt = f"""
+Evacuation Context:
+{context_text}
+
+{guidelines_text}
+
+User Question: {question}
+"""
     nl = "\n\n"
 
     # ── Primary: Gemini 2.5 Flash ─────────────────────────────────────────────

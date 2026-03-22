@@ -29,6 +29,85 @@ This project implements a sophisticated flood evacuation system that:
 - 🏥 Safe center identification and capacity management
 - 🆘 SOS alerting and Evacuation Plan Notifications
 
+---
+
+# Branch: `genai-agents` - Enhanced Decision Support System
+
+This branch introduces an **AI-driven "Panel of Experts"** to provide real-time, context-aware strategic advice during flood simulations. By integrating Google Gemini 2.5 Flash and specialized data-scraping pipelines, the system now offers actionable reports from three distinct personas.
+
+## 🤖 New AI Modules & Workflow
+
+### 1. Panel of Experts (Backend: `genai/expert_panel.py`)
+Orchestrates three AI personas, each with a unique system prompt and responsibility:
+*   **🚚 Logistics Chief**: Manages supply chains, allocates verified IDRN resources (Food, Medical, Transport), and identifies shortages.
+*   **⚔️ Tactical Commander**: Directs SAR (Search & Rescue) assets like boats/helicopters based on flood depth and infrastructure damage.
+*   **📢 Civic Authority**: Drafts public warnings (SMS templates) and official government situation reports.
+
+**Key Technical Features:**
+*   **Streamed Responses**: Uses Server-Sent Events (SSE) to stream AI advice token-by-token to the frontend.
+*   **Enriched Context**: Feeds the AI with real-time simulation stats (people at risk, safe routes) + verified local resources.
+*   **Strict Hallucination Control**: The AI is restricted to *only* suggest resources that exist in our scraped database.
+
+### 2. Context Builder (`genai/context_builder.py`)
+Acts as the middleware between the raw simulation engine (`service.py`) and the AI.
+*   **Proximity Filtering**: Automatically filters the 15,000+ item database to find resources within 5km/15km of the affected Hobli.
+*   **Aggregated Stats**: Converts complex graph data into human-readable summaries (e.g., "300 people stranded in Zone A") for the LLM.
+
+---
+
+## 🏗️ Data Pipeline: From PDF to Structured Knowledge
+
+We created a custom ETL (Extract, Transform, Load) pipeline to digitize unstructured government data into queryable formats.
+
+### A. Resource Scraping (`backend/data/scrape_resources.py`)
+*   **Source**: `result.pdf` (IDRN Disaster Resource Inventory).
+*   **Method**: Uses `pdfplumber` to extract tables of available equipment (Boats, JCBs, Generators).
+*   **Geocoding**: Integrates `geopy.ArcGIS` to convert textual addresses (e.g., "Fire Station, Rajajinagara") into precise Latitude/Longitude coordinates.
+*   **Output**: 
+    *   `idrn_resources_scraped.csv`: Raw master list.
+    *   `logistics_resources.csv` & `tactical_resources.csv`: Split datasets for specific agents.
+
+### B. Category Extraction (`backend/data/extract_resource_categories.py`)
+*   **Source**: `Data_collection_format_for_Districts.pdf`.
+*   **Method**: Regex-based parsing to build a taxonomy of valid resources.
+*   **Output**: `resource_definitions.json` — A hierarchical dictionary mapping items (e.g., "Life Jacket") to categories (e.g., "Search & Rescue").
+
+### C. Guideline Extraction (`backend/data/extract_guidelines.py`)
+*   **Source**: Government Relief Manuals (PDF).
+*   **Method**: Uses **Gemini 2.5 Flash** to read the PDF and extract key allocation rules (e.g., "3.5 sq.m space per person", "3L water/day").
+*   **Output**: `resource_guidelines.json` — Used by the AI to validate if the current shelter capacity meets official standards.
+
+---
+
+## 💻 Frontend Enhancements (`UrbanFloodReact/frontend`)
+
+### 1. Panel of Experts UI (`components/PanelOfExperts.jsx`)
+*   **Interactive Tabs**: Switch between Logistics, Tactical, and Civic views.
+*   **Live Markdown Rendering**: Displays the AI's formatted tables and checklists beautifully.
+*   **Expandable Reports**: Modal view for reading detailed strategic plans.
+
+### 2. Live Inventory Browser
+*   **New Modal**: Users can now browse the *actual* database of resources for the active location.
+*   **Filters**: 
+    *   **Type**: Logistics vs Tactical.
+    *   **Distance**: Immediate (<5km), Extended (5-15km), Distant (>15km).
+
+---
+
+## 📂 File Structure Changes
+
+| Path | Description |
+| :--- | :--- |
+| **`backend/genai/`** | **New Folder**: Contains all logic for the AI Agents. |
+| `├── expert_panel.py` | Main service for generating advice. |
+| `├── context_builder.py` | Prepares simulation data for the LLM. |
+| **`backend/data/`** | **Enhanced**: Now includes scraping scripts and output JSONs. |
+| `├── scrape_resources.py` | ETL script for IDRN PDF -> CSV. |
+| `├── resource_definitions.json` | JSON taxonomy of relief items. |
+| `├── logistics_resources.csv` | Processed inventory for Logistics Chief. |
+| `├── tactical_resources.csv` | Processed inventory for Tactical Commander. |
+| **`backend/main.py`** | Added endpoints `/expert-advice-stream` and `/resources/{location}`. |
+
 
 ## Project Structure
 
