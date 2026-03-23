@@ -4,10 +4,14 @@ import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
 
 export function EvacuationChat({ context, evacuationPlan = [] }) {
-    const [messages, setMessages] = useState([]);
+    const [messages, setMessages] = useState([
+        {
+            role: 'assistant',
+            text: "Hi! I'm your AI Evacuation Assistant.\nHere are some questions you can ask me to help plan the evacuation efficiently:\n\n- What is the safest route to the nearest shelter?\n- Which junctions are experiencing the worst bottlenecks?\n- How many evacuees are assigned to each shelter?\n- Are there any shelters exceeding their capacity?\n- Which optimization algorithm performed the best for this simulation?"
+        }
+    ]);
     const [input, setInput] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
-    const [isOpen, setIsOpen] = useState(false);
     const chatEndRef = useRef(null);
 
     // Auto-scroll to bottom
@@ -15,16 +19,16 @@ export function EvacuationChat({ context, evacuationPlan = [] }) {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const handleSend = () => {
-        const question = input.trim();
+    const handleSend = (overrideInput = null) => {
+        const question = overrideInput !== null ? overrideInput : input.trim();
         if (!question || isStreaming || !context) return;
 
         setInput('');
+        
         setMessages(prev => [...prev, { role: 'user', text: question }]);
         setIsStreaming(true);
 
         // Add empty assistant message that we'll stream into
-        const assistantIdx = messages.length + 1;
         setMessages(prev => [...prev, { role: 'assistant', text: '' }]);
 
         fetch(`${API_URL}/evacuation-chat`, {
@@ -75,39 +79,17 @@ export function EvacuationChat({ context, evacuationPlan = [] }) {
         }
     };
 
-    if (!isOpen) {
-        return (
-            <button
-                className="chat-toggle-btn"
-                onClick={() => setIsOpen(true)}
-                title="Ask about this evacuation"
-            >
-                <MessageCircle size={14} />
-                <span>Ask AI about this evacuation</span>
-            </button>
-        );
-    }
-
     return (
-        <section className="panel evac-section chat-section" style={{ borderTop: '2px solid #8b5cf6', marginTop: '0.75rem' }}>
+        <section className="panel evac-section chat-section" style={{ height: 'calc(100% - 2rem)', display: 'flex', flexDirection: 'column', borderTop: 'none', marginTop: 0 }}>
             <div className="chat-header">
                 <h3 className="panel-title" style={{ color: '#6d28d9', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
                     <MessageCircle size={14} /> Ask AI
                 </h3>
-                <button className="chat-close-btn" onClick={() => setIsOpen(false)} title="Close chat">
-                    <X size={14} />
-                </button>
             </div>
 
             {/* Messages */}
             <div className="chat-messages custom-scrollbar">
-                {messages.length === 0 && (
-                    <div className="chat-hint">
-                        Ask anything about the evacuation data, e.g.:<br />
-                        <em>"Why is this shelter overloaded?"</em><br />
-                        <em>"Which route has the most evacuees?"</em>
-                    </div>
-                )}
+
                 {messages.map((msg, i) => (
                     <div key={i} className={`chat-msg chat-msg--${msg.role}`}>
                         {msg.role === 'user' ? (

@@ -138,3 +138,35 @@ To expose the Digital Twin to external agents:
    python mcp_evacuation_server.py
    ```
 The server will communicate over `stdio` by default, making it easy to plug into Claude Desktop's configuration.
+
+---
+
+## Autonomous Early Warning Pipeline (Sentinel)
+
+The **Sentinel Pipeline** (`weather_watcher.py` & `AutomationPanel.jsx`) is a native, autonomous event-driven architecture that continuously monitors live atmospheric data and triggers programmatic simulation and response protocols natively without human intervention.
+
+### Core Components
+
+1. **`weather_watcher.py` (The Daemon)**
+   An asynchronous background daemon running parallel to your FastAPI event loop. 
+   - **Trigger Mechanism:** Natively pings the `mcp-weather-server` every 15 seconds to evaluate precipitation logic for an actively targeted Hobli constraint. 
+   - **Registry Match:** Maps incoming targeted names (e.g. `Uttarahalli-1`) against the `HOBLI_COORDS` registry array.
+   - **Simulation Hook:** Evaluates `precip >= threshold`. If the parameter threshold is breached, it immediately sets off an autonomous frontend socket ping.
+
+2. **`AutomationPanel.jsx` (The UI Controller)**
+   A secure, interfaceable control panel embedded directly into the React App (`App.jsx`).
+   - **Target Parameters:** Allows the **Disaster Response Authority (DRA)** to select a specific Hobli and set a `Warning Threshold [mm/h]`.
+   - **Arm/Disarm:** A single secure Power button sends an HTTP POST configuration to the daemon, arming the listener pipeline. 
+
+### How to Use the Sentinel
+
+1. Open the UI and click the **Sentinel (CloudRain Icon)** tab on the sidebar.
+2. Under **Target Hobli Partition**, select your testing environment (e.g., `Uttarahalli-1`).
+3. Set your **Warning Threshold** (e.g., `10.0` mm/h).
+4. Click the circular **Power** button to **ARM** the Sentinel.
+5. In the **Sentinel Subroutine Log**, you will securely see the system polling Open-Meteo's arrays every 15 seconds. Example: `Live scan - Uttarahalli-1: 0.0mm (Clear)`.
+
+Once the live rainfall passes your set threshold (or if you artificially set the threshold to `0.0` for a demo):
+- The log will flash a `🚨 THRESHOLD EVENT!`.
+- The daemon will autonomously disarm itself (`active = False`) to prevent CPU-locking simulation spam.
+- The UI will instantly force-trigger `sim.start()` to map out and render Evacuation Routes and algorithm paths natively on your digital twin dashboard.

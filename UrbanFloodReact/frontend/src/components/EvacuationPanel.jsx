@@ -277,42 +277,7 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                     </>
                 )}
 
-                {/* ── GenAI Agent (compare mode) ─────────────────── */}
-                {ad && (
-                    <section className="panel evac-section genai-dropdown">
-                        <button
-                            className="genai-dropdown-toggle"
-                            onClick={() => setGenaiOpen(prev => !prev)}
-                        >
-                            <span className="genai-dropdown-title">
-                                <Cpu size={14} />
-                                GenAI Agent
-                            </span>
-                            <ChevronDown
-                                size={14}
-                                className={`genai-chevron ${genaiOpen ? 'genai-chevron--open' : ''}`}
-                            />
-                        </button>
-                        {genaiOpen && (
-                            <div className="genai-dropdown-content">
-                                <PanelOfExperts
-                                    summary={ad}
-                                    evacuationPlan={compareActiveAlgo ? (compareResults[compareActiveAlgo]?.evacuation_plan ?? []) : []}
-                                />
-                                <EvacuationChat context={{ 
-                                    mode: 'compare',
-                                    active_algo: compareActiveAlgo,
-                                    // Strip the heavy geojson/plan data so context doesn't explode
-                                    summaries: Object.keys(compareResults).reduce((acc, k) => {
-                                        const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
-                                        acc[k] = rest;
-                                        return acc;
-                                    }, {})
-                                }} />
-                            </div>
-                        )}
-                    </section>
-                )}
+
             </div>
         );
     }
@@ -408,30 +373,7 @@ export function EvacuationPanel({ summary, evacuationMode, selectedShelterId, on
                 )}
             </section>
 
-            {/* ── GenAI Agent ────────────────────────────────── */}
-            {summary && (
-                <section className="panel evac-section genai-dropdown">
-                    <button
-                        className="genai-dropdown-toggle"
-                        onClick={() => setGenaiOpen(prev => !prev)}
-                    >
-                        <span className="genai-dropdown-title">
-                            <Cpu size={14} />
-                            GenAI Agent
-                        </span>
-                        <ChevronDown
-                            size={14}
-                            className={`genai-chevron ${genaiOpen ? 'genai-chevron--open' : ''}`}
-                        />
-                    </button>
-                    {genaiOpen && (
-                        <div className="genai-dropdown-content">
-                            <PanelOfExperts summary={summary} evacuationPlan={evacuationPlan} />
-                            <EvacuationChat context={summary} evacuationPlan={evacuationPlan} />
-                        </div>
-                    )}
-                </section>
-            )}
+
 
             {/* ── Unreachable Alert ─────────────────────── */}
             {total_at_risk_remaining > 0 && (
