@@ -138,6 +138,16 @@ async def get_regions():
     """District → Taluk → [Hobli] cascade tree for the UI."""
     return await service.get_all_regions()
 
+class TransportPlanRequest(BaseModel):
+    evacuation_plan: list
+
+@app.post("/public-transport-plan")
+async def public_transport_plan(req: TransportPlanRequest):
+    """Generate an on-demand bus fleet manifest based on GTFS data and ACO routes."""
+    from genai.transport_agent import compute_bus_evacuation_plan
+    
+    plan_result = compute_bus_evacuation_plan(req.evacuation_plan)
+    return plan_result
 
 @app.get("/population/{hobli_name}")
 async def population(hobli_name: str):

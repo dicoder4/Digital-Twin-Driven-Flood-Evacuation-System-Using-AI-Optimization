@@ -1,14 +1,4 @@
-/**
- * FloodMap.jsx
- * MapLibre map with:
- *   - Light CartoDB Positron basemap (GMaps-like)
- *   - Base road network layer (thin gray)
- *   - People dots on roads (green → red when flooded)
- *   - Flood area polygons (dark blue, intensity-mapped opacity)
- *   - Flood risk road overlay (colored by 'risk' field: low/medium/high)
- *   - Legend (bottom-right)
- *   - Hobli info chip (top-left)
- */
+import { useMemo } from 'react';
 import Map, { Source, Layer, NavigationControl, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapPin, BarChart2 } from 'lucide-react';
@@ -33,7 +23,6 @@ const BASE_ROAD_PAINT = {
     'line-opacity': 0.65,
 };
 
-// Flood area fill — dark blue (distinct from green people dots)
 // Flood area fill — Premium high-fidelity palette
 const FLOOD_FILL_PAINT = {
     'fill-color': [
@@ -58,10 +47,28 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins }) {
+export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins, busManifest }) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk = !!(riskRoadsData?.features?.length);
     const hasTrafficData = showTraffic && !!(trafficRoadsData?.features?.length);
+
+    const busGeoJSON = useMemo(() => {
+        if (!busManifest?.manifest) return null;
+        return {
+            type: 'FeatureCollection',
+            features: busManifest.manifest.map(bus => ({
+                type: 'Feature',
+                geometry: {
+                    type: 'LineString',
+                    coordinates: bus.path_points
+                },
+                properties: {
+                    bus_id: bus.bus_id,
+                    route_name: bus.route_name
+                }
+            }))
+        };
+    }, [busManifest]);
 
     return (
         <main className="map-container">
@@ -115,6 +122,22 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                         evacuationPlan={evacuationPlan}
                         selectedShelterId={selectedShelter?.id || null}
                     />
+                )}
+
+                {/* 6.5 Bus paths */}
+                {busGeoJSON && (
+                    <Source id="bus-routes" type="geojson" data={busGeoJSON}>
+                        <Layer
+                            id="bus-routes-layer"
+                            type="line"
+                            paint={{
+                                'line-color': '#f59e0b', /* Amber */
+                                'line-width': 4.5,
+                                'line-opacity': 0.9,
+                                'line-dasharray': [2, 1]
+                            }}
+                        />
+                    </Source>
                 )}
 
                 {/* 7. Destination pin for selected shelter */}

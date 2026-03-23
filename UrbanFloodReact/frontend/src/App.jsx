@@ -30,6 +30,7 @@ import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';
 import { AppCopilot } from './components/AppCopilot';
 import { AutomationPanel } from './components/AutomationPanel';
+import { PublicTransportAgent } from './components/PublicTransportAgent';
 import './App.css';
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
   const [loadedHobli, setLoadedHobli] = useState('');
   const [baseRoadsData, setBaseRoadsData] = useState(null);
   const [selRec, setSelRec] = useState(null);
+  const [busManifest, setBusManifest] = useState(null);
 
   // ── Population / shelter state ────────────────────────────────
   const [populationCount, setPopulationCount] = useState(0);
@@ -111,6 +113,7 @@ export default function App() {
     setPopulationCount(0);
     setUnsafePeopleCount(0);
     setShelterCandidates([]);
+    setBusManifest(null);
     setActiveTab('setup');
     try {
       const res = await axios.post(`${API_URL}/load-region`, { hobli: targetHobli });
@@ -166,6 +169,7 @@ export default function App() {
   const handleStart = () => {
     if (!regionLoaded) return;
     setCompareResults(null);
+    setBusManifest(null);
     setActiveTab('setup');
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount);
   };
@@ -180,6 +184,7 @@ export default function App() {
     setAlgorithm('aco');
     setUseTraffic(true);
     setEvacuationMode(false);
+    setBusManifest(null);
     setActiveTab('setup');
 
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco', populationCount);
@@ -190,6 +195,7 @@ export default function App() {
     compareAbortRef.current = true;   // signal any running compare to stop
     sim.reset();
     setCompareResults(null);
+    setBusManifest(null);
     setCompareRunning(false);
     setCompareProgress('');
     setCompareActiveAlgo(null);
@@ -205,6 +211,7 @@ export default function App() {
     if (!regionLoaded || compareRunning) return;
     compareAbortRef.current = false;
     setCompareResults(null);
+    setBusManifest(null);
     setCompareRunning(true);
     setCompareProgress('Flood simulation running…');
     sim.reset();
@@ -629,46 +636,54 @@ export default function App() {
           )}
 
           {activeTab === 'ai-agent' && (
-              <div className="evac-panel" style={{height: "100%", paddingBottom: "2rem"}}>
-                {compareResults && compareActiveAlgo ? (
+            <div className="evac-panel" style={{ height: "100%", paddingBottom: "2rem", overflowY: 'auto' }}>
+              {sim.simulationDone || compareResults ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <PublicTransportAgent
+                    evacuationPlan={compareResults && compareActiveAlgo ? compareResults[compareActiveAlgo]?.evacuation_plan : (sim.evacuationPlan || [])}
+                    onManifestGenerated={setBusManifest}
+                  />
+                  {compareResults && compareActiveAlgo ? (
                     <>
-                        <PanelOfExperts
-                            summary={compareResults[compareActiveAlgo]}
-                            evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []}
-                        />
-                        <EvacuationChat context={{ 
-                            mode: 'compare',
-                            active_algo: compareActiveAlgo,
-                            summaries: Object.keys(compareResults).reduce((acc, k) => {
-                                const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
-                                acc[k] = rest;
-                                return acc;
-                            }, {})
-                        }} evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []} />
+                      <PanelOfExperts
+                        summary={compareResults[compareActiveAlgo]}
+                        evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []}
+                      />
+                      <EvacuationChat context={{
+                        mode: 'compare',
+                        active_algo: compareActiveAlgo,
+                        summaries: Object.keys(compareResults).reduce((acc, k) => {
+                          const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
+                          acc[k] = rest;
+                          return acc;
+                        }, {})
+                      }} evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []} />
                     </>
-                ) : sim.finalReport?.summary ? (
+                  ) : sim.finalReport?.summary ? (
                     <>
-                        <PanelOfExperts summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
-                        <EvacuationChat context={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
+                      <PanelOfExperts summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
+                      <EvacuationChat context={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
                     </>
-                ) : (
-                    <div className="evac-empty">
-                        <Cpu size={32} className="evac-empty-icon" style={{marginBottom: "1rem", color: "#64748b"}} />
-                        <p style={{color: "#64748b", textAlign: "center", lineHeight: "1.5"}}>Run a simulation to interact with the AI Evacuation Agent.</p>
-                    </div>
-                  )}
-              </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="evac-empty">
+                  <Cpu size={32} className="evac-empty-icon" style={{ marginBottom: "1rem", color: "#64748b" }} />
+                  <p style={{ color: "#64748b", textAlign: "center", lineHeight: "1.5" }}>Run a simulation to interact with the AI Evacuation Agent.</p>
+                </div>
+              )}
+            </div>
           )}
 
           {activeTab === 'automation' && (
-              <div className="evac-panel" style={{height: "100%", paddingBottom: "2rem"}}>
-                  <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
-                      sim.setStatusMsg("Sentinel Auto-Triggered!");
-                      await handleLoadRegion(autoHobli);
-                      sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
-                      setActiveTab('evacuation');
-                  }} />
-              </div>
+            <div className="evac-panel" style={{ height: "100%", paddingBottom: "2rem" }}>
+              <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
+                sim.setStatusMsg("Sentinel Auto-Triggered!");
+                await handleLoadRegion(autoHobli);
+                sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
+                setActiveTab('evacuation');
+              }} />
+            </div>
           )}
         </div>
 
@@ -705,6 +720,7 @@ export default function App() {
         showTraffic={useTraffic && (sim.simulationDone || !!compareResults)}
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
+        busManifest={busManifest}
       />
 
       <AppCopilot
