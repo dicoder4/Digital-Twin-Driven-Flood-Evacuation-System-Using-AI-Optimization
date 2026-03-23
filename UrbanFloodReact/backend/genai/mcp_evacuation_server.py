@@ -293,6 +293,94 @@ def get_rescue_guidelines() -> str:
         "3. Initiate aerial (helicopter) lifts for coordinates surrounded entirely by impassable floodways."
     )
 
+@mcp.tool()
+def check_bus_availability(lat: float, lon: float) -> str:
+    """
+    Check for available bus stops and routes near a specific latitude and longitude coordinate.
+    Call this when the user asks for buses or transit options at a localized coordinate.
+    """
+    print(f"[TOOL LOG] Executing check_bus_availability(lat={lat}, lon={lon})", flush=True)
+    try:
+        from genai.transport_gtfs_mcp_server import nearest_bus_stop, fetch_bus_details
+        stops_info = nearest_bus_stop(lat, lon, top_n=2)
+        details = fetch_bus_details(lat, lon)
+        
+        if "error" in details or not details.get('nearest_stop'):
+            return "No bus stops or routes found within a reasonable distance of these coordinates."
+            
+        stop = details.get('nearest_stop', {})
+        routes = details.get('routes', [])
+        route_names = ", ".join([r['short_name'] for r in routes if r['short_name']])
+        
+        return (
+            f"Nearest Bus Stop: {stop.get('name', 'Unknown')}\n"
+            f"Distance: {stop.get('distance_km', 0)} km\n"
+            f"Available Routes Serving This Stop: {route_names if route_names else 'No active routes'}"
+        )
+    except Exception as e:
+        return f"Could not fetch bus availability: {str(e)}"
+
+@mcp.tool()
+def analyze_transit_disruptions(location_name: str, flood_depth_m: float) -> str:
+    """
+    Check which transit networks and bus routes will be disabled by a projected flood depth in a specific location.
+    Call this when the user asks what networks are disabled by a flood in a specific zone.
+    """
+    print(f"[TOOL LOG] Executing analyze_transit_disruptions(location='{location_name}', depth={flood_depth_m})", flush=True)
+    try:
+        from genai.transport_gtfs_mcp_server import _read_csv, _routes_for_stop
+        stops = _read_csv("stops.txt", ["stop_id", "stop_name"])
+        matching_stops = [s for s in stops if location_name.lower() in s["stop_name"].lower()]
+        
+        if not matching_stops:
+            return f"No major transit stops found matching '{location_name}'. Disruption minimal."
+            
+        disabled_routes = set()
+        for s in matching_stops[:3]: # limit to 3 stops for perf
+            routes = _routes_for_stop(s["stop_id"], max_routes=5)
+            for r in routes:
+                if r['short_name']: disabled_routes.add(r['short_name'])
+                
+        if not disabled_routes:
+            return f"Stops in {location_name} are submerged under {flood_depth_m}m of water, but no active routes are currently scheduled."
+            
+        return (
+            f"ALERT: A projected {flood_depth_m}m flood in {location_name} will severely disable the local transit network.\n"
+            f"Affected Stops: {', '.join([s['stop_name'] for s in matching_stops[:3]])}\n"
+            f"Disabled BMTC Routes: {', '.join(disabled_routes)}\n"
+            f"Recommendation: Divert evacuation transport to fallback hubs outside this zone."
+        )
+    except Exception as e:
+        return f"Could not analyze transit disruptions: {str(e)}"
+
+@mcp.tool()
+def identify_evacuation_hubs(zone_name: str) -> str:
+    """
+    Identify the primary evacuation hubs (safe shelters) for a specific flood zone.
+    List their capacities, current occupancy, and readiness status.
+    """
+    print(f"[TOOL LOG] Executing identify_evacuation_hubs(zone_name='{zone_name}')", flush=True)
+    ctx = _get_enriched_context()
+    shelters = ctx.get("shelters", [])
+    if not shelters:
+        return "No shelter data available in the current simulation."
+        
+    matches = [s for s in shelters if zone_name.lower() in s.get("name", "").lower()]
+    
+    if not matches:
+        sorted_hubs = sorted(shelters, key=lambda x: x.get("capacity", 0), reverse=True)
+        hubs_to_report = sorted_hubs[:3]
+        prefix = f"No specific hubs found strictly containing '{zone_name}'. Here are the primary evacuation hubs for the overall region:\n"
+    else:
+        hubs_to_report = matches
+        prefix = f"Primary Evacuation Hubs for {zone_name}:\n"
+        
+    lines = [prefix]
+    for h in hubs_to_report:
+        lines.append(f"- {h.get('name')}: {h.get('occupancy')}/{h.get('capacity')} full (Status: {h.get('status')})")
+        
+    return "\n".join(lines)
+
 
 @mcp.tool()
 def narrate_best_route(destination_shelter: str = None) -> str:

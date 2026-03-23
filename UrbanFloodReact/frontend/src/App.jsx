@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, CloudRain } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -24,6 +24,8 @@ import { SheltersPanel } from './components/SheltersPanel';
 import { EvacuationPanel } from './components/EvacuationPanel';
 import { FloodMap } from './components/FloodMap';
 import { DraSidebar } from './components/DraSidebar';
+import { PanelOfExperts } from './components/PanelOfExperts';
+import { EvacuationChat } from './components/EvacuationChat';
 import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';
 import { AppCopilot } from './components/AppCopilot';
@@ -76,6 +78,7 @@ export default function App() {
   // ── UI state ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('setup');
   const [selectedShelterId, setSelectedShelterId] = useState(null);
+  const [selectedBusId, setSelectedBusId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
 
@@ -160,6 +163,7 @@ export default function App() {
     setUnsafePeopleCount(0);
     setShelterCandidates([]);
     setBusManifest(null);
+    setSelectedBusId(null);
     setActiveTab('setup');
     try {
       const res = await axios.post(`${API_URL}/load-region`, { hobli: targetHobli });
@@ -216,6 +220,7 @@ export default function App() {
     if (!regionLoaded) return;
     setCompareResults(null);
     setBusManifest(null);
+    setSelectedBusId(null);
     setActiveTab('setup');
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount);
   };
@@ -231,6 +236,7 @@ export default function App() {
     setUseTraffic(true);
     setEvacuationMode(false);
     setBusManifest(null);
+    setSelectedBusId(null);
     setActiveTab('setup');
 
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco', populationCount);
@@ -258,6 +264,7 @@ export default function App() {
     compareAbortRef.current = false;
     setCompareResults(null);
     setBusManifest(null);
+    setSelectedBusId(null);
     setCompareRunning(true);
     setCompareProgress('Flood simulation running…');
     sim.reset();
@@ -385,11 +392,11 @@ export default function App() {
     };
   }, [regionLoaded, compareRunning, loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, sim]);
 
-  // Auto-switch to Evacuation tab when single-algo sim completes
   useEffect(() => {
     if (sim.simulationDone && !compareRunning) {
       setActiveTab('evacuation');
       setSelectedShelterId(null);
+      setSelectedBusId(null);
       setShowTrafficPins(false);
     }
   }, [sim.simulationDone, compareRunning]);
@@ -460,6 +467,12 @@ export default function App() {
             title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
           ><Route size={11} /> Evacuation</button>
           <button
+            className={`sidebar-tab ${activeTab === 'ai-agent' ? 'active' : ''}`}
+            onClick={() => setActiveTab('ai-agent')}
+            disabled={!sim.simulationDone && !compareResults}
+            title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
+          ><Cpu size={11} /> AI Agent</button>
+          <button
             className={`sidebar-tab ${activeTab === 'automation' ? 'active' : ''}`}
             onClick={() => setActiveTab('automation')}
           ><CloudRain size={11} /> Sentinel</button>
@@ -468,8 +481,8 @@ export default function App() {
         <div className="sidebar-content custom-scrollbar">
 
           {/* ── SETUP TAB ────────────────────────────────── */}
-          {activeTab === 'setup' && (
-            isDraMode ? (
+          <div style={{ display: activeTab === 'setup' ? 'block' : 'none' }}>
+            {isDraMode ? (
               <DraSidebar
                 allHoblis={regions.allHoblis}
                 selHobli={regions.selHobli}
@@ -663,10 +676,10 @@ export default function App() {
                   </>
                 )}
               </>
-            )
-          )}
+            )}
+          </div>
 
-          {activeTab === 'evacuation' && (
+          <div style={{ display: activeTab === 'evacuation' ? 'block' : 'none', height: '100%' }}>
             <EvacuationPanel
               locationName={loadedHobli}
               summary={sim.finalReport?.summary}
@@ -681,19 +694,57 @@ export default function App() {
               isDraMode={isDraMode}
               evacuationPlan={sim.evacuationPlan || []}
             />
-          )}
+          </div>
 
+          <div className="evac-panel" style={{ display: activeTab === 'ai-agent' ? 'flex' : 'none', height: "100%", paddingBottom: "2rem", overflowY: 'auto' }}>
+            {sim.simulationDone || compareResults ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <PublicTransportAgent
+                  evacuationPlan={compareResults && compareActiveAlgo ? compareResults[compareActiveAlgo]?.evacuation_plan : (sim.evacuationPlan || [])}
+                  onManifestGenerated={setBusManifest}
+                  shelters={sheltersWithSafety}
+                  selectedBusId={selectedBusId}
+                  onSelectBus={setSelectedBusId}
+                />
+                {compareResults && compareActiveAlgo ? (
+                  <>
+                    <PanelOfExperts
+                      summary={compareResults[compareActiveAlgo]}
+                      evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []}
+                    />
+                    <EvacuationChat context={{
+                      mode: 'compare',
+                      active_algo: compareActiveAlgo,
+                      summaries: Object.keys(compareResults).reduce((acc, k) => {
+                        const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
+                        acc[k] = rest;
+                        return acc;
+                      }, {})
+                    }} evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []} />
+                  </>
+                ) : sim.finalReport?.summary ? (
+                  <>
+                    <PanelOfExperts summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
+                    <EvacuationChat context={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
+                  </>
+                ) : null}
+              </div>
+            ) : (
+              <div className="evac-empty">
+                <Cpu size={32} className="evac-empty-icon" style={{ marginBottom: "1rem", color: "#64748b" }} />
+                <p style={{ color: "#64748b", textAlign: "center", lineHeight: "1.5" }}>Run a simulation to interact with the AI Evacuation Agent.</p>
+              </div>
+            )}
+          </div>
 
-          {activeTab === 'automation' && (
-            <div className="evac-panel" style={{ height: "100%", paddingBottom: "2rem" }}>
-              <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
-                sim.setStatusMsg("Sentinel Auto-Triggered!");
-                await handleLoadRegion(autoHobli);
-                sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
-                setActiveTab('evacuation');
-              }} />
-            </div>
-          )}
+          <div className="evac-panel" style={{ display: activeTab === 'automation' ? 'flex' : 'none', height: "100%", paddingBottom: "2rem" }}>
+            <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
+              sim.setStatusMsg("Sentinel Auto-Triggered!");
+              await handleLoadRegion(autoHobli);
+              sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
+              setActiveTab('evacuation');
+            }} />
+          </div>
         </div>
 
         <div className="status-bar">
@@ -730,6 +781,7 @@ export default function App() {
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
         busManifest={busManifest}
+        selectedBusId={selectedBusId}
       />
 
       <AppCopilot

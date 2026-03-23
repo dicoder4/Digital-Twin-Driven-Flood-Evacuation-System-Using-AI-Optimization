@@ -57,13 +57,19 @@ def _load_guidelines_text() -> str:
 from genai.mcp_evacuation_server import (
     narrate_best_route,
     analyze_road_conditions,
-    get_rescue_guidelines
+    get_rescue_guidelines,
+    check_bus_availability,
+    analyze_transit_disruptions,
+    identify_evacuation_hubs
 )
 
 AGENT_TOOLS = [
     narrate_best_route, 
     analyze_road_conditions, 
-    get_rescue_guidelines
+    get_rescue_guidelines,
+    check_bus_availability,
+    analyze_transit_disruptions,
+    identify_evacuation_hubs
 ]
 
 async def stream_chat(question: str, context_data: dict):

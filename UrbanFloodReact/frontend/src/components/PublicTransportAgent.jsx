@@ -3,7 +3,7 @@ import { Bus, Users, MapPin, Loader, FileText, ChevronRight } from 'lucide-react
 import { API_URL } from '../config';
 import './PublicTransportAgent.css';
 
-export function PublicTransportAgent({ evacuationPlan, onManifestGenerated }) {
+export function PublicTransportAgent({ evacuationPlan, onManifestGenerated, shelters = [], selectedBusId, onSelectBus }) {
     const [manifest, setManifest] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -29,8 +29,17 @@ export function PublicTransportAgent({ evacuationPlan, onManifestGenerated }) {
             }
 
             const data = await res.json();
+
+            // Map shelter IDs to readable names if possible
+            if (data.manifest && shelters.length > 0) {
+                data.manifest = data.manifest.map(bus => {
+                    const matched = shelters.find(s => String(s.id) === String(bus.to_shelter));
+                    return { ...bus, to_shelter: matched ? matched.name : bus.to_shelter };
+                });
+            }
+
             setManifest(data);
-            
+
             // Push the generated bus manifest back up to App.jsx -> FloodMap.jsx
             if (onManifestGenerated && data.manifest) {
                 onManifestGenerated(data.manifest);
@@ -60,7 +69,7 @@ export function PublicTransportAgent({ evacuationPlan, onManifestGenerated }) {
                     disabled={loading || !evacuationPlan.length}
                     title={!evacuationPlan.length ? "Run an Evacuation Simulation first" : "Query GTFS MCP Server for Bus deployment"}
                 >
-                    {loading ? <Loader size={16} className="spin" /> : <FileText size={16} />} 
+                    {loading ? <Loader size={16} className="spin" /> : <FileText size={16} />}
                     Generate Fleet Manifest
                 </button>
             </div>
@@ -94,7 +103,13 @@ export function PublicTransportAgent({ evacuationPlan, onManifestGenerated }) {
                             </thead>
                             <tbody>
                                 {manifest.manifest.map((bus, idx) => (
-                                    <tr key={idx}>
+                                    <tr
+                                        key={idx}
+                                        onClick={() => onSelectBus && onSelectBus(bus.bus_id === selectedBusId ? null : bus.bus_id)}
+                                        className={bus.bus_id === selectedBusId ? 'pta-row-selected' : ''}
+                                        style={{ cursor: 'pointer', ... (bus.bus_id === selectedBusId ? { backgroundColor: '#f0fdf4', borderLeft: '3px solid #16a34a' } : {}) }}
+                                        title="Click to view route on map"
+                                    >
                                         <td>
                                             <div style={{ fontWeight: 600, color: '#111827' }}>{bus.bus_id}</div>
                                             <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Route: {bus.route_name}</div>
