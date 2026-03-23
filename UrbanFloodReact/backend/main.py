@@ -37,6 +37,8 @@ import service
 
 from genai.param_resolver import resolve_hobli
 from genai.weather_client import WeatherClient
+import asyncio
+from weather_watcher import router as automation_router, weather_watcher_loop
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -53,6 +55,7 @@ async def lifespan(app: FastAPI):
     print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
+    asyncio.create_task(weather_watcher_loop())
     print("━━ Backend ready — regions lazy-loaded on demand ━━")
     yield
     print("━━ Backend shutting down ━━")
@@ -69,6 +72,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(automation_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────

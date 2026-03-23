@@ -239,26 +239,92 @@ def get_route_summary() -> str:
 
 
 @mcp.tool()
-def get_pressure_junctures() -> str:
+def analyze_road_conditions(road_name: str = "") -> str:
     """
-    Get identified 'pressure junctures' (bottlenecks) where multiple evacuation 
-    routes converge or where high volume meets flood risk.
+    Call this tool to check if a specific road or junction is flooded, 
+    or to get the top pressure junctures (bottlenecks).
+    Provide the name of the road if asked about a specific one, otherwise leave empty.
     """
+    print(f"[TOOL LOG] Executing analyze_road_conditions(road_name='{road_name}')", flush=True)
     ctx = _get_enriched_context()
     junctures = ctx.get("pressure_junctures", [])
     
     if not junctures:
-        return "No significant pressure junctures identified for current simulation."
+        return "No significant pressure points or bottlenecks identified."
         
-    lines = ["=== Critical Pressure Junctures (Bottlenecks) ==="]
-    for i, j in enumerate(junctures):
+    if road_name:
+        matches = [p for p in junctures if road_name.lower() in p.get("location_name", "").lower()]
+        if not matches:
+            return f"No critical bottlenecks found matching '{road_name}'. Plausible clear path."
+        lines = [f"Status for roads matching '{road_name}':"]
+        for p in matches:
+            name = p.get('location_name', 'Unknown')
+            lines.append(f"- {name}: {p.get('total_evacuees',0)} passing evacuees across {p.get('route_count',0)} routes. Flood depth: {p.get('flood_depth',0)} meters.")
+        return "\n".join(lines)
+    
+    lines = ["=== Top Critical Pressure Junctures (Bottlenecks) ==="]
+    for i, j in enumerate(junctures[:5]):
         lines.append(
-            f"{i+1}. Location: {j['lat']}, {j['lon']} (Node {j['node_id']})\n"
+            f"{i+1}. Location: {j.get('location_name', 'Unknown')}\n"
             f"   - Volume: {j['total_evacuees']} people over {j['route_count']} routes\n"
             f"   - Condition: {j['flood_depth']}m water depth"
         )
     return "\n".join(lines)
 
+
+@mcp.tool()
+def get_rescue_guidelines() -> str:
+    """
+    Call this tool when asked about safely rescuing people, NDRF instructions, or 
+    handling populations that are at risk and could not be routed safely by the algorithm.
+    """
+    print("[TOOL LOG] Executing get_rescue_guidelines()", flush=True)
+    state = _load_state()
+    summary = state.get("summary_data", {})
+    at_risk = summary.get("total_at_risk_remaining", 0)
+    
+    if at_risk == 0:
+        return "All evacuees successfully mapped to safe shelters. No manual/NDRF rescue needed currently."
+        
+    return (
+        f"Critical Rescue Guidelines for the {at_risk} unreachable individuals:\n"
+        "1. Deploy NDRF High-Clearance Vehicles (HCV) and localized boat units immediately to deeply flooded nodes.\n"
+        "2. Avoid any terrestrial rescue operations through bottlenecks marked with >0.5m flood depth.\n"
+        "3. Initiate aerial (helicopter) lifts for coordinates surrounded entirely by impassable floodways."
+    )
+
+
+@mcp.tool()
+def narrate_best_route(destination_shelter: str = None) -> str:
+    """
+    Call this tool to find the safest, best, or optimal evacuation route.
+    If the user asks about a specific shelter by name, provide it to filter the results.
+    """
+    print(f"[TOOL LOG] Executing narrate_best_route(destination_shelter={destination_shelter})", flush=True)
+    ctx = _get_enriched_context()
+    routes = ctx.get("route_details", [])
+    if not routes:
+        return "No enriched evacuation routes available to narrate."
+    
+    if destination_shelter:
+        # Match against formatted shelter styles
+        matched_routes = [r for r in routes if destination_shelter.lower() in r.get("to_shelter", "").lower()]
+        routes = matched_routes
+        if not routes:
+            return f"No evacuation routes found leading to shelter matching '{destination_shelter}'."
+
+    # Sort routes by lowest distance first
+    routes_sorted = sorted(routes, key=lambda x: x.get("distance_m", float('inf')))
+    best_route = routes_sorted[0] if routes_sorted else None
+    
+    if not best_route:
+        return "No valid routes found."
+        
+    pop = best_route.get('evacuees')
+    dest_name = best_route.get('to_shelter')
+    dist = best_route.get('distance_m')
+    
+    return f"Best Route Details - Group Size: {pop} evacuees finding safety at {dest_name}. Distance traveled: {dist} meters. Proceed carefully focusing on minimizing traffic overlap. Check the Live Map to view the highlighted path."
 
 @mcp.tool()
 def generate_evacuation_strategy() -> str:
