@@ -83,7 +83,7 @@ function OptionChips({ options, disabled, onConfirm }) {
     );
 }
 
-export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populationCount, onNavigate, onSelectRegion, onRunSimulation, onUpdateParams }) {
+export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populationCount, onNavigate, onSelectRegion, onRunSimulation, onUpdateParams, mapPin }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [messages, setMessages] = useState([
@@ -190,12 +190,12 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
         };
 
         document.body.style.userSelect = 'none';
-        
+
         let cursor = 'nwse-resize';
         if (direction === 'n' || direction === 's') cursor = 'ns-resize';
         if (direction === 'e' || direction === 'w') cursor = 'ew-resize';
         if (direction === 'ne' || direction === 'sw') cursor = 'nesw-resize';
-        
+
         document.body.style.cursor = cursor;
         globalThis.addEventListener('mousemove', onMouseMove);
         globalThis.addEventListener('mouseup', stopInteraction);
@@ -204,7 +204,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
     const startDrag = (event) => {
         if (isMinimized || isResizing || event.target.closest('.copilot-actions')) return;
         event.preventDefault();
-        
+
         const rect = event.currentTarget.closest('.copilot-window').getBoundingClientRect();
         setIsDragging(true);
         interactionRef.current = {
@@ -235,7 +235,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
         // Get current rect to preserve L/T if active
         const rect = document.querySelector('.copilot-window')?.getBoundingClientRect();
         preExpandStateRef.current = { ...windowState };
-        
+
         setWindowState({
             width: EXPANDED_SIZE.width,
             height: EXPANDED_SIZE.height,
@@ -272,25 +272,26 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
         try {
             // Strip out our custom UI properties (like options) before sending back to the LLM
             const cleanMessages = newMessages.slice(1).map(({ options, ...msg }) => msg);
-            
+
             const res = await fetch(`${API_URL}/app-copilot`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     messages: cleanMessages,
                     available_hoblis: availableHoblis || [],
-                    regions_tree: regionsTree || {} 
+                    regions_tree: regionsTree || {},
+                    map_pin: mapPin || null
                 }),
             });
 
             const data = await res.json();
-            
+
             if (data.type === 'tool_call') {
                 const funcName = data.name;
                 const args = data.arguments;
-                
+
                 let actionMsg = "";
-                
+
                 if (funcName === 'navigate') {
                     onNavigate(args.tab);
                     actionMsg = `*[Navigated to **${args.tab}** tab]*`;
@@ -327,7 +328,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                 } else {
                     actionMsg = `*[Attempted unknown action: ${funcName}]*`;
                 }
-                
+
                 setMessages(prev => [...prev, { role: 'assistant', content: actionMsg }]);
 
                 // After select_region, auto-follow-up to get parameter options
@@ -338,7 +339,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                         if (populationCount === 0) {
                             popWarning = " Note: This region has no CSV population data. Please set the population manually in the sidebar.";
                         }
-                        
+
                         const followupMessages = [
                             ...cleanMessages,
                             { role: 'assistant', content: `Region set to ${args.hobli}.${popWarning} Now ask the user how they want to run the simulation.` }
@@ -350,7 +351,8 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                                 body: JSON.stringify({
                                     messages: followupMessages,
                                     available_hoblis: availableHoblis || [],
-                                    regions_tree: regionsTree || {}
+                                    regions_tree: regionsTree || {},
+                                    map_pin: mapPin || null
                                 }),
                             });
                             const followData = await followRes.json();
@@ -369,10 +371,10 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                     }, 800);
                 }
             } else {
-                setMessages(prev => [...prev, { 
-                    role: 'assistant', 
+                setMessages(prev => [...prev, {
+                    role: 'assistant',
                     content: data.content,
-                    options: data.options || [] 
+                    options: data.options || []
                 }]);
             }
         } catch (err) {
@@ -467,13 +469,13 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                                             disabled={isTyping}
                                             onConfirm={(selected) => {
                                                 const combined = selected.join(', ');
-                                                
+
                                                 // Try to parse values out to update sidebar instantly
                                                 let pAlgorithm = undefined;
                                                 let pEvac = undefined;
                                                 let pTraffic = undefined;
                                                 let pRain = undefined;
-                                                
+
                                                 const txt = combined.toLowerCase();
                                                 if (txt.includes('ga')) pAlgorithm = 'ga';
                                                 if (txt.includes('pso')) pAlgorithm = 'pso';
@@ -499,11 +501,11 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                                                 }
 
                                                 if (onUpdateParams) {
-                                                    onUpdateParams({ 
-                                                        algorithm: pAlgorithm, 
-                                                        evacuationMode: pEvac, 
-                                                        useTraffic: pTraffic, 
-                                                        rainfall: pRain 
+                                                    onUpdateParams({
+                                                        algorithm: pAlgorithm,
+                                                        evacuationMode: pEvac,
+                                                        useTraffic: pTraffic,
+                                                        rainfall: pRain
                                                     });
                                                 }
 
@@ -535,8 +537,8 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
                         />
-                        <button 
-                            className="chat-send-btn outline-none" 
+                        <button
+                            className="chat-send-btn outline-none"
                             onClick={handleSend}
                             disabled={!input.trim() || isTyping}
                         >

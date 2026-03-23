@@ -70,10 +70,22 @@ def _get_enriched_context() -> dict:
     state = _load_state()
     if not state.get("summary_data"):
         return {}
-    return build_expert_context(
-        state["summary_data"],
-        state.get("evacuation_plan"),
-    )
+        
+    # Prevent "RuntimeError: asyncio.run() cannot be called from a running event loop"
+    # by offloading the async context builder to a fresh thread where there is no loop yet.
+    def run_coro():
+        import asyncio
+        return asyncio.run(
+            build_expert_context(
+                state["summary_data"],
+                state.get("evacuation_plan"),
+            )
+        )
+        
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        future = pool.submit(run_coro)
+        return future.result()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

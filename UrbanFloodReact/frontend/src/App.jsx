@@ -81,6 +81,7 @@ export default function App() {
   const [selectedBusId, setSelectedBusId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
+  const [mapPinBox, setMapPinBox] = useState(null);
 
   // ── Sidebar resize ────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -471,7 +472,7 @@ export default function App() {
             onClick={() => setActiveTab('ai-agent')}
             disabled={!sim.simulationDone && !compareResults}
             title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
-          ><Cpu size={11} /> AI Agent</button>
+          ><Cpu size={11} /> Resources</button>
           <button
             className={`sidebar-tab ${activeTab === 'automation' ? 'active' : ''}`}
             onClick={() => setActiveTab('automation')}
@@ -712,20 +713,10 @@ export default function App() {
                       summary={compareResults[compareActiveAlgo]}
                       evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []}
                     />
-                    <EvacuationChat context={{
-                      mode: 'compare',
-                      active_algo: compareActiveAlgo,
-                      summaries: Object.keys(compareResults).reduce((acc, k) => {
-                        const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
-                        acc[k] = rest;
-                        return acc;
-                      }, {})
-                    }} evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []} />
                   </>
                 ) : sim.finalReport?.summary ? (
                   <>
                     <PanelOfExperts summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
-                    <EvacuationChat context={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
                   </>
                 ) : null}
               </div>
@@ -782,6 +773,8 @@ export default function App() {
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
         busManifest={busManifest}
         selectedBusId={selectedBusId}
+        mapPinBox={mapPinBox}
+        onMapClick={(lat, lon) => setMapPinBox({ lat, lon })}
       />
 
       <AppCopilot
@@ -789,6 +782,7 @@ export default function App() {
         availableHoblis={regions.allHoblis || []}
         regionsTree={regions.regionsTree || {}}
         populationCount={populationCount}
+        mapPin={mapPinBox}
         onNavigate={(tab) => {
           if (tab === 'evacuate' || tab === 'evacuation') {
             setActiveTab('evacuation');

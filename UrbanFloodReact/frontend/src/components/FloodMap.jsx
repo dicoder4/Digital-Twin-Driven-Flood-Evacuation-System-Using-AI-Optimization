@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import Map, { Source, Layer, NavigationControl, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapPin, BarChart2 } from 'lucide-react';
@@ -47,10 +47,16 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins, busManifest, selectedBusId }) {
+export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins, busManifest, selectedBusId, mapPinBox, onMapClick }) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk = !!(riskRoadsData?.features?.length);
     const hasTrafficData = showTraffic && !!(trafficRoadsData?.features?.length);
+
+    const handleClick = useCallback((event) => {
+        if (onMapClick) {
+            onMapClick(event.lngLat.lat, event.lngLat.lng);
+        }
+    }, [onMapClick]);
 
     const busGeoJSON = useMemo(() => {
         const manifestArr = Array.isArray(busManifest) ? busManifest : busManifest?.manifest;
@@ -86,6 +92,7 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
             <Map
                 {...viewState}
                 onMove={e => onMove(e.viewState)}
+                onClick={handleClick}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
             >
@@ -206,7 +213,18 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                         </Marker>
                     </>
                 )}
+
+                {/* Selected Map Pin box */}
+                {mapPinBox && (
+                    <Marker latitude={mapPinBox.lat} longitude={mapPinBox.lon} anchor="bottom">
+                        <div className="evac-dest-pin" style={{ filter: 'drop-shadow(0 2px 6px rgba(239, 68, 68, 0.4))' }}>
+                            <MapPin size={22} fill="#ef4444" color="white" strokeWidth={1.5} />
+                            <div className="evac-dest-label" style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #b91c1c' }}>PINNED LOCATION</div>
+                        </div>
+                    </Marker>
+                )}
             </Map>
+
 
             {/* Floating hobli chip */}
             {loadedHobli && (

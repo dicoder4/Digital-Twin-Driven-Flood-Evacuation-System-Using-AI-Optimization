@@ -149,11 +149,12 @@ class CopilotRequest(BaseModel):
     messages: list
     available_hoblis: list = []
     regions_tree: dict = {}
+    map_pin: dict = None
 
 @app.post("/app-copilot")
 async def app_copilot_endpoint(req: CopilotRequest):
     from genai.app_copilot import ask_copilot
-    return await ask_copilot(req.messages, req.available_hoblis, req.regions_tree)
+    return await ask_copilot(req.messages, req.available_hoblis, req.regions_tree, req.map_pin)
 
 
 @app.get("/regions")

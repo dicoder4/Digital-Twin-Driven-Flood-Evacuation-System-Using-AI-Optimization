@@ -13,6 +13,24 @@ import difflib
 import httpx
 import google.generativeai as genai
 
+from genai.mcp_evacuation_server import (
+    get_simulation_state, get_shelter_status, get_route_summary,
+    analyze_road_conditions, get_rescue_guidelines, narrate_best_route,
+    check_bus_availability, analyze_transit_disruptions, identify_evacuation_hubs
+)
+
+BACKEND_TOOLS = {
+    "get_simulation_state": get_simulation_state,
+    "get_shelter_status": get_shelter_status,
+    "get_route_summary": get_route_summary,
+    "analyze_road_conditions": analyze_road_conditions,
+    "get_rescue_guidelines": get_rescue_guidelines,
+    "narrate_best_route": narrate_best_route,
+    "check_bus_availability": check_bus_availability,
+    "analyze_transit_disruptions": analyze_transit_disruptions,
+    "identify_evacuation_hubs": identify_evacuation_hubs,
+}
+
 COPILOT_SYSTEM_PROMPT = """You are the 'App Copilot' for the Urban Flood Evacuation System.
 Your job is to help the user navigate the application and run flood simulations.
 
@@ -148,7 +166,7 @@ def _build_tools(available_hoblis: list, flat_taluks: dict) -> list:
     ]
 
 
-def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest_msg: str) -> str:
+def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest_msg: str, map_pin: dict = None) -> str:
     """Inject dynamic location context into the system prompt."""
     hoblis_str = ", ".join(available_hoblis) if available_hoblis else "Hebbal, Yelahanka, Varthur, Begur (etc)"
 
@@ -171,7 +189,9 @@ You will receive location tool calls pre-resolved. Focus on:
 2. Parameter confirmation → call `ask_clarification` with options:
    ["▶ Start with defaults (ACO, 150mm)", "🔄 Start with GA instead", "🔄 Start with PSO instead", "📊 Start Compare Mode (GA vs ACO vs PSO)", "🚗 Enable live traffic", "⚡ Enable evac mode (1% population, faster)", "☁️ Use real-time rainfall"]
 3. Running simulations with specified params → call `run_simulation`
-4. General workflow questions → answer concisely
+4. For questions about the disaster, evacuation routes, transport, shelters, or anything else, CALL YOUR TOOLS to inspect the crisis database.
+
+{f"- CRITICAL: The user has dropped a PIN on the map at coordinates lat={map_pin['lat']}, lon={map_pin['lon']}. Whenever they ask to check buses 'here', 'at the pinned location', 'selected location', or 'this location', you MUST automatically use these exact coordinates ({map_pin['lat']}, {map_pin['lon']}) for any tool calls requiring `lat` and `lon`." if map_pin else ""}
 """
     return COPILOT_SYSTEM_PROMPT + validation
 
@@ -283,7 +303,7 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
     return None
 
 
-async def ask_copilot(messages: list, available_hoblis: list = None, regions_tree: dict = None) -> dict:
+async def ask_copilot(messages: list, available_hoblis: list = None, regions_tree: dict = None, map_pin: dict = None) -> dict:
     """
     Sends conversation to Gemini 2.5 Flash with function calling.
     Returns one of:
@@ -320,13 +340,15 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
     try:
         genai.configure(api_key=api_key)
 
-        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg)
-        tools = _build_tools(available_hoblis or [], flat_taluks)
+        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg, map_pin)
+        
+        frontend_tools = _build_tools(available_hoblis or [], flat_taluks)
+        merged_tools = list(BACKEND_TOOLS.values()) + frontend_tools
 
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
             system_instruction=system_instruction,
-            tools=tools,
+            tools=merged_tools,
         )
 
         history = _convert_messages(messages[:-1]) if len(messages) > 1 else []
@@ -334,26 +356,55 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
         chat = model.start_chat(history=history)
         response = chat.send_message(latest_user_msg)
 
-        # Check for function calls
-        for part in response.parts:
-            if part.function_call:
-                fc = part.function_call
-                func_name = fc.name
-                args = {k: v for k, v in fc.args.items()}
+        # Agent execution loop for backend tools (max 5 iterations)
+        for _ in range(5):
+            if not response.parts: break
+            
+            has_backend_call = False
+            for part in response.parts:
+                if part.function_call:
+                    fc = part.function_call
+                    func_name = fc.name
+                    args = {k: v for k, v in fc.args.items()}
 
-                # Intercept ask_clarification — return as chat message with options buttons
-                if func_name == "ask_clarification":
-                    return {
-                        "type": "message",
-                        "content": args.get("message", "Which option do you prefer?"),
-                        "options": list(args.get("options", [])),
-                    }
+                    if func_name in BACKEND_TOOLS:
+                        print(f"[Copilot] Executing local tool {func_name} with {args}")
+                        func = BACKEND_TOOLS[func_name]
+                        try:
+                            result = func(**args)
+                        except Exception as e:
+                            result = f"Error: {e}"
+                            
+                        response = chat.send_message(
+                            genai.protos.Content(
+                                parts=[genai.protos.Part(
+                                    function_response=genai.protos.FunctionResponse(
+                                        name=func_name,
+                                        response={"result": result}
+                                    )
+                                )]
+                            )
+                        )
+                        has_backend_call = True
+                        break # break the parts loop, re-evaluate new response
+                        
+                    else:
+                        # Frontend tool! Return immediately to UI.
+                        if func_name == "ask_clarification":
+                            return {
+                                "type": "message",
+                                "content": args.get("message", "Which option do you prefer?"),
+                                "options": list(args.get("options", [])),
+                            }
 
-                return {
-                    "type": "tool_call",
-                    "name": func_name,
-                    "arguments": args,
-                }
+                        return {
+                            "type": "tool_call",
+                            "name": func_name,
+                            "arguments": args,
+                        }
+            
+            if not has_backend_call:
+                break # It's a plain text response!
 
         # Plain text response
         content = response.text or "I couldn't process that request."
