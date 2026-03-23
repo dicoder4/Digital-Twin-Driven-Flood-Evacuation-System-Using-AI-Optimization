@@ -29,6 +29,7 @@ This project implements a sophisticated flood evacuation system that:
 - 🏥 Safe center identification and capacity management
 - 🆘 SOS alerting and Evacuation Plan Notifications
 
+---
 
 ## Project Structure
 

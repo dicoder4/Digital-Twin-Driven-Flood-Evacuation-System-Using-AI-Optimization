@@ -8,14 +8,29 @@ Thin FastAPI layer. All business logic lives in:
   flood_simulator.py — physics simulation
 """
 
+import sys
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure backend directory is in python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 
-from region_manager import initialise, norm_key, REGIONS_TREE
-from generate_people import load_population, POPULATION_CSV
+try:
+    from region_manager import initialise, norm_key, REGIONS_TREE
+    from generate_people import load_population, POPULATION_CSV
+except ImportError:
+    # Try importing as package if top-level script
+    from UrbanFloodReact.backend.region_manager import initialise, norm_key, REGIONS_TREE
+    from UrbanFloodReact.backend.generate_people import load_population, POPULATION_CSV
 
 # Import service layer
 import service
@@ -30,6 +45,14 @@ from weather_watcher import router as automation_router, weather_watcher_loop
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("━━ Urban Flood Backend starting ━━")
+    
+    # Force load .env from project root
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    print(f"Loading .env from: {env_path}")
+    load_dotenv(dotenv_path=env_path, override=True)
+    
+    print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
+    print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
     asyncio.create_task(weather_watcher_loop())
@@ -73,7 +96,7 @@ async def expert_advice_stream(req: ExpertAdviceRequest):
     from genai.expert_panel import stream_advice
     
     # Enrich the raw summary data with severity tags, route stats, etc.
-    enriched_context = build_expert_context(req.summary_data, req.evacuation_plan)
+    enriched_context = await build_expert_context(req.summary_data, req.evacuation_plan)
     
     return StreamingResponse(
         stream_advice(req.persona, enriched_context),
@@ -100,7 +123,7 @@ async def evacuation_chat(req: ChatRequest):
         enriched_context = req.context
     else:
         # Build the full enriched context (with route details) for standard queries.
-        enriched_context = build_expert_context(req.context, req.evacuation_plan)
+        enriched_context = await build_expert_context(req.context, req.evacuation_plan)
     
     return StreamingResponse(
         stream_chat(req.question, enriched_context),
@@ -153,6 +176,15 @@ async def public_transport_plan(req: TransportPlanRequest):
 async def population(hobli_name: str):
     """Return population data for a hobli."""
     return await service.get_hobli_population(hobli_name)
+
+
+@app.get("/resources/{location_name}")
+async def get_resources(location_name: str):
+    """Fetch available resources for a location."""
+    print(f"[DEBUG] API HIT: /resources/{location_name}", flush=True)
+    results = await service.fetch_resources(location_name)
+    print(f"[DEBUG] API RESULT COUNT: {len(results)}", flush=True)
+    return results
 
 
 @app.post("/load-region")

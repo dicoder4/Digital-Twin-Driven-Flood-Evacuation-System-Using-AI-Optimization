@@ -1,0 +1,1380 @@
+{
+    "Search And Rescue": {
+        "Cutters": [
+            {
+                "code": "101",
+                "name": "Gas Cutters"
+            },
+            {
+                "code": "102",
+                "name": "Cold Cutters"
+            },
+            {
+                "code": "103",
+                "name": "Bolt Cutters ( Shears )"
+            },
+            {
+                "code": "110",
+                "name": "Cutters- Hydraulic"
+            },
+            {
+                "code": "111",
+                "name": "Cutters-Battery"
+            },
+            {
+                "code": "355",
+                "name": "Steel Cutter/Grinder"
+            },
+            {
+                "code": "104",
+                "name": "Electric Drill"
+            },
+            {
+                "code": "105",
+                "name": "Circular Saw with Diamond Blade(Electric)"
+            },
+            {
+                "code": "106",
+                "name": "Chipping Hammer"
+            },
+            {
+                "code": "107",
+                "name": "Chain Saw-Diamond"
+            },
+            {
+                "code": "108",
+                "name": "Chain Saw-Bullet"
+            },
+            {
+                "code": "109",
+                "name": "Pneumatic Chisel"
+            }
+        ],
+        "Spreaders": [
+            {
+                "code": "112",
+                "name": "Spreaders-Hydraulic"
+            },
+            {
+                "code": "113",
+                "name": "Spreaders-Battery"
+            }
+        ],
+        "Lifting Equipment": [
+            {
+                "code": "114",
+                "name": "Air Lifting bags (Different capacity)/Tools"
+            },
+            {
+                "code": "115",
+                "name": "Jack with 5 ton lift"
+            },
+            {
+                "code": "116",
+                "name": "Iron shod levers, 10 ft. Long"
+            }
+        ],
+        "Light Equipment": [
+            {
+                "code": "117",
+                "name": "Sledge hammer"
+            },
+            {
+                "code": "118",
+                "name": "Heavy Axe"
+            },
+            {
+                "code": "119",
+                "name": "Two handled cross cut-saw"
+            },
+            {
+                "code": "120",
+                "name": "Chain tackle"
+            },
+            {
+                "code": "121",
+                "name": "Single sheave snatch block"
+            },
+            {
+                "code": "122",
+                "name": "Smoke Blower and Exhauster"
+            },
+            {
+                "code": "123",
+                "name": "Set of rope tackle ( 3 sheave - 2 sheave)"
+            },
+            {
+                "code": "124",
+                "name": "Gloves-Rubber, Tested up to 25, 000 volt"
+            },
+            {
+                "code": "125",
+                "name": "Stretcher harness (set)"
+            },
+            {
+                "code": "126",
+                "name": "Scaffold poles for sheer legs"
+            },
+            {
+                "code": "127",
+                "name": "Jumping Cushions"
+            },
+            {
+                "code": "128",
+                "name": "Rescue Rams"
+            },
+            {
+                "code": "129",
+                "name": "Glass remover (Punch Mark)"
+            },
+            {
+                "code": "130",
+                "name": "Crescent/adjustable wrenches"
+            },
+            {
+                "code": "131",
+                "name": "Slotted Screwdrivers"
+            },
+            {
+                "code": "132",
+                "name": "Traps 4 X 4 meters"
+            },
+            {
+                "code": "133",
+                "name": "Blankets"
+            },
+            {
+                "code": "134",
+                "name": "Lifting tackle - 3 ton"
+            },
+            {
+                "code": "135",
+                "name": "Chains - 6 feet (3 ton lift)"
+            },
+            {
+                "code": "136",
+                "name": "Aspects Blanket"
+            },
+            {
+                "code": "137",
+                "name": "Soaking kit"
+            },
+            {
+                "code": "330",
+                "name": "Shovel"
+            },
+            {
+                "code": "331",
+                "name": "Spade"
+            },
+            {
+                "code": "332",
+                "name": "Crow bar"
+            },
+            {
+                "code": "333",
+                "name": "Heavy Block of Fulcrum"
+            },
+            {
+                "code": "334",
+                "name": "Helmet"
+            },
+            {
+                "code": "335",
+                "name": "Basket"
+            },
+            {
+                "code": "336",
+                "name": "Pick axe"
+            },
+            {
+                "code": "337",
+                "name": "Axe"
+            },
+            {
+                "code": "338",
+                "name": "Door breaker"
+            },
+            {
+                "code": "339",
+                "name": "Hacksaw"
+            },
+            {
+                "code": "340",
+                "name": "Knife Salvage"
+            },
+            {
+                "code": "341",
+                "name": "Ceiling hook"
+            },
+            {
+                "code": "343",
+                "name": "Public Address System"
+            },
+            {
+                "code": "354",
+                "name": "Hand Tool Set"
+            },
+            {
+                "code": "356",
+                "name": "B.A.Set"
+            },
+            {
+                "code": "357",
+                "name": "Rope"
+            },
+            {
+                "code": "358",
+                "name": "Bucket"
+            },
+            {
+                "code": "359",
+                "name": "Matok"
+            },
+            {
+                "code": "360",
+                "name": "Hose/hose fitting"
+            }
+        ],
+        "Lighting Arrangements": [
+            {
+                "code": "138",
+                "name": "Inflatable Light Tower"
+            },
+            {
+                "code": "139",
+                "name": "Light Mast"
+            },
+            {
+                "code": "140",
+                "name": "Search light"
+            },
+            {
+                "code": "141",
+                "name": "Electric Generator"
+            },
+            {
+                "code": "344",
+                "name": "Electric Torch"
+            },
+            {
+                "code": "345",
+                "name": "Lanterns"
+            },
+            {
+                "code": "346",
+                "name": "Telescopic Pneumatic Mast (Light)"
+            }
+        ],
+        "Heavy Engineering Equipment": [
+            {
+                "code": "142",
+                "name": "Trucks - Aerial Lift"
+            },
+            {
+                "code": "143",
+                "name": "Bulldozers wheeled/chain"
+            },
+            {
+                "code": "144",
+                "name": "Dumper"
+            },
+            {
+                "code": "145",
+                "name": "Earth movers"
+            },
+            {
+                "code": "146",
+                "name": "Cranes - Heavy Duty, Fork type"
+            },
+            {
+                "code": "147",
+                "name": "Tipper - Heavy Duty"
+            },
+            {
+                "code": "148",
+                "name": "Recovery Vans Beam Type"
+            },
+            {
+                "code": "149",
+                "name": "Snow Beaters Wheeled"
+            },
+            {
+                "code": "150",
+                "name": "Search and Rescue Teams for Collapsed Structures"
+            },
+            {
+                "code": "151",
+                "name": "Search and Rescue Teams with canines"
+            }
+        ]
+    },
+    "Flood Rescue": {
+        "Specialized Flood/Rescue Equipment": [
+            {
+                "code": "152",
+                "name": "Rescue back boards"
+            },
+            {
+                "code": "153",
+                "name": "Diving suit"
+            },
+            {
+                "code": "154",
+                "name": "Under water BA set"
+            },
+            {
+                "code": "155",
+                "name": "Lifebuoy"
+            },
+            {
+                "code": "156",
+                "name": "Life Jackets"
+            },
+            {
+                "code": "157",
+                "name": "Basket Stretcher"
+            },
+            {
+                "code": "158",
+                "name": "Pneumatic Rope Launcher"
+            }
+        ],
+        "Rescue Boats": [
+            {
+                "code": "159",
+                "name": "Inflatable boat (12 persons)"
+            },
+            {
+                "code": "160",
+                "name": "Fiber boat (12 persons)"
+            },
+            {
+                "code": "161",
+                "name": "Motor Boats"
+            },
+            {
+                "code": "162",
+                "name": "Motor Launch"
+            },
+            {
+                "code": "163",
+                "name": "Country Boats"
+            },
+            {
+                "code": "164",
+                "name": "Divers Teams"
+            },
+            {
+                "code": "165",
+                "name": "Search and Rescue Teams for Flood"
+            },
+            {
+                "code": "367",
+                "name": "Scuba Divers"
+            }
+        ]
+    },
+    "Health Services": {
+        "Health Equipment": [
+            {
+                "code": "200",
+                "name": "Spine boards"
+            },
+            {
+                "code": "201",
+                "name": "Stretcher normal"
+            },
+            {
+                "code": "202",
+                "name": "Stretcher medical evacuation"
+            },
+            {
+                "code": "203",
+                "name": "Incubators for adults"
+            },
+            {
+                "code": "204",
+                "name": "Incubators for children"
+            },
+            {
+                "code": "205",
+                "name": "First aid kits"
+            },
+            {
+                "code": "206",
+                "name": "CT scan"
+            },
+            {
+                "code": "207",
+                "name": "MRI"
+            }
+        ],
+        "Portable Equipment": [
+            {
+                "code": "208",
+                "name": "Portable oxygen cylinders"
+            },
+            {
+                "code": "209",
+                "name": "Portable ventilators"
+            },
+            {
+                "code": "210",
+                "name": "Portable x-rays"
+            },
+            {
+                "code": "211",
+                "name": "Portable ultrasound"
+            },
+            {
+                "code": "212",
+                "name": "Portable ECG"
+            },
+            {
+                "code": "213",
+                "name": "Portable suction unit"
+            }
+        ],
+        "Lifesaving Equipment": [
+            {
+                "code": "214",
+                "name": "Mechanical ventilators"
+            },
+            {
+                "code": "215",
+                "name": "Defibrillator"
+            }
+        ],
+        "Mobile Units": [
+            {
+                "code": "216",
+                "name": "Mobile OT unit"
+            },
+            {
+                "code": "217",
+                "name": "Mobile blood bank"
+            },
+            {
+                "code": "218",
+                "name": "Mobile lab service"
+            },
+            {
+                "code": "219",
+                "name": "Mobile hospital"
+            },
+            {
+                "code": "220",
+                "name": "Mobile medical van"
+            }
+        ],
+        "Hygiene": [
+            {
+                "code": "221",
+                "name": "Water filter"
+            },
+            {
+                "code": "222",
+                "name": "Water tank"
+            },
+            {
+                "code": "223",
+                "name": "Reservoirs treatment tank"
+            },
+            {
+                "code": "229",
+                "name": "General physician"
+            },
+            {
+                "code": "230",
+                "name": "Trauma specialist"
+            },
+            {
+                "code": "231",
+                "name": "Surgeon"
+            },
+            {
+                "code": "232",
+                "name": "Anesthetist"
+            },
+            {
+                "code": "233",
+                "name": "Gynecologist"
+            },
+            {
+                "code": "234",
+                "name": "Radiologist"
+            },
+            {
+                "code": "235",
+                "name": "Paramedics"
+            },
+            {
+                "code": "236",
+                "name": "Lab technicians"
+            },
+            {
+                "code": "237",
+                "name": "OT assistants"
+            },
+            {
+                "code": "238",
+                "name": "Medical first responders"
+            },
+            {
+                "code": "224",
+                "name": "Bronchodilators"
+            },
+            {
+                "code": "225",
+                "name": "Vaccines"
+            },
+            {
+                "code": "226",
+                "name": "Anti snake venom"
+            },
+            {
+                "code": "227",
+                "name": "Chlorine tablets"
+            },
+            {
+                "code": "228",
+                "name": "Halogen tablets"
+            }
+        ]
+    },
+    "Shelters": {
+        "Tents": [
+            {
+                "code": "239",
+                "name": "Tent 80 Kgs"
+            },
+            {
+                "code": "240",
+                "name": "Tent 40 Lbs"
+            },
+            {
+                "code": "241",
+                "name": "Tent MK-III Private"
+            },
+            {
+                "code": "242",
+                "name": "Tent Store"
+            },
+            {
+                "code": "243",
+                "name": "Tent extendable 4 meters"
+            },
+            {
+                "code": "244",
+                "name": "Tent extendable 2meters"
+            },
+            {
+                "code": "245",
+                "name": "Tent Arctic"
+            }
+        ],
+        "Sheets": [
+            {
+                "code": "246",
+                "name": "Tarpaulin"
+            },
+            {
+                "code": "247",
+                "name": "Plastic Sheet"
+            },
+            {
+                "code": "248",
+                "name": "Polythene Sheet"
+            },
+            {
+                "code": "249",
+                "name": "Corrugated Galvanized Iron sheet"
+            }
+        ],
+        "Fab Shelters": [
+            {
+                "code": "250",
+                "name": "Polypropylene Corrugated Unifold shelter"
+            },
+            {
+                "code": "251",
+                "name": "FRP Shutter"
+            }
+        ],
+        "Shelters/Rehabilitation Centers": [
+            {
+                "code": "347",
+                "name": "Office building"
+            },
+            {
+                "code": "348",
+                "name": "Yuva Mandal Bhawan"
+            },
+            {
+                "code": "349",
+                "name": "Mahila Mandal Bhawan"
+            },
+            {
+                "code": "350",
+                "name": "Panchayat bhawan"
+            },
+            {
+                "code": "351",
+                "name": "School"
+            }
+        ]
+    },
+    "Transportation": {
+        "Light Vehicles": [
+            {
+                "code": "252",
+                "name": "Four wheel drive vehicle"
+            },
+            {
+                "code": "253",
+                "name": "Matador"
+            },
+            {
+                "code": "362",
+                "name": "Motor Cycle"
+            }
+        ],
+        "Medium Vehicle": [
+            {
+                "code": "254",
+                "name": "Truck"
+            },
+            {
+                "code": "255",
+                "name": "RTV"
+            },
+            {
+                "code": "256",
+                "name": "Mini Bus"
+            }
+        ],
+        "Heavy Vehicle": [
+            {
+                "code": "257",
+                "name": "Bus"
+            },
+            {
+                "code": "258",
+                "name": "Tractor"
+            },
+            {
+                "code": "259",
+                "name": "Trailer"
+            },
+            {
+                "code": "260",
+                "name": "Heavy Truck"
+            },
+            {
+                "code": "353",
+                "name": "Jumper"
+            },
+            {
+                "code": "363",
+                "name": "Loader"
+            }
+        ],
+        "Special Vehicles": [
+            {
+                "code": "261",
+                "name": "Light Ambulance Van"
+            },
+            {
+                "code": "262",
+                "name": "Medium Ambulance Van"
+            },
+            {
+                "code": "263",
+                "name": "Equipment Toeing Tender"
+            },
+            {
+                "code": "264",
+                "name": "Mobilization Truck"
+            },
+            {
+                "code": "265",
+                "name": "Water Tanker - Medium capacity"
+            },
+            {
+                "code": "266",
+                "name": "Water Tanker - Large capacity"
+            },
+            {
+                "code": "364",
+                "name": "Road Roller"
+            }
+        ]
+    },
+    "Tele Communication": {
+        "Wireless System": [
+            {
+                "code": "267",
+                "name": "VHF Sets Static"
+            },
+            {
+                "code": "268",
+                "name": "VHF Sets Mobile"
+            },
+            {
+                "code": "269",
+                "name": "UHF Sets Static"
+            },
+            {
+                "code": "270",
+                "name": "UHF Sets Mobile"
+            },
+            {
+                "code": "271",
+                "name": "Walkie Talkie Sets"
+            },
+            {
+                "code": "272",
+                "name": "HF Sets Static"
+            }
+        ],
+        "Sat Phones": [
+            {
+                "code": "273",
+                "name": "Mini-M3"
+            },
+            {
+                "code": "274",
+                "name": "V-SAT"
+            },
+            {
+                "code": "275",
+                "name": "INMARSAT"
+            }
+        ],
+        "Mobile Phones": [
+            {
+                "code": "276",
+                "name": "Mobile Phone GSM"
+            },
+            {
+                "code": "277",
+                "name": "Mobile Phone CDMA"
+            }
+        ],
+        "Gps": [
+            {
+                "code": "278",
+                "name": "GPS Hand Sets"
+            }
+        ],
+        "Video System": [
+            {
+                "code": "279",
+                "name": "Video Phone Set"
+            },
+            {
+                "code": "280",
+                "name": "Video Camera Digital"
+            },
+            {
+                "code": "281",
+                "name": "Video Camera Beta"
+            },
+            {
+                "code": "282",
+                "name": "Camera Digital"
+            },
+            {
+                "code": "283",
+                "name": "Video Camera DVD"
+            },
+            {
+                "code": "284",
+                "name": "Ham Radio Operators"
+            }
+        ]
+    },
+    "Nuclear Biological And Chemical": {
+        "Nbc Specialized Equipment": [
+            {
+                "code": "285",
+                "name": "Air Sampler - battery operated"
+            },
+            {
+                "code": "286",
+                "name": "NBC face mask"
+            },
+            {
+                "code": "287",
+                "name": "Body bags"
+            },
+            {
+                "code": "288",
+                "name": "C.D Kit danger make"
+            },
+            {
+                "code": "289",
+                "name": "Monitor - for chemical agents"
+            },
+            {
+                "code": "290",
+                "name": "Capping kit - for chlorine leak"
+            },
+            {
+                "code": "291",
+                "name": "Containers of AFFF"
+            },
+            {
+                "code": "292",
+                "name": "Containers of soda ash and hydroxide"
+            },
+            {
+                "code": "293",
+                "name": "Monitor - for contamination"
+            },
+            {
+                "code": "294",
+                "name": "Decontamination gears"
+            },
+            {
+                "code": "295",
+                "name": "Direct reading dosimeter"
+            },
+            {
+                "code": "296",
+                "name": "Distress signal unit"
+            },
+            {
+                "code": "297",
+                "name": "Emergency response guide book"
+            },
+            {
+                "code": "298",
+                "name": "First aid kit as per MFR"
+            },
+            {
+                "code": "299",
+                "name": "First aid kit NBC type A"
+            },
+            {
+                "code": "300",
+                "name": "First aid kit NBC type B"
+            },
+            {
+                "code": "301",
+                "name": "Flame ionization detector"
+            },
+            {
+                "code": "302",
+                "name": "GM survey meter"
+            },
+            {
+                "code": "303",
+                "name": "High visibility vest"
+            },
+            {
+                "code": "304",
+                "name": "Leak storing device"
+            },
+            {
+                "code": "305",
+                "name": "Leak tester for B.A set"
+            },
+            {
+                "code": "306",
+                "name": "LEL Meter"
+            },
+            {
+                "code": "307",
+                "name": "Mini rad meter"
+            },
+            {
+                "code": "308",
+                "name": "Multi gas detector with cut gum bottle"
+            },
+            {
+                "code": "309",
+                "name": "Non sparking brush ,brooms shovels"
+            },
+            {
+                "code": "310",
+                "name": "Non sparking tool"
+            },
+            {
+                "code": "311",
+                "name": "PH meter"
+            },
+            {
+                "code": "312",
+                "name": "PH tester"
+            },
+            {
+                "code": "313",
+                "name": "Pipe squeezer"
+            },
+            {
+                "code": "314",
+                "name": "Plastic drums"
+            },
+            {
+                "code": "315",
+                "name": "Detector kit - for poison in water"
+            },
+            {
+                "code": "316",
+                "name": "Portable alpha monitor"
+            },
+            {
+                "code": "317",
+                "name": "Portable decontamination apparatus"
+            },
+            {
+                "code": "318",
+                "name": "Safety line with chemical resistant"
+            },
+            {
+                "code": "319",
+                "name": "Safety touch"
+            },
+            {
+                "code": "320",
+                "name": "Teletector"
+            },
+            {
+                "code": "321",
+                "name": "TLD"
+            },
+            {
+                "code": "322",
+                "name": "Traffic cones"
+            },
+            {
+                "code": "323",
+                "name": "Ultra violet photo ionization detector"
+            },
+            {
+                "code": "326",
+                "name": "Search and Rescue Teams for NBC Disasters"
+            },
+            {
+                "code": "372",
+                "name": "Health Workers"
+            },
+            {
+                "code": "373",
+                "name": "Driver- LMV"
+            },
+            {
+                "code": "374",
+                "name": "Driver- HMV"
+            },
+            {
+                "code": "375",
+                "name": "Labour"
+            },
+            {
+                "code": "324",
+                "name": "Decontamination solution"
+            },
+            {
+                "code": "325",
+                "name": "Iodate tablets"
+            },
+            {
+                "code": "368",
+                "name": "Mask"
+            },
+            {
+                "code": "369",
+                "name": "Hand Gloves"
+            },
+            {
+                "code": "370",
+                "name": "Sanitizer Spray"
+            },
+            {
+                "code": "371",
+                "name": "Sprayer"
+            },
+            {
+                "code": "376",
+                "name": "PPE Kits"
+            },
+            {
+                "code": "377",
+                "name": "HOOD with garment"
+            },
+            {
+                "code": "378",
+                "name": "N95 Mask"
+            },
+            {
+                "code": "379",
+                "name": "Surgical Masks"
+            },
+            {
+                "code": "380",
+                "name": "Boot Cover"
+            },
+            {
+                "code": "381",
+                "name": "Surgical Gloves"
+            },
+            {
+                "code": "382",
+                "name": "Face Shield"
+            },
+            {
+                "code": "383",
+                "name": "Goggles"
+            },
+            {
+                "code": "384",
+                "name": "Ventilator Adult"
+            },
+            {
+                "code": "385",
+                "name": "Ventilator Paediatric"
+            },
+            {
+                "code": "386",
+                "name": "Water-Resistant Gown"
+            },
+            {
+                "code": "387",
+                "name": "Scrub"
+            },
+            {
+                "code": "388",
+                "name": "Apron"
+            },
+            {
+                "code": "389",
+                "name": "Gum Boots"
+            },
+            {
+                "code": "390",
+                "name": "Heavy-Duty Gloves"
+            },
+            {
+                "code": "391",
+                "name": "Surgical Cap"
+            },
+            {
+                "code": "393",
+                "name": "Oxygen Cylinder Type B"
+            },
+            {
+                "code": "394",
+                "name": "Oxygen Cylinder Type-D"
+            },
+            {
+                "code": "395",
+                "name": "Body bag"
+            },
+            {
+                "code": "396",
+                "name": "Hospital capacity"
+            },
+            {
+                "code": "397",
+                "name": "Bed with oxygen support"
+            },
+            {
+                "code": "398",
+                "name": "Bed with ventilators"
+            },
+            {
+                "code": "399",
+                "name": "Oxygen generator plants"
+            },
+            {
+                "code": "400",
+                "name": "Remdesivir"
+            },
+            {
+                "code": "401",
+                "name": "Oxygen cans"
+            },
+            {
+                "code": "402",
+                "name": "Oxymeter"
+            },
+            {
+                "code": "403",
+                "name": "Oxygen Concentrator"
+            },
+            {
+                "code": "404",
+                "name": "Nebulizer"
+            },
+            {
+                "code": "405",
+                "name": "Plasma Therapy"
+            },
+            {
+                "code": "406",
+                "name": "Gloves"
+            },
+            {
+                "code": "407",
+                "name": "Shoe covers"
+            },
+            {
+                "code": "408",
+                "name": "Hand Sanitizer"
+            },
+            {
+                "code": "409",
+                "name": "Temperature gun"
+            },
+            {
+                "code": "410",
+                "name": "Thermometer"
+            },
+            {
+                "code": "411",
+                "name": "Pulse Oximeter"
+            },
+            {
+                "code": "412",
+                "name": "Disinfectant Spray"
+            },
+            {
+                "code": "413",
+                "name": "Surgical equipments,"
+            },
+            {
+                "code": "414",
+                "name": "RT-PCR device"
+            },
+            {
+                "code": "415",
+                "name": "Oxygen supplier"
+            },
+            {
+                "code": "416",
+                "name": "Infrared thermometer"
+            },
+            {
+                "code": "417",
+                "name": "Digital thermometer"
+            },
+            {
+                "code": "418",
+                "name": "Ultrasound scan"
+            },
+            {
+                "code": "419",
+                "name": "Blood gas analyse"
+            },
+            {
+                "code": "420",
+                "name": "Freezer"
+            },
+            {
+                "code": "421",
+                "name": "Medical gas cylinder"
+            },
+            {
+                "code": "422",
+                "name": "Infusion pump"
+            },
+            {
+                "code": "423",
+                "name": "Radiographic mobile digital equipment"
+            },
+            {
+                "code": "424",
+                "name": "Bubble humidifier,"
+            },
+            {
+                "code": "425",
+                "name": "Tubing"
+            },
+            {
+                "code": "426",
+                "name": "Flow splitter"
+            },
+            {
+                "code": "427",
+                "name": "Flowmeter"
+            },
+            {
+                "code": "428",
+                "name": "Thorpe tube"
+            },
+            {
+                "code": "429",
+                "name": "Venturi mask"
+            },
+            {
+                "code": "430",
+                "name": "Laryngeal mask airway"
+            },
+            {
+                "code": "431",
+                "name": "Lubricating jelly"
+            },
+            {
+                "code": "432",
+                "name": "Non-heated bubble humidifier"
+            },
+            {
+                "code": "433",
+                "name": "Colourimetric end-tidal CO2 (EtCO2 ) detector"
+            },
+            {
+                "code": "434",
+                "name": "Non-invasive ventilator"
+            },
+            {
+                "code": "435",
+                "name": "Invasive ventilator"
+            },
+            {
+                "code": "436",
+                "name": "Laryngoscope"
+            },
+            {
+                "code": "437",
+                "name": "Video-laryngoscope"
+            },
+            {
+                "code": "438",
+                "name": "Electro-conductive gel"
+            },
+            {
+                "code": "439",
+                "name": "Portable ultrasound scanner"
+            },
+            {
+                "code": "440",
+                "name": "Oxygen therapy"
+            },
+            {
+                "code": "441",
+                "name": "ICU beds"
+            },
+            {
+                "code": "442",
+                "name": "Patient monitor"
+            },
+            {
+                "code": "443",
+                "name": "Videolaryngoscope"
+            },
+            {
+                "code": "444",
+                "name": "Respirator"
+            },
+            {
+                "code": "445",
+                "name": "Surgical gowns"
+            },
+            {
+                "code": "446",
+                "name": "ORS"
+            },
+            {
+                "code": "447",
+                "name": "CoVID test centres"
+            },
+            {
+                "code": "448",
+                "name": "Vaccination centres"
+            },
+            {
+                "code": "449",
+                "name": "Steamer"
+            },
+            {
+                "code": "450",
+                "name": "Ambulance with Oxygen support and other critical facilities"
+            },
+            {
+                "code": "451",
+                "name": "Ambulance Attendants and Drivers"
+            },
+            {
+                "code": "452",
+                "name": "Tocilizumab"
+            },
+            {
+                "code": "453",
+                "name": "COVID Vaccines"
+            },
+            {
+                "code": "454",
+                "name": "COVID Specific Medicines"
+            },
+            {
+                "code": "455",
+                "name": "Oxygen Regulators and other support equipments to use oxygen Beds (with and without oxygen support)"
+            },
+            {
+                "code": "456",
+                "name": "Trained Doctors and Nursing Staff for COVID"
+            },
+            {
+                "code": "467",
+                "name": "Thermal Scanner"
+            },
+            {
+                "code": "457",
+                "name": "Isolation"
+            },
+            {
+                "code": "458",
+                "name": "Quarantine Wards"
+            },
+            {
+                "code": "459",
+                "name": "Mobile Isolation Units"
+            },
+            {
+                "code": "460",
+                "name": "Wheel Chairs with the Oxygen Support and IV support stand"
+            },
+            {
+                "code": "461",
+                "name": "Wheel Chairs"
+            },
+            {
+                "code": "462",
+                "name": "Aerosol Fumigators"
+            },
+            {
+                "code": "463",
+                "name": "HFO Cannula"
+            },
+            {
+                "code": "464",
+                "name": "Blood Fractionation Units"
+            },
+            {
+                "code": "465",
+                "name": "Computerized Tomography Scans"
+            },
+            {
+                "code": "392",
+                "name": "Aapda Mitra"
+            },
+            {
+                "code": "468",
+                "name": "Ex-Army personnel"
+            },
+            {
+                "code": "469",
+                "name": "Ex-CAPFs personnel"
+            }
+        ],
+        "Portable Equipment": [
+            {
+                "code": "466",
+                "name": "DG Sets"
+            }
+        ]
+    }
+}

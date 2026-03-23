@@ -89,8 +89,8 @@ The **App Copilot** is an agentic LLM that lives in the main dashboard. It can "
 Once a simulation (single or comparison) finishes, the **GenAI Agent** provides a grounded analysis of the results. It is "context-aware," meaning it receives the exact occupancy, success rates, and route data from the current run.
 
 - **Panel of Experts**: Three distinct AI personas provide specialised advice:
-  - **🚛 Logistics Chief**: Focuses on shelter supply chains and occupancy management.
-  - **⚓ Tactical Commander**: Analyzes route efficiency and flood-avoidance performance.
+  - **🚛 Logistics Chief**: Manages shelter operations and supply chains. This persona monitors real-time shelter occupancy to flag **CRITICAL (>90%)** overcrowding, identifies specific resource deficits (Medical Kits, Food Packets) by comparing demand against the scraped IDRN inventory, and coordinates inter-hobli resource transfers.
+  - **⚓ Tactical Commander**: Orchestrates field operations and route safety. This persona analyzes the "Pressure Junctures" (bottlenecks) identified by the Digital Twin, deploys NDRF/SDRF teams to high-risk flood zones, and issues dynamic rerouting orders to minimize congestion on major evacuation arteries.
   - **📢 Civic Authority**: Drafts communication templates for public alerts based on the evacuation map.
 - **Guided Analysis Chat**: Users can ask free-form questions about the simulation results.
   - *"Which algorithm performed the best and why?"*
@@ -141,6 +141,68 @@ The server will communicate over `stdio` by default, making it easy to plug into
 
 ---
 
+## Data Pipeline & Persona Engineering
+
+The system uses a robust offline-first data pipeline to ground the GenAI models in real-world government data. This ensures the "AI Personas" act based on official standards and actual inventory, not training data hallucinations.
+
+### 1. Knowledge Base Extraction (Setup Phase)
+Before the system runs, we extract static knowledge from official PDF guidelines. These scripts are located in `backend/data/`:
+- **Taxonomy Extraction** (`extract_resource_categories.py`):
+  - **Source**: `Data_collection_format_for_Districts.pdf`
+  - **Action**: Parses the official item hierarchy (Activities -> Categories -> Items).
+  - **Output**: `resource_definitions.json` (The "Dictionary" of what constitutes a resource).
+- **Standards Extraction** (`extract_guidelines.py`):
+  - **Source**: `Guidelines on Relief during disaster.pdf`
+  - **Action**: Uses **Gemini 2.5 Flash** (with fallback to Regex) to parse quantitative relief standards (e.g., "3.50 sq.m per person", "15L water/day").
+  - **Output**: `resource_guidelines.json`. This provides the math for the **Logistics Chief's** gap analysis (calculating deficits based on population).
+
+### 2. Inventory Ingestion (Periodic Updates)
+The system digitizes raw availability reports into a geospatial database:
+- **Scraper Utility** (`scrape_resources.py`):
+  - **Source**: `result.pdf` (IDRN District Resource Report).
+  - **Action**:
+    1.  **Extract**: Tabular data using `pdfplumber`.
+    2.  **Geocode**: Maps station addresses to Lat/Lon using `geopy` (ArcGIS) with a local cache (`known_resource_locations.json`) to minimize API calls.
+    3.  **Classify**: Tags items as **Logistics** vs **Tactical** using the `resource_definitions.json` map.
+  - **Output**: `idrn_resources_scraped.csv` (The master inventory file).
+
+### 3. Runtime Context Engine
+When a simulation finishes, the data is woven into a prompt:
+- **Context Builder** (`backend/genai/context_builder.py`):
+  - Merges **Live Simulation Data** (Occupancy, Flood Depths) with **Static Inventory** (from CSV).
+  - Filters resource lists (up to ~200 items) sorted by proximity to the disaster zone.
+  - Classifies shelters as CRITICAL, HIGH, or MODERATE based on the simulation's computed occupancy percentages.
+- **Expert Panel** (`backend/genai/expert_panel.py`):
+  - **Gap Analysis**: Deterministically compares the *available* inventory (CSV) against the *required* standards (`resource_guidelines.json`).
+  - **Proximity Logic**: Uses Haversine distance to recommend the "Nearest Equipped Fire Station" for missing items.
+  - **Persona Generation**: Feeds this strictly structured context to Gemini 2.5 Flash to generate the final role-specific reports.
+
+### 4. Expert Persona Logic
+Each report is generated using a distinct prompt architecture designed to produce actionable, field-ready intelligence:
+
+#### 🚛 Logistics Chief Report
+**Objective**: Supply Chain Management & Gap Analysis
+- **Status Logic**: The system calculates a "Pressure Index" for availability.
+  - 🟢 **STABLE**: P1 items (Water, Medical, Boats) exist within 5km and cover >50% of demand.
+  - 🟡 **STRAINED**: Items exist but are geographically dispersed (requires transport).
+  - 🔴 **CRITICAL**: Absolute zero stock in the entire inventory.
+- **Allocation Strategy**: The prompt forces a strict **One-Row-Per-Shelter** table to prevent double-counting.
+- **Sourcing Protocol**: Resources are drawn in concentric rings:
+  1.  **Immediate (<5km)**: Instant deployment (e.g., Local Fire Station).
+  2.  **Extended (5–15km)**: Short-haul transport (e.g., District Hospital).
+  3.  **Distant (>15km)**: Long-haul logistics (e.g., State Depot).
+- **Output**: A precise list of **"What We Have"** vs. **"What We Need"**, including specific quantities (e.g., "Need 24 Oxygen Cylinders").
+
+#### ⚔️ Tactical Commander Report
+**Objective**: Field Operations & Rescue Coordination
+- **Threat Zoning**: The model groups individual "Pressure Junctures" (flooded nodes) into named **Zones** (e.g., "Z-01: Northwest Approach Road").
+- **Mission Planning**: Instead of a shopping list, it generates a **Mission Table** (`M-01`, `M-02`...) specifying:
+  - **Where**: The exact location (human-readable address, avoiding raw Node IDs).
+  - **What**: The specific tactical action (e.g., "Clear debris blockage", "Evacuate 40 stranded").
+  - **Who**: The specific asset assigned (e.g., "NDRF Team A from Yelahanka").
+- **Asset Inventory**: Focuses strictly on operational gear (Boats, Cutters, Life Jackets, NBC Equipment), ignoring logistics items like food.
+- **Sector Command**: Clusters multiple shelters into geographic **Sectors** (Alpha, Bravo) to streamline command-and-control for large-scale evacuations.
+
 ## Autonomous Early Warning Pipeline (Sentinel)
 
 The **Sentinel Pipeline** (`weather_watcher.py` & `AutomationPanel.jsx`) is a native, autonomous event-driven architecture that continuously monitors live atmospheric data and triggers programmatic simulation and response protocols natively without human intervention.
@@ -170,3 +232,4 @@ Once the live rainfall passes your set threshold (or if you artificially set the
 - The log will flash a `🚨 THRESHOLD EVENT!`.
 - The daemon will autonomously disarm itself (`active = False`) to prevent CPU-locking simulation spam.
 - The UI will instantly force-trigger `sim.start()` to map out and render Evacuation Routes and algorithm paths natively on your digital twin dashboard.
+

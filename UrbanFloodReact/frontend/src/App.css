@@ -44,14 +44,43 @@ body,
 
 .sidebar {
   width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
+  min-width: 260px;
+  max-width: 1000px;
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Prevent sidebar itself from scrolling */
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06);
+  position: relative; /* needed for the resize handle */
+  flex-shrink: 0;
+}
+
+/* ── Resize handle ─────────────────────────────────────────── */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-resize-handle::after {
+  content: '';
+  width: 3px;
+  height: 36px;
+  border-radius: 3px;
+  background: var(--border);
+  transition: background 0.15s, width 0.15s;
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.dragging::after {
+  background: var(--accent);
+  width: 4px;
 }
 
 .sidebar-content {

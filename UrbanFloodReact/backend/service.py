@@ -7,6 +7,8 @@ between the API (Controller) and the Data/Simulators (Model).
 
 import asyncio
 import json
+import os
+import math
 import time as _time_module
 from datetime import datetime
 import pandas as pd
@@ -94,6 +96,159 @@ async def process_load_region(hobli_name: str):
         "lon":      coords["lon"],
         "district": coords["district"],
     }
+
+def _haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the great circle distance in kilometers between two points."""
+    R = 6371  # Earth radius in kilometers
+    dLat = math.radians(lat2 - lat1)
+    dLon = math.radians(lon2 - lon1)
+    a = math.sin(dLat / 2) * math.sin(dLat / 2) + \
+        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * \
+        math.sin(dLon / 2) * math.sin(dLon / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+async def fetch_resources(location: str):
+    """
+    Look up IDRN resources for the given location string.
+    If no matches found (or location is 'Unknown'), return default set (Bengaluru).
+    """
+    try:
+        # Load activity mapping from JSON if not cached
+        if not hasattr(fetch_resources, "activity_map"):
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            json_path = os.path.join(root, "backend/data/resource_definitions.json")
+            if not os.path.exists(json_path):
+                 json_path = "UrbanFloodReact/backend/data/resource_definitions.json"
+                 
+            fetch_resources.activity_map = {}
+            if os.path.exists(json_path):
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                    for activity, categories in data.items():
+                        for cat_name, items in categories.items():
+                            for item in items: # Assuming dict with {code, name} or legacy string
+                                if isinstance(item, dict):
+                                    item_name = item.get('name', '').lower()
+                                else:
+                                    item_name = str(item).lower()
+                                fetch_resources.activity_map[item_name] = activity
+
+        # Load CSV data
+        if not hasattr(fetch_resources, "cache") or fetch_resources.cache is None or fetch_resources.cache.empty:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            dfs = []
+            
+            # 1. Logistics
+            log_path = os.path.join(base_dir, "data", "logistics_resources.csv")
+            if os.path.exists(log_path):
+                try:
+                    cdf = pd.read_csv(log_path)
+                    cdf["Category"] = "Logistics"
+                    dfs.append(cdf)
+                except Exception: pass
+
+            # 2. Tactical
+            tac_path = os.path.join(base_dir, "data", "tactical_resources.csv")
+            if os.path.exists(tac_path):
+                try:
+                    cdf = pd.read_csv(tac_path)
+                    if "Category" not in cdf.columns:
+                        cdf["Category"] = "Tactical"
+                    dfs.append(cdf)
+                except Exception: pass
+            
+            if dfs:
+                df = pd.concat(dfs, ignore_index=True)
+                df = df.fillna("N/A")
+                fetch_resources.cache = df
+            else:
+                 # Fallback to IDRN
+                 candidates = [
+                    os.path.join(base_dir, "data", "idrn_resources_scraped.csv"),
+                    os.path.join(os.getcwd(), "UrbanFloodReact", "backend", "data", "idrn_resources_scraped.csv"),
+                 ]
+                 csv_path = None
+                 for p in candidates:
+                    if os.path.exists(p):
+                        csv_path = p
+                        break
+                
+                 if csv_path:
+                    try:
+                        df = pd.read_csv(csv_path)
+                        df = df.fillna("N/A")
+                        fetch_resources.cache = df
+                    except Exception:
+                        return []
+                 else:
+                    return []
+        else:
+            df = fetch_resources.cache
+
+        # Get target coordinates for distance calculation
+        target_lat, target_lon = 12.9716, 77.5946 # Default Bengaluru
+        norm_loc = norm_key(location)
+        
+        if norm_loc in HOBLI_COORDS:
+             coords = HOBLI_COORDS[norm_loc]
+             if isinstance(coords, dict):
+                 target_lat, target_lon = coords.get('lat'), coords.get('lon')
+             else:
+                 target_lat, target_lon = coords[0], coords[1]
+        
+        # Calculate distances
+        t_lat, t_lon = float(target_lat), float(target_lon)
+        filtered = df.copy()
+        distances, cats = [], []
+        
+        for idx, row in filtered.iterrows():
+            try:
+                r_lat = float(str(row.get("Latitude", "0")).replace(',', '').strip() or 0)
+                r_lon = float(str(row.get("Longitude", "0")).replace(',', '').strip() or 0)
+                
+                if r_lat == 0 or r_lon == 0:
+                    d = 99999.0
+                else:
+                    d = _haversine_distance(t_lat, t_lon, r_lat, r_lon)
+                
+                distances.append(d)
+                if d < 5.0: cats.append("Immediate")
+                elif d < 15.0: cats.append("Extended")
+                else: cats.append("Distant")
+            except:
+                distances.append(99999.0)
+                cats.append("Distant")
+        
+        filtered['temp_dist'] = distances
+        filtered['dist_cat'] = cats
+        filtered = filtered.sort_values('temp_dist', ascending=True)
+        
+        results = []
+        for idx, row in filtered.iterrows():
+            item_name = str(row.get("Item Name", "Unknown Item"))
+            dist_val = row['temp_dist']
+            dist_str = f"{dist_val:.1f} km" if dist_val < 90000 else "N/A"
+            activity_cat = fetch_resources.activity_map.get(item_name.lower(), "General Resource")
+            
+            results.append({
+                "item": item_name,
+                "item_code": str(row.get("Item Code", "")),
+                "qty": str(row.get("Quantity", "N/A")), 
+                "source": str(row.get("Department", "Unknown Source")),
+                "contact": str(row.get("Contact Name", "")),
+                "phone": str(row.get("Phone", "")),
+                "distance": dist_str,
+                "distance_val": dist_val,
+                "category_distance": row['dist_cat'],
+                "type": str(row.get("Category", "Other")),
+                "activity": activity_cat,
+                "address": str(row.get("Address", "N/A"))
+            })
+        return results
+    except Exception as e:
+        print(f"[ERROR] Service fetch_resources: {e}")
+        return []
 
 async def fetch_rainfall_records(hobli_name: str):
     """Retrieve and sort rainfall records."""
@@ -311,6 +466,8 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "occupancy_pct": round(
                 min(sim.shelter_occupancy.get(s["id"], 0) / max(s["capacity"], 1) * 100, 100), 1
             ),
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
         }
         for s in shelters_with_safety
     ]
@@ -337,6 +494,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         "traffic_geojson":      traffic_geojson,
         "traffic_segment_count": traffic_segment_count,
         "summary": {
+            "simulation_location":     hobli,
             "total_evacuated":         total_assigned,
             "total_at_risk_remaining": at_risk_remaining,
             "total_at_risk_initial":   total_at_risk_before_ga,

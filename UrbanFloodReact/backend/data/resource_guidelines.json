@@ -1,0 +1,85 @@
+{
+  "source_document": "Guidelines on Relief during disaster.pdf",
+  "logistics_standards": {
+    "water_requirements": {
+      "drinking_liters_person_day": 3,
+      "hygiene_liters_person_day": 20,
+      "notes": "Water chlorination, mobile filters/RO plants, and daily sample collection by PHC officer for analysis are required to prevent contamination."
+    },
+    "food_nutrition": {
+      "components": [
+        "pulse",
+        "cereals",
+        "egg",
+        "fat sources"
+      ],
+      "calories_per_person": "As per ICDS",
+      "special_groups": "Special nutritional needs of children, lactating mothers, and elderly people shall be taken care of. ICDS nutrition norms for children and lactating mothers shall be followed."
+    },
+    "shelter_specs": {
+      "area_sqm_person": 3.5,
+      "infrastructure": [
+        "basic lighting facility",
+        "good ventilation",
+        "necessary partition/separate rooms for women, children, widows, elders, and differently-abled people to ensure protection and privacy"
+      ],
+      "site_selection_criteria": [
+        "accessibility",
+        "water availability",
+        "number of toilets",
+        "power back up options (for existing structures)",
+        "approach road (for open ground camps)",
+        "not vulnerable to flooding, landslides or other disasters",
+        "free from breeding grounds for vector borne disease",
+        "decent drainage facility"
+      ]
+    },
+    "sanitation_hygiene": {
+      "toilets_per_person_ratio": "1:30",
+      "distance_rules": "Toilets minimum 10 mts and maximum 50 mts from relief camp. Pit latrines and soak ways at least 30 m from any ground water source, and bottom of latrine at least 1.5 m above water level.",
+      "waste_management": "Separate dust bins for wet and dry waste. Waste collected regularly and disposed as per prevailing norms."
+    },
+    "medical_supplies": {
+      "essential_kits": [
+        "Medicines for diarrhoea, gastroenteritis, conjunctivitis, allergies, vector borne diseases",
+        "Basic first aid supplies (Inferred)"
+      ],
+      "ambulance_deployment": "Sufficient number of ambulances with staff should be stationed in the camp (as far as practical). Arrangements must be made to transport people requiring hospitalization to suitable hospitals. In case of mass casualty, triaging is done at the camp."
+    }
+  },
+  "tactical_protocols": {
+    "rescue_operations": {
+      "priority_groups": [
+        "Severely injured (triaged during mass casualty)",
+        "Children",
+        "Women",
+        "Elderly",
+        "Differently-abled persons",
+        "Orphans",
+        "Widows"
+      ],
+      "team_composition": "Implicitly includes medical staff for triaging (senior specialist, mobile medical teams). General rescue team composition not explicitly defined."
+    },
+    "camp_management": {
+      "registration_process": "Mandatory separate register for widows and orphans (including complete details, issuance of documents/certificates within 15 days). (Inferred: General registration for all camp inhabitants is implied for effective management).",
+      "security_protocols": [
+        "Separate rooms/partitions for vulnerable groups (women, children, widows, elders, differently-abled) to ensure protection and privacy",
+        "Proper illumination of toilets and approach roads to toilets"
+      ]
+    },
+    "transport_logistics": {
+      "vehicle_types": [
+        "Ambulances (for medical transport)",
+        "Vehicles for general transport (Inferred)"
+      ],
+      "access_rules": "Camp sites must have approach roads for accessibility. (Inferred: Specific access rules for vehicles and personnel would be implemented for camp security and efficiency)."
+    }
+  },
+  "allocations_heuristic": {
+    "description": "Simplified math for AI calculation",
+    "food_unit_name": "Packet",
+    "food_per_person": 1,
+    "water_liters_per_person": 23,
+    "people_per_toilet": 30
+  }
+}
