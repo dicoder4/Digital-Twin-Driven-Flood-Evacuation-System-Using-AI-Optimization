@@ -108,7 +108,7 @@ function makeMarkdownComponents(persona, compact = false) {
                 borderRadius: '8px',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
             }}>
-                <table style={{
+                <table className="expert-md-table" style={{
                     minWidth: '100%',
                     borderCollapse: 'collapse',
                     fontSize,
@@ -120,14 +120,17 @@ function makeMarkdownComponents(persona, compact = false) {
         ),
         th: ({ node, ...props }) => (
             <th style={{
-                padding: compact ? '8px 10px' : '10px 14px',
+                padding: compact ? '10px 12px' : '12px 16px',
                 textAlign: 'left',
                 fontWeight: 700,
                 color: theme.headerColor,
                 fontSize: compact ? '11px' : '12px',
-                letterSpacing: '0.04em',
+                letterSpacing: '0.03em',
                 textTransform: 'uppercase',
-                whiteSpace: 'nowrap',
+                whiteSpace: 'normal',          // allow wrapping instead of cramming
+                wordBreak: 'break-word',
+                lineHeight: '1.3',
+                minWidth: '60px',
                 borderRight: `1px solid rgba(255,255,255,0.15)`,
             }} {...props} />
         ),
@@ -135,15 +138,13 @@ function makeMarkdownComponents(persona, compact = false) {
             <tbody {...props}>{children}</tbody>
         ),
         tr: ({ node, isHeader, children, ...props }) => {
-            // We can't easily know row index here, so we style via nth-child CSS
             return <tr style={{
                 borderBottom: `1px solid ${theme.borderColor}`,
-                transition: 'background 0.15s',
             }} {...props}>{children}</tr>;
         },
         td: ({ node, ...props }) => (
             <td style={{
-                padding: compact ? '7px 10px' : '10px 14px',
+                padding: compact ? '10px 12px' : '14px 18px',
                 color: '#334155',
                 fontSize,
                 borderRight: `1px solid ${theme.borderColor}`,
@@ -207,7 +208,7 @@ function makeMarkdownComponents(persona, compact = false) {
             <p style={{
                 margin: compact ? '4px 0 8px' : '6px 0 12px',
                 fontSize: pFontSize,
-                color: '#475569',
+                color: '#1e293b',
                 lineHeight: '1.6',
             }} {...props} />
         ),
@@ -223,7 +224,7 @@ function makeMarkdownComponents(persona, compact = false) {
             <li style={{
                 margin: compact ? '3px 0' : '5px 0',
                 fontSize: pFontSize,
-                color: '#475569',
+                color: '#1e293b',
                 lineHeight: '1.5',
             }} {...props} />
         ),
@@ -280,6 +281,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
     const [loadingInventory, setLoadingInventory] = useState(false);
     const [resourceFilter, setResourceFilter] = useState('all');
     const [distanceFilter, setDistanceFilter] = useState('all');
+    const [countData, setCountData] = useState(0);
 
     const locationName =
         propLocationName ||
@@ -308,6 +310,13 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
             setLoadingInventory(false);
         }
     };
+
+    // ── Update badge count on data mount ────────────────────────────────────
+    useState(() => {
+        if (summary?.local_inventory) {
+            setCountData(summary.local_inventory.length);
+        }
+    }, [summary]);
 
     // ── Fetch expert advice ──────────────────────────────────────────────────
     const fetchExpertise = (persona) => {
@@ -570,6 +579,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 <FilterPill id="all" label="All" color="#64748b" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="logistics" label="Logistics" color="#3b82f6" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="tactical" label="Tactical" color="#f59e0b" active={resourceFilter} onClick={setResourceFilter} />
+                                <FilterPill id="civic" label="Civic" color="#16a34a" active={resourceFilter} onClick={setResourceFilter} />
                             </div>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Dist:</span>
@@ -599,10 +609,16 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                             </div>
                         ) : filtered.length > 0 ? (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1, borderBottom: '2px solid #e2e8f0' }}>
+                                <thead style={{ position: 'sticky', top: 0, background: '#1e293b', zIndex: 1 }}>
                                     <tr>
                                         {['Item', 'Type', 'Qty', 'Distance', 'Source / Contact'].map(h => (
-                                            <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                                            <th key={h} style={{
+                                                padding: '10px 12px', textAlign: 'left', fontWeight: 700,
+                                                fontSize: '11px', color: '#e2e8f0',
+                                                textTransform: 'uppercase', letterSpacing: '0.04em',
+                                                whiteSpace: 'normal', lineHeight: '1.3',
+                                                borderRight: '1px solid rgba(255,255,255,0.12)',
+                                            }}>{h}</th>
                                         ))}
                                     </tr>
                                 </thead>
@@ -797,8 +813,23 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
     };
 
     // ── Main render ──────────────────────────────────────────────────────────
+    const activeThemeConfig = TABLE_THEMES[activeTab] || TABLE_THEMES.logistics;
+
     return (
-        <div className="expert-panel-wrapper">
+        <div className="expert-panel-wrapper expert-markdown-container">
+            <style>{`
+                .expert-markdown-container table.expert-md-table tbody tr:nth-child(even) td {
+                    background-color: ${activeThemeConfig.rowEven};
+                }
+                .expert-markdown-container table.expert-md-table tbody tr:nth-child(odd) td {
+                    background-color: ${activeThemeConfig.rowOdd};
+                }
+                .expert-markdown-container table.expert-md-table tbody tr:hover td {
+                    background-color: ${activeTab === 'logistics' ? '#eff6ff' : activeTab === 'tactical' ? '#fef3c7' : '#dcfce3'} !important;
+                    transition: background-color 0.15s ease;
+                }
+            `}</style>
+            
             <InventoryModal />
             <ReportModal />
 
@@ -812,35 +843,30 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
 
             {isOpen && (
                 <div className="expert-panel-body">
-                    {/* Top bar */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 14px', borderBottom: '1px solid #f1f5f9', background: '#fff' }}>
-                        <button
-                            onClick={fetchInventory}
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', color: '#475569', cursor: 'pointer', fontWeight: 500, transition: 'all 0.15s' }}
-                            onMouseOver={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.color = '#1e293b'; }}
-                            onMouseOut={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#475569'; }}
-                        >
-                            <List size={14} /> View Local Inventory
-                        </button>
-                    </div>
-
-                    {/* Tab buttons — flex:1 so all 3 share width equally */}
-                    <div className="expert-tabs" style={{ display: 'flex', borderBottom: '2px solid #f1f5f9', background: '#fff', overflowX: 'auto' }}>
+                    {/* ── Row 1: Tab Pills ────────────────────────────── */}
+                    <div
+                        className="expert-tabs"
+                        style={{
+                            display: 'flex',
+                            borderBottom: '2px solid #f1f5f9',
+                            background: '#fff',
+                            overflowX: 'auto',
+                        }}
+                    >
                         {TABS.map(tab => {
                             const Icon = tab.icon;
                             const isActive = activeTab === tab.key;
                             const isDone = fetched[tab.key] && !loading[tab.key] && responses[tab.key];
                             const isLoading = loading[tab.key];
-
                             return (
                                 <button
                                     key={tab.key}
                                     onClick={() => setActiveTab(tab.key)}
                                     style={{
-                                        flex: 1,                        // each tab takes equal width
-                                        minWidth: 0,                    // allow shrinking below content size
+                                        flex: '1 1 auto',
+                                        minWidth: 'max-content',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                                        padding: '9px 6px',             // reduced horizontal padding
+                                        padding: '9px 10px',
                                         border: 'none',
                                         borderBottom: isActive ? `3px solid ${tab.color}` : '3px solid transparent',
                                         background: isActive ? tab.accentLight : 'transparent',
@@ -854,11 +880,9 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 >
                                     <Icon size={13} />
                                     <span>{tab.shortLabel}</span>
-                                    {/* badge — only show on active to save space */}
                                     {isActive && (
                                         <span style={{
-                                            background: tab.color,
-                                            color: '#fff',
+                                            background: tab.color, color: '#fff',
                                             fontSize: '9px', fontWeight: 800,
                                             padding: '1px 5px', borderRadius: '4px',
                                             letterSpacing: '0.05em',
@@ -869,7 +893,36 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 </button>
                             );
                         })}
+
+                        {/* Inventory button pinned to right of tab row */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center',
+                            padding: '0 10px', marginLeft: 'auto',
+                            borderLeft: '1px solid #f1f5f9', flexShrink: 0,
+                        }}>
+                            <button
+                                onClick={fetchInventory}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '5px',
+                                    background: '#f8fafc', border: '1px solid #e2e8f0',
+                                    borderRadius: '5px', padding: '5px 9px',
+                                    fontSize: '11px', color: '#475569', cursor: 'pointer',
+                                    fontWeight: 500, transition: 'all 0.15s', whiteSpace: 'nowrap',
+                                }}
+                                onMouseOver={e => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.color = '#1e293b'; }}
+                                onMouseOut={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#475569'; }}
+                            >
+                                <List size={12} /> Inventory
+                                {countData > 0 && (
+                                    <span style={{
+                                        background: '#3b82f6', color: '#fff', fontSize: '9px',
+                                        padding: '1px 4px', borderRadius: '8px', fontWeight: 700,
+                                    }}>{countData}</span>
+                                )}
+                            </button>
+                        </div>
                     </div>
+
 
                     {/* Content area */}
                     <div

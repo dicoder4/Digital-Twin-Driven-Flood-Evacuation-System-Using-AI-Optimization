@@ -201,7 +201,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                 <div className="evac-sim-pop-note">
                                     <Users size={11} />
                                     <span>Simulation used <strong>{ad.simulation_population.toLocaleString()}</strong> people
-                                        {ad.simulation_population < 10000 ? ' (1% test mode)' : ''}
+                                        {evacuationMode ? ' (1% test mode)' : ''}
                                     </span>
                                 </div>
                             )}
@@ -388,7 +388,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     <div className="evac-sim-pop-note">
                         <Users size={11} />
                         <span>Simulation used <strong>{simulation_population.toLocaleString()}</strong> people
-                            {simulation_population < 10000 ? ' (1% test mode)' : ''}
+                            {evacuationMode ? ' (1% test mode)' : ''}
                         </span>
                     </div>
                 )}

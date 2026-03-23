@@ -76,15 +76,63 @@ export default function App() {
   const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
 
+  // ── Sidebar resize ────────────────────────────────────────────
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const sidebarRef = useRef(null);
+  const isResizingRef = useRef(false);
+
+  const handleResizeMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    const handle = e.currentTarget;
+    handle.classList.add('dragging');
+    const startX = e.clientX;
+    const startW = sidebarRef.current?.offsetWidth ?? sidebarWidth;
+
+    const onMouseMove = (mv) => {
+      if (!isResizingRef.current) return;
+      const newW = Math.min(1000, Math.max(260, startW + (mv.clientX - startX)));
+      setSidebarWidth(newW);
+    };
+    const onMouseUp = () => {
+      isResizingRef.current = false;
+      handle.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [sidebarWidth]);
+
   // ── Hooks ─────────────────────────────────────────────────────
   const regions = useRegions();
   const sim = useSimulation();
 
-  // Recompute shelter safety on every flood update
-  const sheltersWithSafety = useMemo(
-    () => computeShelterSafety(shelterCandidates, sim.floodData),
-    [shelterCandidates, sim.floodData],
-  );
+  // Recompute shelter safety on every flood update, then override with backend source of truth
+  const sheltersWithSafety = useMemo(() => {
+    let computed = computeShelterSafety(shelterCandidates, sim.floodData);
+    
+    // Once simulation is done or we have a compare report, override with backend's definitive accurate safety
+    // Backend also considers high-risk access roads, which frontend doesn't.
+    let reports = null;
+    if (compareResults && compareActiveAlgo) {
+        reports = compareResults[compareActiveAlgo]?.shelter_reports;
+    } else if (sim.finalReport?.summary?.shelter_reports) {
+        reports = sim.finalReport.summary.shelter_reports;
+    }
+
+    if (reports?.length > 0) {
+        computed = computed.map(c => {
+            const report = reports.find(r => String(r.id) === String(c.id));
+            if (report) {
+                return { ...c, safe: report.safe };
+            }
+            return c;
+        });
+    }
+
+    return computed;
+  }, [shelterCandidates, sim.floodData, compareResults, compareActiveAlgo, sim.finalReport]);
 
   // 1% display population when evacuation mode is ON
   const displayPopulation = evacuationMode
@@ -358,7 +406,7 @@ export default function App() {
   return (
     <div className="app-container">
       {/* ─── Sidebar ───────────────────────────────────────── */}
-      <aside className="sidebar">
+      <aside className="sidebar" ref={sidebarRef} style={{ width: sidebarWidth }}>
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <Droplets size={20} className="icon-blue" />
@@ -383,6 +431,13 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* ── Drag-resize handle ─────────────────────────────── */}
+        <div
+          className="sidebar-resize-handle"
+          onMouseDown={handleResizeMouseDown}
+          title="Drag to resize"
+        />
 
         {/* Tabs */}
         <div className="sidebar-tabs">
