@@ -339,42 +339,66 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
 
     try:
         genai.configure(api_key=api_key)
-
         system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg, map_pin)
-        
-        frontend_tools = _build_tools(available_hoblis or [], flat_taluks)
-        merged_tools = list(BACKEND_TOOLS.values()) + frontend_tools
 
+        # --- Fix: Ensure tool list is consistent (either all functions or all protos) ---
+        # Gemini SDK takes a list of functions OR a list of protos. Mixing can be flaky.
+        # We'll convert our frontend declarations to a format Gemini likes, or just use parts.
+        
+        # Define safety settings to prevent unnecessary blocks
+        safety_settings = {
+            genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+        }
+
+        # Instead of protos.Tool, we'll just pass a list of functions where possible.
+        # But for navigate/ask_clarification we need the custom schema.
+        # Let's use the explicit tool declaration approach.
+        frontend_tools_obj = _build_tools(available_hoblis or [], flat_taluks)
+        backend_funcs = list(BACKEND_TOOLS.values())
+        
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
             system_instruction=system_instruction,
-            tools=merged_tools,
+            tools=backend_funcs + frontend_tools_obj,
+            safety_settings=safety_settings
         )
 
         history = _convert_messages(messages[:-1]) if len(messages) > 1 else []
-
         chat = model.start_chat(history=history)
+        
+        print(f"[Copilot] Sending message: '{latest_user_msg}'")
         response = chat.send_message(latest_user_msg)
 
-        # Agent execution loop for backend tools (max 5 iterations)
-        for _ in range(5):
-            if not response.parts: break
+        # Agent execution loop for backend tools (max 10 iterations)
+        for i in range(10):
+            # Safe parts access
+            if not response.candidates or not response.candidates[0].content or not response.candidates[0].content.parts:
+                print(f"[Copilot] Iteration {i}: No parts in response. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'N/A'}")
+                break
             
+            parts = response.candidates[0].content.parts
             has_backend_call = False
-            for part in response.parts:
+            
+            for part in parts:
                 if part.function_call:
                     fc = part.function_call
                     func_name = fc.name
                     args = {k: v for k, v in fc.args.items()}
+                    print(f"[Copilot] Iteration {i}: Model called '{func_name}' with {args}")
 
                     if func_name in BACKEND_TOOLS:
-                        print(f"[Copilot] Executing local tool {func_name} with {args}")
+                        print(f"[Copilot] Executing BACKEND tool '{func_name}'")
                         func = BACKEND_TOOLS[func_name]
                         try:
                             result = func(**args)
                         except Exception as e:
+                            print(f"[Copilot] Tool error: {e}")
                             result = f"Error: {e}"
-                            
+                        
+                        # Send result back and continue loop
                         response = chat.send_message(
                             genai.protos.Content(
                                 parts=[genai.protos.Part(
@@ -386,17 +410,17 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
                             )
                         )
                         has_backend_call = True
-                        break # break the parts loop, re-evaluate new response
+                        break # Re-evaluate the new response from the top
                         
                     else:
-                        # Frontend tool! Return immediately to UI.
+                        # Frontend / App tool! Return immediately to UI.
+                        print(f"[Copilot] Identified FRONTEND tool '{func_name}'. Returning to UI.")
                         if func_name == "ask_clarification":
                             return {
                                 "type": "message",
                                 "content": args.get("message", "Which option do you prefer?"),
                                 "options": list(args.get("options", [])),
                             }
-
                         return {
                             "type": "tool_call",
                             "name": func_name,
@@ -404,11 +428,26 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
                         }
             
             if not has_backend_call:
-                break # It's a plain text response!
+                # If we're here, either it's plain text or we've finished the tool chain
+                print(f"[Copilot] Iteration {i}: No further backend calls. Checking for text output.")
+                break
 
-        # Plain text response
-        content = response.text or "I couldn't process that request."
-        return {"type": "message", "content": content, "options": []}
+        # Final check for text output
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            # Check if any part has text
+            text_parts = [p.text for p in response.candidates[0].content.parts if p.text]
+            if text_parts:
+                return {"type": "message", "content": "\n".join(text_parts), "options": []}
+        
+        return {"type": "message", "content": "I'm sorry, I couldn't process that request properly. (Empty Response)", "options": []}
+
+    except Exception as e:
+        print(f"[Copilot] CRITICAL ERROR: {e}")
+        # If Gemini fails (e.g. rate limit 429), attempt fallback to Groq
+        if "429" in str(e) or "quota" in str(e).lower():
+            print(f"Gemini rate limit hit, falling back to Groq... ({e})")
+            return await _fallback_ask_groq(messages, system_instruction)
+        return {"type": "message", "content": f"Copilot error: {str(e)}", "options": []}
 
     except Exception as e:
         # If Gemini fails (e.g. rate limit 429), attempt fallback to Groq

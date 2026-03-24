@@ -70,11 +70,23 @@ def _haversine_km(a: Tuple[float,float], b: Tuple[float,float]) -> float:
     x = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
     return 2*R*math.asin(math.sqrt(x))
 
+_CSV_DATA_CACHE: Dict[str, Dict[str, Any]] = {}   # key -> {"rows", "mtime", "ts"}
+_CACHE_TTL_SEC = 600   # 10 minutes
+
 def _read_csv(filename: str, usecols: Optional[List[str]]=None) -> List[Dict[str,str]]:
+    cache_key = f"{filename}_{','.join(usecols) if usecols else 'all'}"
     filepath = DATA_DIR / filename
     if not filepath.exists():
         return []
+
+    file_mtime = filepath.stat().st_mtime
+    cached = _CSV_DATA_CACHE.get(cache_key)
+
+    # Serve from cache if: entry exists, file hasn't changed, and TTL hasn't expired
+    if cached and cached["mtime"] == file_mtime and (time.time() - cached["ts"]) < _CACHE_TTL_SEC:
+        return cached["rows"]
         
+    print(f"DEBUG [GTFS cache]: {'Re-reading' if cached else 'First read of'} {filename} (TTL={_CACHE_TTL_SEC}s)")
     with open(filepath, "r", encoding="utf-8-sig", errors="ignore") as f:
         rdr = csv.DictReader(f)
         rows=[]
@@ -82,23 +94,30 @@ def _read_csv(filename: str, usecols: Optional[List[str]]=None) -> List[Dict[str
             if usecols:
                 row = {k: row[k] for k in usecols if k in row}
             rows.append(row)
+            
+        _CSV_DATA_CACHE[cache_key] = {"rows": rows, "mtime": file_mtime, "ts": time.time()}
         return rows
 
 def _nearest_stops_from_gtfs(lat: float, lon: float, top_n: int=3) -> List[Dict[str,Any]]:
     stops = _read_csv("stops.txt", ["stop_id","stop_name","stop_lat","stop_lon"])
-    for s in stops:
+    
+    def get_dist(s):
         try:
-            s["_d"] = _haversine_km((lat,lon),(float(s["stop_lat"]), float(s["stop_lon"])))
-        except: s["_d"]=1e9
-    stops.sort(key=lambda x: x["_d"])
+            return _haversine_km((lat,lon),(float(s["stop_lat"]), float(s["stop_lon"])))
+        except: 
+            return 1e9
+            
+    # Do not mutate cached dictionaries, use sorted() to create a new list
+    sorted_stops = sorted(stops, key=get_dist)
+    
     out=[]
-    for s in stops[:max(1,top_n)]:
+    for s in sorted_stops[:max(1,top_n)]:
         out.append({
             "stop_id": s["stop_id"],
             "name": s["stop_name"],
             "lat": float(s["stop_lat"]),
             "lon": float(s["stop_lon"]),
-            "distance_km": round(s["_d"],3)
+            "distance_km": round(get_dist(s),3)
         })
     return out
 

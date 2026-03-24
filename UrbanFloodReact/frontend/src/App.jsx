@@ -420,7 +420,7 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ '--sidebar-w': `${sidebarWidth}px` }}>
       {/* ─── Sidebar ───────────────────────────────────────── */}
       <aside className="sidebar" ref={sidebarRef} style={{ width: sidebarWidth }}>
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>

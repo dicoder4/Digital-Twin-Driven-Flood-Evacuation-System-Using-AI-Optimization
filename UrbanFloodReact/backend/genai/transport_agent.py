@@ -51,7 +51,8 @@ def compute_bus_evacuation_plan(evacuation_plan: List[Dict[str, Any]]) -> Dict[s
             route_name = "Emergency Shuttle"
             if routes:
                 r = routes[0]
-                route_name = r.get("short_name") or r.get("long_name") or "Emergency Shuttle"
+                # In BMTC GTFS, the actual route name (e.g., 500D) is often in route_id
+                route_name = r.get("route_id") or r.get("short_name") or r.get("long_name") or "Emergency Shuttle"
             
             grouped_routes[group_key] = {
                 "stop_id": stop_id,
@@ -84,6 +85,13 @@ def compute_bus_evacuation_plan(evacuation_plan: List[Dict[str, Any]]) -> Dict[s
                 "path_points": valid_path
             })
             bus_id_counter += 1
+            
+    # Sort the bus plan: Actual routes first, then Emergency Shuttles
+    bus_plan.sort(key=lambda x: 1 if x["route_name"] == "Emergency Shuttle" else 0)
+    
+    # Reassign sequential bus IDs after sorting for a cleaner manifest
+    for idx, bus in enumerate(bus_plan):
+        bus["bus_id"] = f"BUS-{idx + 1:03d}"
             
     print(f"DEBUG [transport_agent]: returning manifest with {len(bus_plan)} buses")
     return {"status": "success", "manifest": bus_plan, "total_buses": len(bus_plan)}
