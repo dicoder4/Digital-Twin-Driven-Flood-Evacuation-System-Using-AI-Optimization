@@ -98,12 +98,14 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
           total_dist  — flood-weighted network distance per person
           total_time  — raw travel time per person
           penalty     — quadratic capacity overflow penalty
+          terrain_penalty — penalize shelters at lower elevation than source
         Returns a single scalar so all three planners are ranked on the
         exact same objective.
         """
-        total_dist    = 0.0
-        total_time    = 0.0
-        shelter_counts = defaultdict(int)
+        total_dist      = 0.0
+        total_time      = 0.0
+        terrain_penalty = 0.0
+        shelter_counts  = defaultdict(int)
 
         for i, j in enumerate(chromosome):
             pop  = self.at_risk_nodes[i]['pop']
@@ -113,8 +115,24 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
             if not math.isfinite(dist): dist = 1_000_000
             if not math.isfinite(t):    t    = 1_000_000
 
-            total_dist      += dist * pop
-            total_time      += t    * pop
+            # GIS Physics Enhancement: Terrain-Aware Selection
+            # We want to penalize moving "downhill" into a potential trap
+            source_elev = self.at_risk_nodes[i].get('elevation', 900.0) # default if missing
+            dest_elev   = self.safe_shelters[j].get('elevation', 900.0)
+            
+            # If shelter is lower than source, apply penalty proportional to the drop
+            # This encourages "uphill" evacuation
+            if dest_elev < source_elev:
+                drop = source_elev - dest_elev
+                penalty_val = drop * 50.0 * pop
+                terrain_penalty += penalty_val
+            
+            # Absolute low-ground penalty: Shelters in deep valleys are risky
+            if dest_elev < 880.0: # threshold for "low-ground" in Bangalore context
+                terrain_penalty += 500.0 * pop
+
+            total_dist        += dist * pop
+            total_time        += t    * pop
             shelter_counts[j] += pop
 
         penalty = 0.0
@@ -123,7 +141,7 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
             if count > cap:
                 penalty += ((count - cap) ** 2) * self.CAPACITY_PENALTY
 
-        return total_dist + 0.5 * total_time + penalty
+        return total_dist + 0.5 * total_time + penalty + terrain_penalty
 
     # ─────────────────────────────────────────────────────────────────────────
     # run() must be implemented by each concrete planner

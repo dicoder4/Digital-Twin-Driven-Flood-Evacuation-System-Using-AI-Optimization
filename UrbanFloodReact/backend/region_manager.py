@@ -119,12 +119,27 @@ def get_region(hobli_key: str) -> dict:
             drain_nodes = saved.get("drains", [])
             lake_nodes  = saved.get("lakes", [])
     else:
-        center = (lat, lon)
-        drain_nodes = _extract_drains(G, center)
-        lake_nodes  = _extract_lakes(G, center)
+        try:
+            from gis_terrain_loader import get_gis_hydrology_nodes
+            drain_nodes, lake_nodes = get_gis_hydrology_nodes(G, lat, lon)
+        except Exception as e:
+            print(f"  [gis/warning] GIS hydrology failed: {e}. Falling back to standard OSM extraction.")
+            center = (lat, lon)
+            drain_nodes = _extract_drains(G, center)
+            lake_nodes  = _extract_lakes(G, center)
+            
         with open(feat_f, "wb") as f:
             pickle.dump({"drains": drain_nodes, "lakes": lake_nodes}, f)
         print(f"  [cache] Features saved -> {feat_f.name}")
+        
+    try:
+        from gis_terrain_loader import enrich_graph_elevation, enrich_graph_roughness
+        # This will download the SRTM DEM for the graph bounds and apply elevation to all nodes
+        G = enrich_graph_elevation(G, lat, lon)
+        # Apply Manning's roughness coefficient to edges based on highway tags
+        G = enrich_graph_roughness(G)
+    except Exception as e:
+        print(f"  [gis/warning] Graph enrichment skipped: {e}")
 
     entry = {"G": G, "drain_nodes": drain_nodes, "lake_nodes": lake_nodes}
     REGION_CACHE[hobli_key] = entry

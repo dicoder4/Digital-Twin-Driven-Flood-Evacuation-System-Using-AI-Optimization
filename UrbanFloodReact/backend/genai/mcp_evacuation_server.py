@@ -251,6 +251,48 @@ def get_route_summary() -> str:
 
 
 @mcp.tool()
+def get_terrain_analysis() -> str:
+    """
+    Get terrain analysis for the current simulation region.
+    Returns the average elevation, max elevation, min elevation, and the number of nodes.
+    This helps the AI understand the natural topography and predict where water will pool.
+    """
+    state = _load_state()
+    if not state.get("summary_data"):
+        return "No simulation data available. Run a simulation first."
+        
+    try:
+        from region_manager import REGION_CACHE, norm_key
+        hobli_name = state.get("hobli", "")
+        key = norm_key(hobli_name)
+        
+        if key not in REGION_CACHE:
+            return f"Region {hobli_name} is not currently actively cached in memory."
+            
+        G = REGION_CACHE[key]["G"]
+        elevations = [data.get('elevation', 0) for _, data in G.nodes(data=True) if 'elevation' in data]
+        
+        if not elevations or sum(elevations) == 0.0:
+            return f"Terrain analysis for {hobli_name}: Region is currently using flat 0.0m terrain."
+            
+        min_elev = min(elevations)
+        max_elev = max(elevations)
+        avg_elev = sum(elevations) / len(elevations)
+        range_elev = max_elev - min_elev
+        
+        return (
+            f"Terrain Analysis for {hobli_name} (Using OpenTopography SRTM DEM):\n"
+            f"- Total Nodes Analyzed: {len(elevations)}\n"
+            f"- Lowest Elevation: {min_elev:.1f} m (Risk: Water will severely pool in these valleys)\n"
+            f"- Average Elevation: {avg_elev:.1f} m\n"
+            f"- Highest Elevation: {max_elev:.1f} m (Risk: Safest natural ground)\n"
+            f"- Total Relief (Range): {range_elev:.1f} m\n"
+            f"Use this data to recommend directing evacuees toward Higher Elevation nodes during severe rains."
+        )
+    except Exception as e:
+         return f"Error computing terrain statistics: {str(e)}"
+
+@mcp.tool()
 def analyze_road_conditions(road_name: str = "") -> str:
     """
     Call this tool to check if a specific road or junction is flooded, 

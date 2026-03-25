@@ -97,8 +97,13 @@ def extract_shelter_candidates(G, lat: float, lon: float, hobli_key: str, dist: 
             # Attach to nearest graph node
             try:
                 node_id = ox.nearest_nodes(G, s_lon, s_lat)
+                # GIS Enhancement: Attach real elevation to the shelter
+                elevation = G.nodes[node_id].get('elevation', 0.0) if node_id in G.nodes else 0.0
+                if elevation > 0:
+                    print(f"  [gis] Shelter '{name}' tagged with elevation: {elevation:.1f}m")
             except Exception:
                 node_id = None
+                elevation = 0.0
 
             candidates.append({
                 "id":       str(idx),
@@ -106,6 +111,7 @@ def extract_shelter_candidates(G, lat: float, lon: float, hobli_key: str, dist: 
                 "type":     stype or "building",
                 "lat":      round(s_lat, 6),
                 "lon":      round(s_lon, 6),
+                "elevation": round(elevation, 1),
                 "capacity": capacity,
                 "node_id":  node_id,
             })

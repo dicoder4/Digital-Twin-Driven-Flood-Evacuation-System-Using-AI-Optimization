@@ -124,7 +124,22 @@ class UrbanFloodSimulator:
 
             for n, diff in lower_head_neighbors:
                 fraction = diff / total_head_diff
-                amount = flow_out * fraction
+                
+                # GIS Physics Enhancement 1: Slope-weighted flow
+                # Steeper drops transfer water faster (up to 3x)
+                n_elev = elevations.get(n, 0.0)
+                node_elev = elevations.get(node, 0.0)
+                slope_factor = 1.0 + min(abs(node_elev - n_elev) / 10.0, 2.0)
+                
+                # GIS Physics Enhancement 2: Manning's roughness
+                # Different surfaces resist flow differently (residential vs motorways)
+                edge_data = self.G.get_edge_data(node, n, default={})
+                if isinstance(edge_data, dict) and 0 in edge_data:
+                    edge_data = edge_data[0]
+                efficiency = edge_data.get('flow_efficiency', 1.0)
+                
+                # Combined physics amount
+                amount = flow_out * fraction * slope_factor * efficiency
                 
                 # Check safeguards: Don't drain below neighbor's head (basic equalization)
                 # But for simple viz, just moving mass is fine.

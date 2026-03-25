@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+from typing import Optional
 
 try:
     from region_manager import initialise, norm_key, REGIONS_TREE
@@ -149,7 +150,7 @@ class CopilotRequest(BaseModel):
     messages: list
     available_hoblis: list = []
     regions_tree: dict = {}
-    map_pin: dict = None
+    map_pin: Optional[dict] = None
 
 @app.post("/app-copilot")
 async def app_copilot_endpoint(req: CopilotRequest):

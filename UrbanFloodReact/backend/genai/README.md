@@ -257,6 +257,43 @@ The **Public Transport Agent** acts as an automated logistics coordinator, bridg
 
 ---
 
+---
+
+## GIS Physics Engine — 3D Terrain & Hydraulics
+
+The simulation is powered by a high-fidelity **GIS Physics Engine** (`gis_terrain_loader.py`) that integrates real-world topography into the flood model.
+
+### 1. 3D Terrain Integration (DEM)
+- **Source**: NASA SRTM 30m Global Digital Elevation Model (via OpenTopography API).
+- **Mechanism**: The system automatically downloads a 3D elevation grid for every selected Hobli.
+- **Impact**: Flood water no longer spreads in uniform circles; it now physically flows **downhill** into valleys and pools in low-lying areas based on real-world meter-accurate elevation.
+
+### 2. Slope-Weighted Flow Physics
+- **Dynamic Acceleration**: The `flood_simulator.py` math is slope-aware. Water transfer speed is dynamically multiplied (up to 3x) when moving between nodes with steep elevation drops.
+- **Hydraulic Head**: Flow is driven by `H = elevation + water_depth`, ensuring natural gravity-driven propagation.
+
+### 3. Manning's Roughness (Surface Friction)
+- **Infrastructure Awareness**: The engine assigns a **Manning's n** coefficient to every road segment based on its OSM metadata.
+- **Flow Efficiency**: 
+    - 🏎️ **Motorways/Trunks**: High efficiency (water rushes fast across smooth asphalt).
+    - 🏠 **Residential Streets**: Baseline efficiency.
+    - 🌲 **Paths/Living Streets**: Low efficiency (high friction slows water movement).
+
+### 4. Terrain-Aware Evacuation Planning
+- **Smart Routing**: The evacuation planners (GA, ACO, PSO) are terrain-intelligent. 
+- **Hazard Penalties**: The system mathematically penalizes routing people "downhill" into potential traps. The AI actively prefers **uphill evacuation paths** to shelters on higher, safer ground.
+- **Shelter Safety**: Every shelter is tagged with its absolute elevation, allowing the **Logistics Chief** to prioritize high-ground hubs during a crisis.
+
+### 5. Enhanced Hydrology Seeding & Fail-Safe Fallback
+- **Advanced Seeding**: The system uses a dedicated **Overpass API query** to identify drains, canals, and lake boundaries with higher precision than standard library wrappers.
+- **Seeding Points**: Thousands of "overflow points" are automatically mapped to the nearest road nodes to act as the source of the flood.
+- **Graceful Fallback**: If the GIS hydrology server is unavailable or reaches a rate limit:
+    - The system logs a `[gis/warning]`.
+    - It automatically falls back to an internal **OSMnx extraction** logic using local geometric centroids.
+    - This ensures the simulation NEVER crashes and will always run with at least baseline OpenStreetMap data.
+
+---
+
 ## Unified App Copilot (Omni-Modal AI)
 
 The **App Copilot** is the central, unified intelligence interface for the entire Urban Flood Digital Twin. It possesses a full "App-Level Tools" payload, enabling it to act as both a **UI Navigator** and a **Disaster Data Analyst** simultaneously.

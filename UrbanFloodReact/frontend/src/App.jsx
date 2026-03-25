@@ -774,7 +774,15 @@ export default function App() {
         busManifest={busManifest}
         selectedBusId={selectedBusId}
         mapPinBox={mapPinBox}
-        onMapClick={(lat, lon) => setMapPinBox({ lat, lon })}
+        onMapClick={(lat, lon) => {
+          setMapPinBox(prev => {
+            if (!prev) return { lat, lon };
+            // Increased proximity threshold (~500m area) to ensure easy removal
+            const dist = Math.abs(prev.lat - lat) + Math.abs(prev.lon - lon);
+            if (dist < 0.005) return null; 
+            return { lat, lon };
+          });
+        }}
       />
 
       <AppCopilot

@@ -201,7 +201,8 @@ def _convert_messages(messages: list) -> list:
     history = []
     for msg in messages:
         role = "user" if msg["role"] == "user" else "model"
-        history.append({"role": role, "parts": [msg["content"]]})
+        content = msg.get("content", "")
+        history.append({"role": role, "parts": [content]})
     return history
 
 
@@ -443,13 +444,6 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
 
     except Exception as e:
         print(f"[Copilot] CRITICAL ERROR: {e}")
-        # If Gemini fails (e.g. rate limit 429), attempt fallback to Groq
-        if "429" in str(e) or "quota" in str(e).lower():
-            print(f"Gemini rate limit hit, falling back to Groq... ({e})")
-            return await _fallback_ask_groq(messages, system_instruction)
-        return {"type": "message", "content": f"Copilot error: {str(e)}", "options": []}
-
-    except Exception as e:
         # If Gemini fails (e.g. rate limit 429), attempt fallback to Groq
         if "429" in str(e) or "quota" in str(e).lower():
             print(f"Gemini rate limit hit, falling back to Groq... ({e})")
