@@ -18,3 +18,5 @@ pydantic
 groq
 rasterio
 pyproj
+pymongo 
+dnspython

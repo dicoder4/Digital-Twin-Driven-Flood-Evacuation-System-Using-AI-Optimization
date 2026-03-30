@@ -114,75 +114,105 @@ async def fetch_resources(location: str):
     If no matches found (or location is 'Unknown'), return default set (Bengaluru).
     """
     try:
-        # Load activity mapping from JSON if not cached
+        # Load activity mapping from JSON / MongoDB if not cached
         if not hasattr(fetch_resources, "activity_map"):
-            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            json_path = os.path.join(root, "backend/data/resource_definitions.json")
-            if not os.path.exists(json_path):
-                 json_path = "UrbanFloodReact/backend/data/resource_definitions.json"
-                 
             fetch_resources.activity_map = {}
-            if os.path.exists(json_path):
-                with open(json_path, 'r') as f:
-                    data = json.load(f)
-                    for activity, categories in data.items():
-                        for cat_name, items in categories.items():
-                            for item in items: # Assuming dict with {code, name} or legacy string
-                                if isinstance(item, dict):
-                                    item_name = item.get('name', '').lower()
-                                else:
-                                    item_name = str(item).lower()
-                                fetch_resources.activity_map[item_name] = activity
-
-        # Load CSV data
-        if not hasattr(fetch_resources, "cache") or fetch_resources.cache is None or fetch_resources.cache.empty:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            dfs = []
+            try:
+                from db import get_resource_definitions
+                data = get_resource_definitions()
+                print("[MONGO DEBUG] Using resource definitions from Mongo")
+            except Exception as mongo_err:
+                print(f"[MONGO DEBUG] Mongo fallback triggered for resource definitions: {mongo_err}")
+                root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                json_path = os.path.join(root, "backend/data/resource_definitions.json")
+                if not os.path.exists(json_path):
+                     json_path = "UrbanFloodReact/backend/data/resource_definitions.json"
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        data = json.load(f)
+                else:
+                    data = {}
             
-            # 1. Logistics
-            log_path = os.path.join(base_dir, "data", "logistics_resources.csv")
-            if os.path.exists(log_path):
-                try:
-                    cdf = pd.read_csv(log_path)
-                    cdf["Category"] = "Logistics"
-                    dfs.append(cdf)
-                except Exception: pass
+            for activity, categories in data.items():
+                for cat_name, items in categories.items():
+                    for item in items: # Assuming dict with {code, name} or legacy string
+                        if isinstance(item, dict):
+                            item_name = item.get('name', '').lower()
+                        else:
+                            item_name = str(item).lower()
+                        fetch_resources.activity_map[item_name] = activity
 
-            # 2. Tactical
-            tac_path = os.path.join(base_dir, "data", "tactical_resources.csv")
-            if os.path.exists(tac_path):
-                try:
-                    cdf = pd.read_csv(tac_path)
-                    if "Category" not in cdf.columns:
-                        cdf["Category"] = "Tactical"
-                    dfs.append(cdf)
-                except Exception: pass
+        # Load CSV / Mongo data
+        if not hasattr(fetch_resources, "cache") or fetch_resources.cache is None or fetch_resources.cache.empty:
+            dfs = []
+            try:
+                from db import get_logistics_df, get_tactical_df
+                cdf_log = get_logistics_df()
+                cdf_log["Category"] = "Logistics"
+                dfs.append(cdf_log)
+                
+                cdf_tac = get_tactical_df()
+                if "Category" not in cdf_tac.columns:
+                    cdf_tac["Category"] = "Tactical"
+                dfs.append(cdf_tac)
+                print("[MONGO DEBUG] Loaded tactical/logistics resources from Mongo")
+            except Exception as mongo_err:
+                print(f"[MONGO DEBUG] Mongo fallback triggered for cache resources: {mongo_err}")
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # 1. Logistics
+                log_path = os.path.join(base_dir, "data", "logistics_resources.csv")
+                if os.path.exists(log_path):
+                    try:
+                        cdf = pd.read_csv(log_path)
+                        cdf["Category"] = "Logistics"
+                        dfs.append(cdf)
+                    except Exception: pass
+
+                # 2. Tactical
+                tac_path = os.path.join(base_dir, "data", "tactical_resources.csv")
+                if os.path.exists(tac_path):
+                    try:
+                        cdf = pd.read_csv(tac_path)
+                        if "Category" not in cdf.columns:
+                            cdf["Category"] = "Tactical"
+                        dfs.append(cdf)
+                    except Exception: pass
             
             if dfs:
                 df = pd.concat(dfs, ignore_index=True)
                 df = df.fillna("N/A")
                 fetch_resources.cache = df
             else:
-                 # Fallback to IDRN
-                 candidates = [
-                    os.path.join(base_dir, "data", "idrn_resources_scraped.csv"),
-                    os.path.join(os.getcwd(), "UrbanFloodReact", "backend", "data", "idrn_resources_scraped.csv"),
-                 ]
-                 csv_path = None
-                 for p in candidates:
-                    if os.path.exists(p):
-                        csv_path = p
-                        break
-                
-                 if csv_path:
-                    try:
-                        df = pd.read_csv(csv_path)
-                        df = df.fillna("N/A")
-                        fetch_resources.cache = df
-                    except Exception:
+                 # Fallback to IDRN (Mongo -> CSV)
+                 try:
+                     from db import get_idrn_df
+                     df = get_idrn_df()
+                     df = df.fillna("N/A")
+                     fetch_resources.cache = df
+                     print("[MONGO DEBUG] Fallback to IDRN using Mongo succeeded")
+                 except Exception as mongo_idrn_err:
+                     print(f"[MONGO DEBUG] Mongo fallback triggered for IDRN: {mongo_idrn_err}")
+                     base_dir = os.path.dirname(os.path.abspath(__file__))
+                     candidates = [
+                        os.path.join(base_dir, "data", "idrn_resources_scraped.csv"),
+                        os.path.join(os.getcwd(), "UrbanFloodReact", "backend", "data", "idrn_resources_scraped.csv"),
+                     ]
+                     csv_path = None
+                     for p in candidates:
+                        if os.path.exists(p):
+                            csv_path = p
+                            break
+                    
+                     if csv_path:
+                        try:
+                            df = pd.read_csv(csv_path)
+                            df = df.fillna("N/A")
+                            fetch_resources.cache = df
+                        except Exception:
+                            return []
+                     else:
                         return []
-                 else:
-                    return []
         else:
             df = fetch_resources.cache
 

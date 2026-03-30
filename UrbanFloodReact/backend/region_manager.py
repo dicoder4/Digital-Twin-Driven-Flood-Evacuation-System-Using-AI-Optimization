@@ -62,7 +62,7 @@ def _build_regions_tree():
         if key not in HOBLI_COORDS:
             continue
         e        = entries[0]
-        district = e.get("district") or "Unknown"
+        district = HOBLI_COORDS[key].get("district") or e.get("district") or "Unknown"
         taluk    = e.get("taluk")    or "Unknown"
         display  = HOBLI_COORDS[key].get("original_name", key)
 

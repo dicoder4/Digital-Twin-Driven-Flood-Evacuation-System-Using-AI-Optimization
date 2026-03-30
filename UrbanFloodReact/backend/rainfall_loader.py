@@ -25,18 +25,27 @@ def load_rainfall_excels(data_dir: Path, norm_key_fn, rainfall_store: dict):
     """
     frames = []
     for month, fname in RAINFALL_FILES.items():
-        path = data_dir / fname
-        if not path.exists():
-            print(f"  [rainfall] File not found, skipping: {fname}")
-            continue
         try:
-            df = pd.read_excel(path)
-            df.columns = [c.strip() for c in df.columns]
+            from db import get_rainfall_df_for_month
+            df = get_rainfall_df_for_month(month)
+            df.columns = [str(c).strip() for c in df.columns]
             df["_month"] = month
             frames.append(df)
-            print(f"  [rainfall] Loaded {len(df)} rows from {fname}")
-        except Exception as e:
-            print(f"  [rainfall] Could not load {fname}: {e}")
+            print(f"  [rainfall] Loaded {len(df)} rows from MongoDB for {month}")
+        except Exception as mongo_err:
+            print(f"  [rainfall] Mongo fallback triggered for {month}: {mongo_err}")
+            path = data_dir / fname
+            if not path.exists():
+                print(f"  [rainfall] File not found, skipping: {fname}")
+                continue
+            try:
+                df = pd.read_excel(path)
+                df.columns = [str(c).strip() for c in df.columns]
+                df["_month"] = month
+                frames.append(df)
+                print(f"  [rainfall] Loaded {len(df)} rows from {fname}")
+            except Exception as e:
+                print(f"  [rainfall] Could not load {fname}: {e}")
 
     if not frames:
         print("  [rainfall] No Excel files loaded.")
