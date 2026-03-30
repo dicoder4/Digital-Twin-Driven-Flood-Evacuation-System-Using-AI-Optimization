@@ -87,7 +87,8 @@ class UrbanFloodSimulator:
         for n in self.G.nodes():
             if n not in elevations: elevations[n] = 0.0
 
-        new_depths = current_depths.copy()
+        # ── Accumulate changes ─────────────────────────────────────────
+        depth_transfers = {n: 0.0 for n in self.G.nodes()}
 
         # For every node with water
         for node in self.G.nodes():
@@ -122,6 +123,9 @@ class UrbanFloodSimulator:
             # Simplified: Move a fraction of the water depth
             flow_out = water_depth * decay_factor
 
+            total_outflow = 0.0
+            per_neighbour = []
+
             for n, diff in lower_head_neighbors:
                 fraction = diff / total_head_diff
                 
@@ -140,21 +144,21 @@ class UrbanFloodSimulator:
                 
                 # Combined physics amount
                 amount = flow_out * fraction * slope_factor * efficiency
+                per_neighbour.append((n, amount))
+                total_outflow += amount
                 
-                # Check safeguards: Don't drain below neighbor's head (basic equalization)
-                # But for simple viz, just moving mass is fine.
-                
-                if node in new_depths:
-                    new_depths[node] -= amount
-                if n in new_depths:
-                    new_depths[n] += amount
+            scale = min(1.0, water_depth / total_outflow) if total_outflow > 0 else 1.0
+            
+            for n, amount in per_neighbour:
+                scaled_amount = amount * scale
+                depth_transfers[node] -= scaled_amount
+                depth_transfers[n]    += scaled_amount
         
-        # Continuous visual rain on drains? 
-        # Optional: Add small increment to drains to simulate continuous overflow
-        # for d in self.drain_nodes:
-        #     new_depths[d] += 0.01 
+        # ── Apply all at once, guard against negatives ─────────────────
+        for n, delta in depth_transfers.items():
+            current_depths[n] = max(0.0, current_depths.get(n, 0.0) + delta)
 
-        nx.set_node_attributes(self.G, new_depths, 'water_depth')
+        nx.set_node_attributes(self.G, current_depths, 'water_depth')
         return self.G
 
     def distribute_population(self, total_pop):
