@@ -127,8 +127,8 @@ def get_region(hobli_key: str) -> dict:
             drain_nodes = saved.get("drains", [])
             lake_nodes  = saved.get("lakes", [])
             metro_stations = saved.get("metro", [])
-            #metro_lines = saved.get("metro_lines", [])
-            metro_lines = _load_metro_lines_from_geojson(center)
+            metro_lines = saved.get("metro_lines", [])
+            #metro_lines = _load_metro_lines_from_geojson(center)
             
             # Handle metro_lines format - ensure it's a FeatureCollection
             if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
@@ -259,6 +259,106 @@ def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
     print(f"  [on-demand] Features updated on disk -> {feat_f.name}")
 
     return entry
+
+# def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
+#     """
+#     On-demand heavy OSMnx extraction for metro stations and lines.
+#     Updates the regional cache and persistent disk feature file.
+#     """
+#     if hobli_key not in REGION_CACHE:
+#         raise ValueError(f"Region '{hobli_key}' must be loaded before extracting metro data.")
+    
+#     entry = REGION_CACHE[hobli_key]
+    
+#     # We now skip the early return to ensure the new "Smart Sniffer" 
+#     # can repair existing cache files that have missing line/color info.
+
+#     coords = HOBLI_COORDS.get(hobli_key)
+#     lat, lon = coords["lat"], coords["lon"]
+#     center = (lat, lon)
+#     G = entry["G"]
+
+#     print(f"  [on-demand] Extracting Metro Network for {hobli_key} (Radius: 4,000m, include_rail={include_rail}) …")
+#     metro_stations = _extract_metro_stations(G, center, include_rail=include_rail)
+
+#     csv_label_reference, csv_station_line_map = _extract_namma_metro_reference_from_csv()
+#     kml_label_reference = _extract_metro_lines_from_kml(center, include_rail=include_rail)
+
+#     # MERGE CSV (metro lines) + KML (metro + railway lines) for comprehensive coverage
+#     label_reference_features = []
+    
+#     if isinstance(csv_label_reference, dict) and csv_label_reference.get("features"):
+#         label_reference_features.extend(csv_label_reference.get("features", []))
+#         print(f"  [metro] Added {len(csv_label_reference.get('features', []))} CSV metro features")
+    
+#     if isinstance(kml_label_reference, dict) and kml_label_reference.get("features"):
+#         kml_features = kml_label_reference.get("features", [])
+#         label_reference_features.extend(kml_features)
+#         print(f"  [metro] Added {len(kml_features)} KML features")
+#     elif isinstance(kml_label_reference, list) and len(kml_label_reference) > 0:
+#         label_reference_features.extend(kml_label_reference)
+#         print(f"  [metro] Added {len(kml_label_reference)} KML features (as list)")
+    
+#     label_reference = {
+#         "type": "FeatureCollection",
+#         "features": label_reference_features
+#     }
+#     print(f"  [metro] Total label reference features: {len(label_reference_features)}")
+
+#     metro_lines = _extract_metro_lines(center, include_rail=include_rail, label_reference_lines=label_reference)
+#     metro_lines = _merge_full_line_reference_segments(metro_lines, label_reference)
+    
+#     # Log what we have after merge
+#     if isinstance(metro_lines, dict) and metro_lines.get("features"):
+#         total_features = len(metro_lines.get("features", []))
+#         metro_count_lines = sum(1 for f in metro_lines.get("features", []) if f.get("properties", {}).get("transport_type") == "metro")
+#         railway_count_lines = sum(1 for f in metro_lines.get("features", []) if f.get("properties", {}).get("transport_type") == "railway")
+#         print(f"  [metro] After merge: {total_features} total features ({metro_count_lines} metro, {railway_count_lines} railway)")
+    
+#     label_source = label_reference if isinstance(label_reference, dict) and label_reference.get("features") else metro_lines
+#     print(f"  [metro] Enriching {len(metro_stations)} stations with line data from {type(label_source)} source")
+#     metro_stations = _enrich_station_lines_from_network(metro_stations, label_source)
+#     metro_stations = _enrich_station_lines_from_dataset(metro_stations, csv_station_line_map)
+    
+#     # Log enrichment results
+#     metro_count = sum(1 for s in metro_stations if s.get("transport_type") == "metro")
+#     railway_count = sum(1 for s in metro_stations if s.get("transport_type") == "railway")
+#     print(f"  [on-demand] Station enrichment complete: {metro_count} metro, {railway_count} railway stations")
+    
+#     # Update memory cache
+#     entry["metro_stations"] = metro_stations
+#     entry["metro_lines"] = metro_lines
+
+#     # Update disk cache
+#     safe_key = hobli_key.replace("/", "_").replace(" ", "_")
+#     feat_f = CACHE_DIR / f"{safe_key}_features.pkl"
+    
+#     # Ensure metro_lines is a FeatureCollection before storing
+#     metro_lines_to_store = metro_lines
+#     if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
+#         line_count = len(metro_lines.get("features", []))
+#     elif isinstance(metro_lines, list):
+#         line_count = len(metro_lines)
+#         metro_lines_to_store = {
+#             "type": "FeatureCollection",
+#             "features": metro_lines
+#         }
+#     else:
+#         line_count = 0
+#         metro_lines_to_store = {"type": "FeatureCollection", "features": []}
+    
+#     print(f"  [on-demand] Storing {len(metro_stations)} stations and {line_count} line segments")
+    
+#     with open(feat_f, "wb") as f:
+#         pickle.dump({
+#             "drains": entry.get("drain_nodes", []),
+#             "lakes": entry.get("lake_nodes", []),
+#             "metro": metro_stations,
+#             "metro_lines": metro_lines_to_store
+#         }, f)
+#     print(f"  [on-demand] Features updated on disk -> {feat_f.name}")
+    
+#     return entry
 
 
 def _extract_drains(G, center):

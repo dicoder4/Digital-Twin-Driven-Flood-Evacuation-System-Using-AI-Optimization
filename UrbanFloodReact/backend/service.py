@@ -88,13 +88,14 @@ def _k_hop_nodes(graph, source_node, max_hops: int = 2) -> list:
     return list(visited)
 
 
-def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, update_history: bool = True) -> list:
+def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, center_lat: float, center_lon: float, update_history: bool = True) -> list:
     """
     Build metro station risk reports using:
-      - local neighborhood flood depths (2-hop proxy)
+      - distance from hobli centre (exclude stations >2km)
+      - snapping distance to graph (safe if >50m)
+      - local neighbourhood flood depths (2-hop proxy)
       - access viability near station
-      - temporal EMA smoothing (hysteresis-like stability)
-      - confidence estimation
+      - temporal EMA smoothing
     """
     if not hasattr(sim, "_metro_status_history"):
         sim._metro_status_history = {}
@@ -106,30 +107,69 @@ def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, updat
         station_name = station.get("name") or "Unknown Station"
         station_line = station.get("line")
         station_key = str(station.get("id") or f"{station_name}::{station_line or ''}")
-        node_id = station.get("node_id")
+        station_lat = station.get("lat")
+        station_lon = station.get("lon")
 
-        if node_id not in graph:
-            status = "caution"
-            report = {
+        # --- 1. Distance to hobli centre ---
+        dist_km = _haversine_distance(center_lat, center_lon, station_lat, station_lon)
+        if dist_km > 2.0:   # outside 2km simulation radius
+            reports.append({
                 "id": station.get("id", station_key),
                 "name": station_name,
-                "lat": station.get("lat"),
-                "lon": station.get("lon"),
+                "lat": station_lat,
+                "lon": station_lon,
                 "line": station_line,
                 "colour": station.get("colour"),
                 "transport_type": station.get("transport_type", "metro"),
                 "flooded": False,
-                "status": status,
-                "risk_score": 0.25,
+                "status": "safe",
+                "risk_score": 0.0,
                 "max_depth_m": 0.0,
                 "mean_depth_m": 0.0,
-                "access_viability": 0.0,
-                "confidence": "low",
-                "confidence_reason": "station node missing in active graph",
-            }
-            reports.append(report)
+                "access_viability": 1.0,
+                "confidence": "high",
+                "confidence_reason": "outside simulation radius",
+            })
             continue
 
+        # --- 2. Snap to graph with distance limit ---
+        node_id = station.get("node_id")
+        snap_dist = None
+        if node_id is not None and node_id in graph:
+            # Use existing node_id, but verify it's close enough
+            node_lat = graph.nodes[node_id]['y']
+            node_lon = graph.nodes[node_id]['x']
+            snap_dist = _haversine_distance(station_lat, station_lon, node_lat, node_lon) * 1000  # convert to meters
+        else:
+            # Snap anew
+            try:
+                node_id, snap_dist_m = ox.nearest_nodes(graph, station_lon, station_lat, return_dist=True)
+                snap_dist = snap_dist_m
+            except Exception:
+                node_id = None
+                snap_dist = None
+
+        if node_id is None or node_id not in graph or (snap_dist is not None and snap_dist > 50):
+            reports.append({
+                "id": station.get("id", station_key),
+                "name": station_name,
+                "lat": station_lat,
+                "lon": station_lon,
+                "line": station_line,
+                "colour": station.get("colour"),
+                "transport_type": station.get("transport_type", "metro"),
+                "flooded": False,
+                "status": "safe",
+                "risk_score": 0.0,
+                "max_depth_m": 0.0,
+                "mean_depth_m": 0.0,
+                "access_viability": 1.0,
+                "confidence": "medium",
+                "confidence_reason": f"station too far from road network ({snap_dist:.1f}m)",
+            })
+            continue
+
+        # --- 3. Proceed with neighbourhood analysis ---
         neighborhood_nodes = _k_hop_nodes(graph, node_id, max_hops=2)
         depths = [float(graph.nodes[n].get("water_depth", 0.0)) for n in neighborhood_nodes]
 
@@ -139,8 +179,6 @@ def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, updat
         max_depth = max(depths)
         mean_depth = sum(depths) / max(len(depths), 1)
 
-        station_lat = station.get("lat")
-        station_lon = station.get("lon")
         if station_lat is not None and station_lon is not None and neighborhood_nodes:
             nearest = sorted(
                 neighborhood_nodes,
@@ -165,13 +203,13 @@ def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, updat
         status = _metro_status_from_score(ema_score, previous_status=previous_status)
 
         confidence = "high"
-        confidence_reason = "dense local neighborhood available"
+        confidence_reason = "dense local neighbourhood available"
         if len(neighborhood_nodes) < 4:
             confidence = "medium"
-            confidence_reason = "limited neighborhood sample"
-        if station.get("node_id") is None:
-            confidence = "low"
-            confidence_reason = "station snapped node unavailable"
+            confidence_reason = "limited neighbourhood sample"
+        if snap_dist is not None and snap_dist > 30:
+            confidence = "medium"
+            confidence_reason = f"snap distance {snap_dist:.1f}m"
 
         if update_history:
             sim._metro_status_history[station_key] = {
@@ -179,25 +217,23 @@ def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, updat
                 "status": status,
             }
 
-        reports.append(
-            {
-                "id": station.get("id", station_key),
-                "name": station_name,
-                "lat": station_lat,
-                "lon": station_lon,
-                "line": station_line,
-                "colour": station.get("colour"),
-                "transport_type": station.get("transport_type", "metro"),
-                "flooded": status == "unsafe",
-                "status": status,
-                "risk_score": round(ema_score, 3),
-                "max_depth_m": round(max_depth, 3),
-                "mean_depth_m": round(mean_depth, 3),
-                "access_viability": round(access_viability, 3),
-                "confidence": confidence,
-                "confidence_reason": confidence_reason,
-            }
-        )
+        reports.append({
+            "id": station.get("id", station_key),
+            "name": station_name,
+            "lat": station_lat,
+            "lon": station_lon,
+            "line": station_line,
+            "colour": station.get("colour"),
+            "transport_type": station.get("transport_type", "metro"),
+            "flooded": status == "unsafe",
+            "status": status,
+            "risk_score": round(ema_score, 3),
+            "max_depth_m": round(max_depth, 3),
+            "mean_depth_m": round(mean_depth, 3),
+            "access_viability": round(access_viability, 3),
+            "confidence": confidence,
+            "confidence_reason": confidence_reason,
+        })
 
     return reports
 
@@ -492,12 +528,17 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
     # ── Streaming loop: flood physics only, no GA ─────────────────────────
     metro_stations = entry.get("metro_stations", [])
+
+    coords = HOBLI_COORDS.get(key, {})
+    center_lat = coords.get("lat")
+    center_lon = coords.get("lon")
+    
     for i in range(steps):
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
 
         # Keep temporal metro status history warm at each step
-        _collect_metro_reports(sim, metro_stations, update_history=True)
+        _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True)
 
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
@@ -689,7 +730,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             ),
             "shelter_reports":         shelter_reports,
             "pressure_points":         pressure_points,
-            "metro_reports": _collect_metro_reports(sim, metro_stations, update_history=True),
+            "metro_reports": _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True),
             "metro_lines": entry.get("metro_lines", []),
         },
     }
@@ -796,7 +837,7 @@ async def run_compare_generator(
         impact    = await loop.run_in_executor(None, sim.calculate_flood_impact)
 
         # Keep temporal metro status history warm at each step
-        _collect_metro_reports(sim, metro_stations, update_history=True)
+        _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True)
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
 
@@ -986,7 +1027,7 @@ async def run_compare_generator(
                     "best_fitness":            fitness,
                     "avg_distance_per_person": round(fitness / max(total_at_risk_initial, 1), 1),
                     "shelter_reports":         shelter_reports,
-                    "metro_reports":           _collect_metro_reports(sim, metro_stations, update_history=True),
+                    "metro_reports":           _collect_metro_reports(sim,  center_lat, center_lon,metro_stations, update_history=True),
                     "metro_lines": entry.get("metro_lines", []),
                 },
             }
