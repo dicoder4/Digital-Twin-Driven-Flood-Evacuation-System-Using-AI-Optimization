@@ -1,7 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import Map, { Source, Layer, NavigationControl, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { MapPin, BarChart2 } from 'lucide-react';
+import { MapPin, BarChart2, Train, Activity } from 'lucide-react';
 import { Legend } from './Legend';
 import { PeopleLayer } from './PeopleLayer';
 import { ShelterLayer } from './ShelterLayer';
@@ -47,7 +47,14 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoadsData, loadedHobli, selRec, populationCount, onUnsafeCount, shelters, evacuationPlan, simulationDone, selectedShelter, trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins, busManifest, selectedBusId, mapPinBox, onMapClick }) {
+export function FloodMap({ 
+    viewState, onMove, baseRoadsData, floodData, riskRoadsData, 
+    loadedHobli, selRec, populationCount, onUnsafeCount, 
+    shelters, evacuationPlan, simulationDone, selectedShelter, 
+    trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins, 
+    busManifest, selectedBusId, mapPinBox, onMapClick,
+    selectedMetro, metroLines 
+}) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk = !!(riskRoadsData?.features?.length);
     const hasTrafficData = showTraffic && !!(trafficRoadsData?.features?.length);
@@ -82,10 +89,40 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
         };
     }, [busManifest, selectedBusId]);
 
+    const metroGeoJSON = useMemo(() => {
+        if (!metroLines) return null;
+        // Backend now sends FeatureCollection directly
+        if (metroLines.type === 'FeatureCollection') {
+            const hasFeatures = metroLines.features && metroLines.features.length > 0;
+            return hasFeatures ? metroLines : null;
+        }
+        // Fallback for old array format
+        if (Array.isArray(metroLines) && metroLines.length > 0) {
+            return {
+                type: 'FeatureCollection',
+                features: metroLines
+            };
+        }
+        return null;
+    }, [metroLines]);
+
     const selectedBus = useMemo(() => {
         const manifestArr = Array.isArray(busManifest) ? busManifest : busManifest?.manifest;
         return selectedBusId && manifestArr ? manifestArr.find(b => b.bus_id === selectedBusId) : null;
     }, [selectedBusId, busManifest]);
+
+    const selectedMetroStatus = selectedMetro?.status
+        || (selectedMetro?.flooded === true ? 'unsafe' : selectedMetro?.flooded === false ? 'safe' : 'unknown');
+    const selectedMetroLineNorm = (selectedMetro?.line || '').toString().trim().toLowerCase();
+    const selectedMetroNameNorm = (selectedMetro?.name || '').toString().trim().toLowerCase();
+    
+    const selectedMetroStatusIcon = selectedMetroStatus === 'unsafe'
+        ? '🔴'
+        : selectedMetroStatus === 'caution'
+            ? '🟡'
+            : selectedMetroStatus === 'safe'
+                ? '🟢'
+                : '⏳';
 
     return (
         <main className="map-container">
@@ -172,6 +209,115 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                         />
                     </Source>
                 )}
+                {/* 6.6 Metro Network */}
+                {metroGeoJSON && (
+                    <Source id="metro-network" type="geojson" data={metroGeoJSON}>
+                        <Layer
+                            id="railway-network-layer"
+                            type="line"
+                            filter={['==', ['coalesce', ['get', 'transport_type'], 'metro'], 'railway']}
+                            paint={{
+                                'line-color': '#475569',
+                                'line-width': 2,
+                                'line-opacity': 0,
+                                'line-dasharray': [1.5, 1.2]
+                            }}
+                            layout={{
+                                'line-cap': 'round',
+                                'line-join': 'round'
+                            }}
+                        />
+
+                        <Layer
+                            id="metro-network-layer"
+                            type="line"
+                            filter={['==', ['coalesce', ['get', 'transport_type'], 'metro'], 'metro']}
+                            paint={{
+                                'line-color': [
+                                    'match', ['coalesce', ['get', 'colour'], 'none'],
+                                    'purple', '#7c3aed',
+                                    'green', '#059669',
+                                    'yellow', '#eab308',
+                                    'blue', '#2563eb',
+                                    'pink', '#db2777',
+                                    'red', '#dc2626',
+                                    'railway', '#64748b',
+                                    '#7c3aed' // fallback
+                                ],
+                                'line-width': 2.2,
+                                'line-opacity': 0,
+                                'line-blur': 0.2
+                            }}
+                            layout={{
+                                'line-cap': 'round',
+                                'line-join': 'round'
+                            }}
+                        />
+
+                        <Layer
+                            id="metro-network-selected-layer"
+                            type="line"
+                            filter={selectedMetro
+                                ? ['all',
+                                    ['!=', ['coalesce', ['get', 'transport_type'], 'metro'], 'railway'],
+                                    ['any',
+                                        // Match by exact line name (primary)
+                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroLineNorm],
+                                        ['==', ['downcase', ['coalesce', ['get', 'name'], '']], selectedMetroNameNorm],
+                                        // Fallback: match by station name (for line segments without proper line property)
+                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroNameNorm]
+                                    ]
+                                ]
+                                : ['==', ['get', 'id'], 'none']}
+                            paint={{
+                                'line-color': [
+                                    'match', ['coalesce', ['get', 'colour'], 'none'],
+                                    'purple', '#7c3aed',
+                                    'green', '#059669',
+                                    'yellow', '#eab308',
+                                    'blue', '#2563eb',
+                                    'pink', '#db2777',
+                                    'red', '#dc2626',
+                                    '#7c3aed'
+                                ],
+                                'line-width': 5.5,
+                                'line-opacity': 0.95,
+                                'line-blur': 0.1
+                            }}
+                            layout={{
+                                'line-cap': 'round',
+                                'line-join': 'round'
+                            }}
+                        />
+
+                        <Layer
+                            id="railway-network-selected-layer"
+                            type="line"
+                            filter={selectedMetro
+                                ? ['all',
+                                    ['==', ['get', 'transport_type'], 'railway'],
+                                    ['any',
+                                        // Match by exact line name (primary)
+                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroLineNorm],
+                                        ['==', ['downcase', ['coalesce', ['get', 'name'], '']], selectedMetroNameNorm],
+                                        // Fallback: match by station name
+                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroNameNorm]
+                                    ]
+                                ]
+                                : ['==', ['get', 'id'], 'none']}
+                            paint={{
+                                'line-color': 'rgba(78, 77, 77, 0.8)',
+                                'line-width': 6,
+                                'line-opacity': 0.9,
+                                'line-dasharray': [2, 2]
+                            }}
+                            layout={{
+                                'line-cap': 'round',
+                                'line-join': 'round'
+                            }}
+                        />
+                    </Source>
+                )}
 
                 {/* 7. Destination pin for selected shelter */}
                 {simulationDone && selectedShelter && (
@@ -212,6 +358,41 @@ export function FloodMap({ viewState, onMove, baseRoadsData, floodData, riskRoad
                             </div>
                         </Marker>
                     </>
+                )}
+
+                {/* 9. Selected Metro/Railway Station */}
+                {selectedMetro && (
+                    <Marker longitude={selectedMetro.lon} latitude={selectedMetro.lat} anchor="bottom">
+                        <div className="evac-dest-pin" style={{ 
+                            filter: selectedMetro.transport_type === 'railway' 
+                                ? 'drop-shadow(0 2px 6px rgba(100, 116, 139, 0.4))' 
+                                : 'drop-shadow(0 2px 6px rgba(124, 58, 237, 0.4))' 
+                        }}>
+                            <div style={{ 
+                                background: selectedMetro.transport_type === 'railway' ? '#64748b' : '#7c3aed', 
+                                color: 'white', 
+                                padding: '6px', 
+                                borderRadius: '50%', 
+                                border: '2px solid white',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}>
+                                {selectedMetro.transport_type === 'railway' ? <Activity size={16} /> : <Train size={16} />}
+                            </div>
+                            <div className="evac-dest-label" style={{ 
+                                background: selectedMetro.transport_type === 'railway' ? '#f1f5f9' : '#f5f3ff', 
+                                color: selectedMetro.transport_type === 'railway' ? '#475569' : '#7c3aed', 
+                                border: `1px solid ${selectedMetro.transport_type === 'railway' ? '#94a3b8' : '#7c3aed'}` 
+                            }}>
+                                {selectedMetro.transport_type === 'railway' ? '🛤️' : '🚆'} {selectedMetro.name}
+                                {selectedMetro.line ? ` · ${selectedMetro.line}` : ''}
+                                {' '}
+                                {selectedMetroStatusIcon}
+                            </div>
+                        </div>
+                    </Marker>
                 )}
 
                 {/* Selected Map Pin box */}

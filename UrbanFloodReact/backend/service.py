@@ -48,6 +48,159 @@ def _get_planner_class(algorithm: str):
         raise ValueError(f"Unknown algorithm '{algorithm}'. Choose from: {list(_PLANNER_MAP.keys())}")
     return _PLANNER_MAP[key]
 
+
+def _metro_status_from_score(score: float, previous_status: str | None = None) -> str:
+    """Map a continuous risk score to safe/caution/unsafe with hysteresis margins."""
+    low_threshold = 0.20
+    high_threshold = 0.50
+    margin = 0.04
+
+    if previous_status == "safe":
+        if score < low_threshold + margin:
+            return "safe"
+    elif previous_status == "unsafe":
+        if score > high_threshold - margin:
+            return "unsafe"
+
+    if score >= high_threshold:
+        return "unsafe"
+    if score >= low_threshold:
+        return "caution"
+    return "safe"
+
+
+def _k_hop_nodes(graph, source_node, max_hops: int = 2) -> list:
+    """Return unique nodes up to max_hops from source (BFS)."""
+    if source_node not in graph:
+        return []
+    visited = {source_node}
+    frontier = {source_node}
+    for _ in range(max_hops):
+        next_frontier = set()
+        for node in frontier:
+            for nb in graph.neighbors(node):
+                if nb not in visited:
+                    visited.add(nb)
+                    next_frontier.add(nb)
+        if not next_frontier:
+            break
+        frontier = next_frontier
+    return list(visited)
+
+
+def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, update_history: bool = True) -> list:
+    """
+    Build metro station risk reports using:
+      - local neighborhood flood depths (2-hop proxy)
+      - access viability near station
+      - temporal EMA smoothing (hysteresis-like stability)
+      - confidence estimation
+    """
+    if not hasattr(sim, "_metro_status_history"):
+        sim._metro_status_history = {}
+
+    reports = []
+    graph = sim.G
+
+    for station in metro_stations:
+        station_name = station.get("name") or "Unknown Station"
+        station_line = station.get("line")
+        station_key = str(station.get("id") or f"{station_name}::{station_line or ''}")
+        node_id = station.get("node_id")
+
+        if node_id not in graph:
+            status = "caution"
+            report = {
+                "id": station.get("id", station_key),
+                "name": station_name,
+                "lat": station.get("lat"),
+                "lon": station.get("lon"),
+                "line": station_line,
+                "colour": station.get("colour"),
+                "transport_type": station.get("transport_type", "metro"),
+                "flooded": False,
+                "status": status,
+                "risk_score": 0.25,
+                "max_depth_m": 0.0,
+                "mean_depth_m": 0.0,
+                "access_viability": 0.0,
+                "confidence": "low",
+                "confidence_reason": "station node missing in active graph",
+            }
+            reports.append(report)
+            continue
+
+        neighborhood_nodes = _k_hop_nodes(graph, node_id, max_hops=2)
+        depths = [float(graph.nodes[n].get("water_depth", 0.0)) for n in neighborhood_nodes]
+
+        if not depths:
+            depths = [0.0]
+
+        max_depth = max(depths)
+        mean_depth = sum(depths) / max(len(depths), 1)
+
+        station_lat = station.get("lat")
+        station_lon = station.get("lon")
+        if station_lat is not None and station_lon is not None and neighborhood_nodes:
+            nearest = sorted(
+                neighborhood_nodes,
+                key=lambda n: (graph.nodes[n].get("y", station_lat) - station_lat) ** 2
+                + (graph.nodes[n].get("x", station_lon) - station_lon) ** 2,
+            )[:3]
+        else:
+            nearest = neighborhood_nodes[:3]
+
+        if nearest:
+            accessible = sum(1 for n in nearest if float(graph.nodes[n].get("water_depth", 0.0)) <= 0.20)
+            access_viability = accessible / len(nearest)
+        else:
+            access_viability = 0.0
+
+        raw_score = min(1.0, (0.55 * max_depth) + (0.35 * mean_depth) + (0.10 * (1.0 - access_viability)))
+
+        history = sim._metro_status_history.get(station_key, {})
+        previous_ema = float(history.get("ema_score", raw_score))
+        ema_score = 0.65 * previous_ema + 0.35 * raw_score if history else raw_score
+        previous_status = history.get("status")
+        status = _metro_status_from_score(ema_score, previous_status=previous_status)
+
+        confidence = "high"
+        confidence_reason = "dense local neighborhood available"
+        if len(neighborhood_nodes) < 4:
+            confidence = "medium"
+            confidence_reason = "limited neighborhood sample"
+        if station.get("node_id") is None:
+            confidence = "low"
+            confidence_reason = "station snapped node unavailable"
+
+        if update_history:
+            sim._metro_status_history[station_key] = {
+                "ema_score": ema_score,
+                "status": status,
+            }
+
+        reports.append(
+            {
+                "id": station.get("id", station_key),
+                "name": station_name,
+                "lat": station_lat,
+                "lon": station_lon,
+                "line": station_line,
+                "colour": station.get("colour"),
+                "transport_type": station.get("transport_type", "metro"),
+                "flooded": status == "unsafe",
+                "status": status,
+                "risk_score": round(ema_score, 3),
+                "max_depth_m": round(max_depth, 3),
+                "mean_depth_m": round(mean_depth, 3),
+                "access_viability": round(access_viability, 3),
+                "confidence": confidence,
+                "confidence_reason": confidence_reason,
+            }
+        )
+
+    return reports
+
 async def get_all_regions():
     """Return the hierarchy tree of regions."""
     return REGIONS_TREE
@@ -84,10 +237,30 @@ async def process_load_region(hobli_name: str):
         raise HTTPException(status_code=404, detail=f"Hobli '{hobli_name}' not in coordinate map.")
 
     try:
-        # Offload CPU-bound graph loading to executor
-        await asyncio.get_event_loop().run_in_executor(None, get_region, key)
+        loop = asyncio.get_event_loop()
+        # 1) Offload CPU-bound graph loading to executor
+        await loop.run_in_executor(None, get_region, key)
+        # 2) Metro extraction happens only when user clicks "Load Network"
+        from region_manager import extract_metro_data
+        metro_entry = await loop.run_in_executor(None, extract_metro_data, key, True)
     except Exception as e:
+        print(f"[ERROR] Metro extraction failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to load graph: {e}")
+
+    metro_lines = metro_entry.get("metro_lines", {})
+    metro_stations = metro_entry.get("metro_stations", [])
+    
+    # Ensure metro_lines is a FeatureCollection
+    if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
+        print(f"[metro] Returning {len(metro_lines.get('features', []))} line segments")
+    elif isinstance(metro_lines, list):
+        print(f"[metro] Converting metro_lines array to FeatureCollection ({len(metro_lines)} features)")
+        metro_lines = {"type": "FeatureCollection", "features": metro_lines}
+    else:
+        print(f"[metro] WARNING: Unexpected metro_lines format: {type(metro_lines)}")
+        metro_lines = {"type": "FeatureCollection", "features": []}
 
     return {
         "status":   "loaded",
@@ -95,6 +268,8 @@ async def process_load_region(hobli_name: str):
         "lat":      coords["lat"],
         "lon":      coords["lon"],
         "district": coords["district"],
+        "metro_stations": metro_stations,
+        "metro_lines": metro_lines,
     }
 
 def _haversine_distance(lat1, lon1, lat2, lon2):
@@ -316,9 +491,13 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     all_shelters = shelter_resp["shelters"]
 
     # ── Streaming loop: flood physics only, no GA ─────────────────────────
+    metro_stations = entry.get("metro_stations", [])
     for i in range(steps):
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
+
+        # Keep temporal metro status history warm at each step
+        _collect_metro_reports(sim, metro_stations, update_history=True)
 
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
@@ -510,6 +689,8 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             ),
             "shelter_reports":         shelter_reports,
             "pressure_points":         pressure_points,
+            "metro_reports": _collect_metro_reports(sim, metro_stations, update_history=True),
+            "metro_lines": entry.get("metro_lines", []),
         },
     }
     try:
@@ -608,10 +789,14 @@ async def run_compare_generator(
     all_shelters = shelter_resp["shelters"]
 
     # ── Phase 1: stream flood steps (identical to single-algo mode) ──────────
+    metro_stations = entry.get("metro_stations", [])
     print(f"{_ts()}  [compare] Starting flood simulation ({steps} steps)")
     for i in range(steps):
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact    = await loop.run_in_executor(None, sim.calculate_flood_impact)
+
+        # Keep temporal metro status history warm at each step
+        _collect_metro_reports(sim, metro_stations, update_history=True)
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
 
@@ -801,6 +986,8 @@ async def run_compare_generator(
                     "best_fitness":            fitness,
                     "avg_distance_per_person": round(fitness / max(total_at_risk_initial, 1), 1),
                     "shelter_reports":         shelter_reports,
+                    "metro_reports":           _collect_metro_reports(sim, metro_stations, update_history=True),
+                    "metro_lines": entry.get("metro_lines", []),
                 },
             }
 
@@ -818,3 +1005,24 @@ async def run_compare_generator(
             v["traffic_geojson"] = None
         yield f"data: {json.dumps(final_frame)}\n\n"
 
+async def fetch_metro_stations(hobli_name: str) -> dict:
+    """
+    Return cached metro stations and lines for the given hobli.
+    """
+    # 1. Ensure region is loaded
+    key = norm_key(hobli_name)
+    if key not in REGION_CACHE:
+        await process_load_region(hobli_name)
+    
+    # 2. Return cached metro network already loaded during /load-region click
+    entry = REGION_CACHE.get(key, {})
+    
+    stations = entry.get("metro_stations", [])
+    lines = entry.get("metro_lines", [])
+    
+    return {
+        "hobli": hobli_name,
+        "total": len(stations),
+        "stations": stations,
+        "lines": lines
+    }

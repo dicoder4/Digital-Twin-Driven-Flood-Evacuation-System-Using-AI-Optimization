@@ -286,6 +286,12 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
     }
 
 
+@app.get("/metro-stations/{hobli_name}")
+async def get_metro_stations(hobli_name: str):
+    """Return cached metro stations for a hobli."""
+    return await service.fetch_metro_stations(hobli_name)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

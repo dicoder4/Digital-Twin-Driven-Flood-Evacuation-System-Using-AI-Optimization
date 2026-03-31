@@ -82,6 +82,9 @@ export default function App() {
   const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
   const [mapPinBox, setMapPinBox] = useState(null);
+  const [selectedMetro, setSelectedMetro] = useState(null);
+  const [metroStations, setMetroStations] = useState([]);
+  const [metroLines, setMetroLines] = useState([]);
 
   // ── Sidebar resize ────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -165,11 +168,21 @@ export default function App() {
     setShelterCandidates([]);
     setBusManifest(null);
     setSelectedBusId(null);
+    setMetroLines([]);
+    setMetroStations([]);
+    setSelectedMetro(null);
     setActiveTab('setup');
     try {
       const res = await axios.post(`${API_URL}/load-region`, { hobli: targetHobli });
       const { lat, lon } = res.data;
       setViewState(v => ({ ...v, longitude: lon, latitude: lat, zoom: 14 }));
+      
+      const stations = res.data.metro_stations || [];
+      const lines = res.data.metro_lines || { type: 'FeatureCollection', features: [] };
+      
+      setMetroStations(stations);
+      setMetroLines(lines);
+      
       const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: targetHobli } });
       setBaseRoadsData(mapRes.data);
       setLoadedHobli(targetHobli);
@@ -316,6 +329,7 @@ export default function App() {
           // Pipe flood / roads data into the shared sim hook for map rendering
           if (data.flood_geojson?.features?.length > 0) sim.setFloodData(data.flood_geojson);
           if (data.roads_geojson?.features?.length > 0) sim.setRoadsData(data.roads_geojson);
+          
           return;
         }
 
@@ -706,17 +720,23 @@ export default function App() {
                   shelters={sheltersWithSafety}
                   selectedBusId={selectedBusId}
                   onSelectBus={setSelectedBusId}
+                  metroReports={compareResults && compareActiveAlgo ? compareResults[compareActiveAlgo]?.metro_reports : (sim.finalReport?.summary?.metro_reports || [])}
+                  metroStations={metroStations}
+                  onSelectMetro={setSelectedMetro}
+                  selectedMetroId={selectedMetro ? (selectedMetro.id || `${selectedMetro.name}::${selectedMetro.line || ''}`) : null}
+                  loadedHobli={loadedHobli}
                 />
                 {compareResults && compareActiveAlgo ? (
                   <>
                     <PanelOfExperts
+                      locationName={loadedHobli}
                       summary={compareResults[compareActiveAlgo]}
                       evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []}
                     />
                   </>
                 ) : sim.finalReport?.summary ? (
                   <>
-                    <PanelOfExperts summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
+                    <PanelOfExperts locationName={loadedHobli} summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
                   </>
                 ) : null}
               </div>
@@ -783,6 +803,8 @@ export default function App() {
             return { lat, lon };
           });
         }}
+        selectedMetro={selectedMetro}
+        metroLines={metroLines}
       />
 
       <AppCopilot
