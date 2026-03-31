@@ -18,3 +18,4 @@ pydantic
 groq
 rasterio
 pyproj
+fiona

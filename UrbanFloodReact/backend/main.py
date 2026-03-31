@@ -12,13 +12,14 @@ import sys
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
 
 # Ensure backend directory is in python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
@@ -26,11 +27,11 @@ from pydantic import BaseModel
 from typing import Optional
 
 try:
-    from region_manager import initialise, norm_key, REGIONS_TREE
+    from region_manager import initialise, norm_key, REGIONS_TREE, REGION_CACHE, HOBLI_COORDS
     from generate_people import load_population, POPULATION_CSV
 except ImportError:
     # Try importing as package if top-level script
-    from UrbanFloodReact.backend.region_manager import initialise, norm_key, REGIONS_TREE
+    from UrbanFloodReact.backend.region_manager import initialise, norm_key, REGIONS_TREE, REGION_CACHE, HOBLI_COORDS
     from UrbanFloodReact.backend.generate_people import load_population, POPULATION_CSV
 
 # Import service layer
@@ -61,6 +62,14 @@ async def lifespan(app: FastAPI):
     yield
     print("━━ Backend shutting down ━━")
 
+
+
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/automation/status" not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 app = FastAPI(lifespan=lifespan, title="Urban Flood Digital Twin API")
 

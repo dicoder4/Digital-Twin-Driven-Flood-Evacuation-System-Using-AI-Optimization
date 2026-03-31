@@ -47,13 +47,13 @@ const RISK_ROAD_PAINT = {
     'line-opacity': 0.9,
 };
 
-export function FloodMap({ 
-    viewState, onMove, baseRoadsData, floodData, riskRoadsData, 
-    loadedHobli, selRec, populationCount, onUnsafeCount, 
-    shelters, evacuationPlan, simulationDone, selectedShelter, 
-    trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins, 
+export function FloodMap({
+    viewState, onMove, baseRoadsData, floodData, riskRoadsData,
+    loadedHobli, selRec, populationCount, onUnsafeCount,
+    shelters, evacuationPlan, simulationDone, selectedShelter,
+    trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins,
     busManifest, selectedBusId, mapPinBox, onMapClick,
-    selectedMetro, metroLines 
+    selectedMetro, metroLines
 }) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk = !!(riskRoadsData?.features?.length);
@@ -115,7 +115,7 @@ export function FloodMap({
         || (selectedMetro?.flooded === true ? 'unsafe' : selectedMetro?.flooded === false ? 'safe' : 'unknown');
     const selectedMetroLineNorm = (selectedMetro?.line || '').toString().trim().toLowerCase();
     const selectedMetroNameNorm = (selectedMetro?.name || '').toString().trim().toLowerCase();
-    
+
     const selectedMetroStatusIcon = selectedMetroStatus === 'unsafe'
         ? '🔴'
         : selectedMetroStatus === 'caution'
@@ -242,7 +242,7 @@ export function FloodMap({
                                     'pink', '#db2777',
                                     'red', '#dc2626',
                                     'railway', '#64748b',
-                                    '#7c3aed' // fallback
+                                    '#94a3b8' // neutral fallback (slate-400)
                                 ],
                                 'line-width': 2.2,
                                 'line-opacity': 0,
@@ -261,11 +261,10 @@ export function FloodMap({
                                 ? ['all',
                                     ['!=', ['coalesce', ['get', 'transport_type'], 'metro'], 'railway'],
                                     ['any',
-                                        // Match by exact line name (primary)
+                                        // Exact match by normalised line name (e.g. "green line" == "green line")
                                         ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroLineNorm],
-                                        ['==', ['downcase', ['coalesce', ['get', 'name'], '']], selectedMetroNameNorm],
-                                        // Fallback: match by station name (for line segments without proper line property)
-                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroNameNorm]
+                                        // Exact match by colour token (e.g. feature.colour="green" vs "green line" stripped)
+                                        ['==', ['downcase', ['coalesce', ['get', 'colour'], '']], selectedMetroLineNorm.replace(' line', '').trim()],
                                     ]
                                 ]
                                 : ['==', ['get', 'id'], 'none']}
@@ -278,15 +277,15 @@ export function FloodMap({
                                     'blue', '#2563eb',
                                     'pink', '#db2777',
                                     'red', '#dc2626',
-                                    '#7c3aed'
+                                    '#94a3b8'
                                 ],
                                 'line-width': 5.5,
                                 'line-opacity': 0.95,
                                 'line-blur': 0.1
                             }}
                             layout={{
-                                'line-cap': 'round',
-                                'line-join': 'round'
+                                'line-cap': 'butt',
+                                'line-join': 'miter'
                             }}
                         />
 
@@ -296,13 +295,7 @@ export function FloodMap({
                             filter={selectedMetro
                                 ? ['all',
                                     ['==', ['get', 'transport_type'], 'railway'],
-                                    ['any',
-                                        // Match by exact line name (primary)
-                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroLineNorm],
-                                        ['==', ['downcase', ['coalesce', ['get', 'name'], '']], selectedMetroNameNorm],
-                                        // Fallback: match by station name
-                                        ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroNameNorm]
-                                    ]
+                                    ['==', ['downcase', ['coalesce', ['get', 'line'], '']], selectedMetroLineNorm],
                                 ]
                                 : ['==', ['get', 'id'], 'none']}
                             paint={{
@@ -312,8 +305,8 @@ export function FloodMap({
                                 'line-dasharray': [2, 2]
                             }}
                             layout={{
-                                'line-cap': 'round',
-                                'line-join': 'round'
+                                'line-cap': 'butt',
+                                'line-join': 'miter'
                             }}
                         />
                     </Source>
@@ -363,16 +356,16 @@ export function FloodMap({
                 {/* 9. Selected Metro/Railway Station */}
                 {selectedMetro && (
                     <Marker longitude={selectedMetro.lon} latitude={selectedMetro.lat} anchor="bottom">
-                        <div className="evac-dest-pin" style={{ 
-                            filter: selectedMetro.transport_type === 'railway' 
-                                ? 'drop-shadow(0 2px 6px rgba(100, 116, 139, 0.4))' 
-                                : 'drop-shadow(0 2px 6px rgba(124, 58, 237, 0.4))' 
+                        <div className="evac-dest-pin" style={{
+                            filter: selectedMetro.transport_type === 'railway'
+                                ? 'drop-shadow(0 2px 6px rgba(100, 116, 139, 0.4))'
+                                : 'drop-shadow(0 2px 6px rgba(124, 58, 237, 0.4))'
                         }}>
-                            <div style={{ 
-                                background: selectedMetro.transport_type === 'railway' ? '#64748b' : '#7c3aed', 
-                                color: 'white', 
-                                padding: '6px', 
-                                borderRadius: '50%', 
+                            <div style={{
+                                background: selectedMetro.transport_type === 'railway' ? '#64748b' : '#7c3aed',
+                                color: 'white',
+                                padding: '6px',
+                                borderRadius: '50%',
                                 border: '2px solid white',
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                                 display: 'flex',
@@ -381,10 +374,10 @@ export function FloodMap({
                             }}>
                                 {selectedMetro.transport_type === 'railway' ? <Activity size={16} /> : <Train size={16} />}
                             </div>
-                            <div className="evac-dest-label" style={{ 
-                                background: selectedMetro.transport_type === 'railway' ? '#f1f5f9' : '#f5f3ff', 
-                                color: selectedMetro.transport_type === 'railway' ? '#475569' : '#7c3aed', 
-                                border: `1px solid ${selectedMetro.transport_type === 'railway' ? '#94a3b8' : '#7c3aed'}` 
+                            <div className="evac-dest-label" style={{
+                                background: selectedMetro.transport_type === 'railway' ? '#f1f5f9' : '#f5f3ff',
+                                color: selectedMetro.transport_type === 'railway' ? '#475569' : '#7c3aed',
+                                border: `1px solid ${selectedMetro.transport_type === 'railway' ? '#94a3b8' : '#7c3aed'}`
                             }}>
                                 {selectedMetro.transport_type === 'railway' ? '🛤️' : '🚆'} {selectedMetro.name}
                                 {selectedMetro.line ? ` · ${selectedMetro.line}` : ''}

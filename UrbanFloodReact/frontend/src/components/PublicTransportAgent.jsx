@@ -3,11 +3,11 @@ import { Bus, Train, Users, MapPin, Loader, FileText, ChevronRight, ChevronUp, C
 import { API_URL } from '../config';
 import './PublicTransportAgent.css';
 
-export function PublicTransportAgent({ 
-    evacuationPlan, 
-    onManifestGenerated, 
-    shelters = [], 
-    selectedBusId, 
+export function PublicTransportAgent({
+    evacuationPlan,
+    onManifestGenerated,
+    shelters = [],
+    selectedBusId,
     onSelectBus,
     metroReports = [], // Array of { name, lat, lon, flooded } from final simulation report
     metroStations = [],
@@ -19,7 +19,7 @@ export function PublicTransportAgent({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [stations, setStations] = useState([]); // Initial station list
-    
+
     // UI state for independent dropdowns
     const [busOpen, setBusOpen] = useState(true);
     const [metroOpen, setMetroOpen] = useState(false);
@@ -49,27 +49,27 @@ export function PublicTransportAgent({
                 return acc;
             }, new Map()).values()
     )
-    .filter((item) => {
-        const text = `${item?.name || ''} ${item?.line || ''}`.toLowerCase();
-        if (!item?.name) return false;
-        if (text.includes('bus') || text.includes('police station')) return false;
-        const transportType = (item?.transport_type || '').toString().toLowerCase();
-        if (transportType === 'metro' || transportType === 'railway') return true;
-        return text.includes('line') || text.includes('metro') || text.includes('railway') || text.includes('subway');
-    })
-    .sort((a, b) => {
-        const getVal = (x) => x.transport_type === 'railway' ? 1 : 0;
-        return getVal(a) - getVal(b);
-    });
+        .filter((item) => {
+            const text = `${item?.name || ''} ${item?.line || ''}`.toLowerCase();
+            if (!item?.name) return false;
+            if (text.includes('bus') || text.includes('police station')) return false;
+            const transportType = (item?.transport_type || '').toString().toLowerCase();
+            if (transportType === 'metro' || transportType === 'railway') return true;
+            return text.includes('line') || text.includes('metro') || text.includes('railway') || text.includes('subway');
+        })
+        .sort((a, b) => {
+            const getVal = (x) => x.transport_type === 'railway' ? 1 : 0;
+            return getVal(a) - getVal(b);
+        });
 
     const metroRowKey = (m) => m.id || `${m.name}::${m.line || ''}`;
 
     const prettyLineName = (lineName) => {
         const line = (lineName || '').toString().trim();
-        if (!line) return 'Unknown Line';
+        if (!line) return 'Namma Metro';
         const lower = line.toLowerCase();
         if (lower.includes('railway')) return 'Railway Track';
-        if (lower === 'namma metro' || lower === 'namma metro/rail' || lower === 'metro') return 'Unknown Line';
+        if (lower === 'namma metro' || lower === 'namma metro/rail' || lower === 'metro') return 'Namma Metro';
         return line;
     };
 
@@ -156,7 +156,7 @@ export function PublicTransportAgent({
             </div>
 
             <div className="pta-content custom-scrollbar" style={{ marginTop: '1rem', overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
-                
+
                 {/* ── BMTC Bus Fleet Accordion ── */}
                 <div className="pta-accordion">
                     <div className="pta-accordion-header" onClick={() => setBusOpen(!busOpen)}>
@@ -165,7 +165,7 @@ export function PublicTransportAgent({
                         </div>
                         {busOpen ? <ChevronUp size={16} color="#94a3b8" /> : <ChevronDown size={16} color="#94a3b8" />}
                     </div>
-                    
+
                     {busOpen && (
                         <div className="pta-accordion-content">
                             <button
@@ -237,8 +237,8 @@ export function PublicTransportAgent({
                 {/* ── Namma Metro/Rail Network Accordion ── */}
                 <div className="pta-accordion">
                     <div className="pta-accordion-header" onClick={() => setMetroOpen(!metroOpen)}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: '#334155', fontSize: '0.85rem' }}>
-                            <Train size={16} color="#7c3aed" /> Namma Metro/Rail Network
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: '#334155', fontSize: '#085rem' }}>
+                            <Train size={16} color="#059669" /> Namma Metro/Rail Network
                             {metroReports.length > 0 && (
                                 <span style={{ marginLeft: '4px', fontSize: '0.65rem', background: floodedMetroCount > 0 ? '#fee2e2' : '#dcfce7', color: floodedMetroCount > 0 ? '#dc2626' : '#16a34a', padding: '1px 6px', borderRadius: '10px' }}>
                                     {floodedMetroCount} Flooded
@@ -250,7 +250,7 @@ export function PublicTransportAgent({
 
                     {metroOpen && (
                         <div className="pta-accordion-content">
-                            <div style={{ background: '#f5f3ff', color: '#6d28d9', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '0.6rem 0.75rem', marginBottom: '1rem', fontSize: '0.75rem' }}>
+                            <div style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #dcfce7', borderRadius: '8px', padding: '0.6rem 0.75rem', marginBottom: '1rem', fontSize: '0.75rem' }}>
                                 Metro/Rail network is loaded when you click <strong>Load Network</strong> in Setup.
                             </div>
 
@@ -265,14 +265,14 @@ export function PublicTransportAgent({
                                         <thead>
                                             <tr>
                                                 <th>STATION NAME</th>
-                                                    <th>LINE</th>
+                                                <th>LINE</th>
                                                 <th>STATUS / SAFETY</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {displayMetro.map((m, idx) => (
-                                                <tr 
-                                                    key={idx} 
+                                                <tr
+                                                    key={idx}
                                                     onClick={() => {
                                                         const isSelected = metroRowKey(m) === selectedMetroId;
                                                         const newSelection = isSelected ? null : m;
@@ -283,7 +283,21 @@ export function PublicTransportAgent({
                                                 >
                                                     <td style={{ fontWeight: 500 }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                                            {m.transport_type === 'railway' ? <Activity size={12} color="#64748b" /> : <Train size={12} color="#7c3aed" />}
+                                                            {m.transport_type === 'railway' ? (
+                                                                <Activity size={12} color="#64748b" />
+                                                            ) : (
+                                                                <Train
+                                                                    size={12}
+                                                                    color={
+                                                                        m.colour === 'green' ? '#059669' :
+                                                                            m.colour === 'yellow' ? '#eab308' :
+                                                                                m.colour === 'purple' ? '#7c3aed' :
+                                                                                    m.colour === 'blue' ? '#2563eb' :
+                                                                                        m.colour === 'pink' ? '#db2777' :
+                                                                                            '#7c3aed'
+                                                                    }
+                                                                />
+                                                            )}
                                                             {m.name}
                                                         </div>
                                                     </td>
@@ -291,9 +305,22 @@ export function PublicTransportAgent({
                                                         <span
                                                             className="pta-status-pill"
                                                             style={{
-                                                                background: m.transport_type === 'railway' ? '#f1f5f9' : '#f5f3ff',
-                                                                color: m.transport_type === 'railway' ? '#475569' : '#6d28d9',
-                                                                border: `1px solid ${m.transport_type === 'railway' ? '#cbd5e1' : '#c4b5fd'}`,
+                                                                background: m.transport_type === 'railway' ? '#f1f5f9' :
+                                                                    m.colour === 'green' ? '#ecfdf5' :
+                                                                        m.colour === 'yellow' ? '#fffbeb' :
+                                                                            m.colour === 'purple' ? '#f5f3ff' :
+                                                                                '#f8fafc',
+                                                                color: m.transport_type === 'railway' ? '#475569' :
+                                                                    m.colour === 'green' ? '#065f46' :
+                                                                        m.colour === 'yellow' ? '#92400e' :
+                                                                            m.colour === 'purple' ? '#5b21b6' :
+                                                                                '#64748b',
+                                                                border: `1px solid ${m.transport_type === 'railway' ? '#cbd5e1' :
+                                                                    m.colour === 'green' ? '#10b981' :
+                                                                        m.colour === 'yellow' ? '#f59e0b' :
+                                                                            m.colour === 'purple' ? '#8b5cf6' :
+                                                                                '#e2e8f0'
+                                                                    }`,
                                                             }}
                                                         >
                                                             {prettyLineName(m.line)}
