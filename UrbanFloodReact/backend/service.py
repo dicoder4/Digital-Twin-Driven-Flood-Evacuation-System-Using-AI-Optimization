@@ -829,6 +829,11 @@ async def run_compare_generator(
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
 
+    # Extract center coordinates for metro reports
+    coords = HOBLI_COORDS.get(key, {})
+    center_lat = coords.get("lat")
+    center_lon = coords.get("lon")
+
     # ── Phase 1: stream flood steps (identical to single-algo mode) ──────────
     metro_stations = entry.get("metro_stations", [])
     print(f"{_ts()}  [compare] Starting flood simulation ({steps} steps)")
@@ -1027,7 +1032,7 @@ async def run_compare_generator(
                     "best_fitness":            fitness,
                     "avg_distance_per_person": round(fitness / max(total_at_risk_initial, 1), 1),
                     "shelter_reports":         shelter_reports,
-                    "metro_reports":           _collect_metro_reports(sim,  center_lat, center_lon,metro_stations, update_history=True),
+                    "metro_reports":           _collect_metro_reports(sim, metro_stations, center_lat, center_lon, update_history=True),
                     "metro_lines": entry.get("metro_lines", []),
                 },
             }
