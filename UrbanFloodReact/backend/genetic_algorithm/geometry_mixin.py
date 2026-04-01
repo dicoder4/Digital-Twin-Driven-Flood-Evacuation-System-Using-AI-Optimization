@@ -87,6 +87,11 @@ class GeometryMixin:
     def _decode(self, chromosome):
         results = []
         for i, j in enumerate(chromosome):
+            # -1 → node was left unassigned (no shelter capacity available).
+            # These people are counted in at_risk_remaining — do NOT add a route.
+            if j < 0:
+                continue
+
             node_info = self.at_risk_nodes[i]
             shelter   = self.safe_shelters[j]
             pop       = node_info['pop']
@@ -100,30 +105,25 @@ class GeometryMixin:
             fallback = True
 
             # ── Resolve at-risk node ──────────────────────────────────────────
-            # at_risk node_id is already a graph node, but guard against stale copies
             if not self.G.has_node(node_id):
                 node_id = self._find_nearest_node_robust(node_info['lat'], node_info['lon'])
                 print(f"  [DECODE] at-risk node snapped to {node_id} via nearest-node lookup")
 
             # ── Resolve shelter node ─────────────────────────────────────────
-            # This is the primary cause of straight-line routes: shelter.node_id
-            # is None or belongs to a different graph copy.
             shelter_node = shelter.get('node_id')
             if shelter_node is None or not self.G.has_node(shelter_node):
                 shelter_node = self._find_nearest_node_robust(shelter['lat'], shelter['lon'])
                 print(f"  [DECODE] shelter '{shelter['id']}' snapped to node {shelter_node} via lat/lon")
 
             # ── Path geometry via flood-aware shortest path ───────────────────
+            path_nodes = []
             try:
                 path_nodes = nx.shortest_path(
                     self.G, node_id, shelter_node, weight='flood_weight'
                 )
-                # Extract full road geometry (edge waypoints), not just node coords.
-                # This prevents diagonal/curved roads from appearing as straight lines.
                 path_coords = self._path_to_coords(path_nodes)
                 fallback = False
             except Exception as e:
-                # Truly disconnected — keep straight-line and flag it
                 print(f"  [DECODE] no road path from {node_id} to {shelter_node}: {e}")
 
             results.append({
@@ -132,6 +132,6 @@ class GeometryMixin:
                 'pop':        pop,
                 'path':       path_coords,
                 'path_nodes': path_nodes if not fallback else [],
-                'fallback':   fallback,   # True = straight-line (disconnected nodes)
+                'fallback':   fallback,
             })
         return results

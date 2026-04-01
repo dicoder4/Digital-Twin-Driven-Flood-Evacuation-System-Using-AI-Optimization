@@ -7,9 +7,10 @@
  *  - Unreachable population alert
  */
 import { useMemo, useState } from 'react';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
+
 
 const ALGO_COLORS = {
     ga:  { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', label: 'Genetic Algorithm' },
@@ -43,7 +44,133 @@ function FillBar({ pct }) {
     );
 }
 
-export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [] }) {
+// ── Shelter Gap Analysis ──────────────────────────────────────────────────────
+const PRIORITY_STYLE = {
+    high:   { bg: '#fff1f2', border: '#fda4af', badge: '#be123c', label: '⚠ HIGH' },
+    medium: { bg: '#fffbeb', border: '#fcd34d', badge: '#b45309', label: '! MEDIUM' },
+    low:    { bg: '#f0fdf4', border: '#86efac', badge: '#15803d', label: '✓ LOW' },
+};
+
+function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) {
+    if (!suggestions || suggestions.length === 0) return null;
+
+    const totalSuggestedCap = suggestions.reduce((acc, s) => acc + s.suggested_capacity, 0);
+    const coveragePct = atRiskRemaining > 0
+        ? Math.min(100, Math.round(totalSuggestedCap / atRiskRemaining * 100))
+        : 100;
+
+    return (
+        <section className="panel evac-section" style={{ borderTop: '2px solid #fda4af', marginTop: 8 }}>
+            <h3 className="panel-title" style={{ color: '#be123c' }}>
+                <PlusCircle size={13} /> Shelter Gap Analysis
+                <span className="panel-title-hint"> — {atRiskRemaining.toLocaleString()} people need shelter</span>
+            </h3>
+
+            {/* Coverage summary bar */}
+            <div style={{
+                background: '#fff1f2', border: '1px solid #fda4af', borderRadius: 6,
+                padding: '6px 10px', marginBottom: 8, fontSize: 10,
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{ color: '#7f1d1d', fontWeight: 600 }}>
+                        {suggestions.length} shelter{suggestions.length > 1 ? 's' : ''} identified
+                    </span>
+                    <span style={{ color: coveragePct >= 100 ? '#15803d' : '#b45309', fontWeight: 700 }}>
+                        {coveragePct}% of deficit covered
+                    </span>
+                </div>
+                <div style={{ background: '#fecdd3', borderRadius: 4, height: 4 }}>
+                    <div style={{
+                        width: `${coveragePct}%`, height: 4, borderRadius: 4,
+                        background: coveragePct >= 100 ? '#16a34a' : '#e11d48',
+                        transition: 'width 0.5s',
+                    }} />
+                </div>
+                <div style={{ color: '#64748b', marginTop: 3 }}>
+                    Total suggested capacity: <strong>{totalSuggestedCap.toLocaleString()}</strong> &nbsp;|&nbsp;
+                    Deficit: <strong style={{ color: '#be123c' }}>{atRiskRemaining.toLocaleString()}</strong>
+                </div>
+            </div>
+
+            {/* Scrollable shelter cards */}
+            <div style={{
+                display: 'flex', flexDirection: 'column', gap: 6,
+                maxHeight: 280, overflowY: 'auto',
+                paddingRight: 2,
+            }}>
+                {suggestions.map((s, idx) => {
+                    const ps = PRIORITY_STYLE[s.priority] || PRIORITY_STYLE.medium;
+                    return (
+                        <div key={idx} style={{
+                            background: ps.bg,
+                            border: `1px solid ${ps.border}`,
+                            borderRadius: 7,
+                            padding: '7px 9px',
+                            flexShrink: 0,
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
+                                <span style={{ fontWeight: 700, fontSize: 10.5, color: '#1e293b', lineHeight: 1.3 }}>
+                                    <Navigation size={9} style={{ verticalAlign: 'middle', marginRight: 3 }} />
+                                    Shelter {idx + 1} — {s.area_name}
+                                </span>
+                                <span style={{
+                                    fontSize: 8.5, fontWeight: 700, color: '#fff', flexShrink: 0,
+                                    background: ps.badge, borderRadius: 4,
+                                    padding: '1px 5px', letterSpacing: '0.04em', marginLeft: 6,
+                                }}>{ps.label}</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', fontSize: 9.5, color: '#475569' }}>
+                                <div>
+                                    <div style={{ fontSize: 7, fontWeight: 700, color: '#94a3b8', marginBottom: 1 }}>DEFICIT</div>
+                                    <span><Users size={8} style={{ verticalAlign: 'middle' }} /> <strong style={{ color: '#be123c' }}>{s.deficit_population.toLocaleString()}</strong></span>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 7, fontWeight: 700, color: '#94a3b8', marginBottom: 1 }}>CAPACITY</div>
+                                    <span><Building2 size={8} style={{ verticalAlign: 'middle' }} /> <strong>{s.suggested_capacity.toLocaleString()}</strong></span>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 7, fontWeight: 700, color: '#94a3b8', marginBottom: 1 }}>COORDS</div>
+                                    <span><MapPin size={8} style={{ verticalAlign: 'middle' }} /> {s.lat.toFixed(4)}, {s.lon.toFixed(4)}</span>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 7, fontWeight: 700, color: '#94a3b8', marginBottom: 1 }}>PROXIMITY</div>
+                                    <span>Nearest: <strong>{s.nearest_shelter_km} km</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Re-run button */}
+            {onRerun && (
+                <button
+                    onClick={() => onRerun(suggestions)}
+                    style={{
+                        marginTop: 10, width: '100%', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 6, padding: '8px 12px',
+                        background: 'linear-gradient(135deg, #be123c, #e11d48)',
+                        color: '#fff', border: 'none', borderRadius: 8,
+                        fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(190,18,60,0.3)',
+                        transition: 'opacity 0.2s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                >
+                    <RefreshCw size={12} />
+                    Re-run with {suggestions.length} Emergency Shelter{suggestions.length > 1 ? 's' : ''} → Evacuate All
+                </button>
+            )}
+            <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 5 }}>
+                💡 Re-run adds all {suggestions.length} shelter{suggestions.length > 1 ? 's' : ''} as emergency sites on dry ground and restarts the algorithm to evacuate remaining {atRiskRemaining.toLocaleString()} people.
+            </div>
+        </section>
+    );
+}
+
+
+export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null }) {
     const [genaiOpen, setGenaiOpen] = useState(false);
 
     // ── Compare table must be checked FIRST — summary is null after compare ──
@@ -219,14 +346,13 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                             )}
                         </section>
 
+                        {/* Shelter gap analysis — only when coverage is incomplete */}
                         {ad.total_at_risk_remaining > 0 && (
-                            <div className="evac-alert">
-                                <AlertTriangle size={14} />
-                                <span>
-                                    <strong>{ad.total_at_risk_remaining.toLocaleString()}</strong> people could not be
-                                    assigned to a safe shelter. Manual rescue required.
-                                </span>
-                            </div>
+                            <ShelterGapAnalysis
+                                suggestions={ad.shelter_suggestions || []}
+                                atRiskRemaining={ad.total_at_risk_remaining}
+                                onRerun={onRerunWithSuggestions}
+                            />
                         )}
 
                         {adSortedShelters.length > 0 && (
@@ -334,6 +460,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     const {
         total_evacuated = 0,
         total_at_risk_remaining = 0,
+        genuinely_unreachable = 0,
         total_at_risk_initial = 0,
         simulation_population = 0,
         success_rate_pct = 0,
@@ -360,11 +487,20 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         <div className="evac-stat-val">{total_evacuated.toLocaleString()}</div>
                         <div className="evac-stat-lbl">Evacuated</div>
                     </div>
-                    <div className={`evac-stat-card ${total_at_risk_remaining > 0 ? 'evac-stat-red' : 'evac-stat-green'}`}>
-                        <AlertTriangle size={16} />
-                        <div className="evac-stat-val">{total_at_risk_remaining.toLocaleString()}</div>
-                        <div className="evac-stat-lbl">Unreachable</div>
-                    </div>
+                    {((total_at_risk_remaining - genuinely_unreachable) > 0 || genuinely_unreachable === 0) && (
+                        <div className={`evac-stat-card ${(total_at_risk_remaining - genuinely_unreachable) > 0 ? 'evac-stat-orange' : 'evac-stat-green'}`} style={(total_at_risk_remaining - genuinely_unreachable) > 0 ? { border: '1px solid #fdba74', background: '#fff7ed' } : {}}>
+                            <Users size={16} color={(total_at_risk_remaining - genuinely_unreachable) > 0 ? "#f97316" : undefined} />
+                            <div className="evac-stat-val" style={{ color: (total_at_risk_remaining - genuinely_unreachable) > 0 ? '#c2410c' : undefined }}>{(total_at_risk_remaining - genuinely_unreachable).toLocaleString()}</div>
+                            <div className="evac-stat-lbl" style={{ color: (total_at_risk_remaining - genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{genuinely_unreachable > 0 ? 'At Risk (Cap)' : 'At Risk'}</div>
+                        </div>
+                    )}
+                    {genuinely_unreachable > 0 && (
+                        <div className="evac-stat-card evac-stat-red" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                            <AlertTriangle size={16} color="#dc2626" />
+                            <div className="evac-stat-val" style={{ color: '#b91c1c' }}>{genuinely_unreachable.toLocaleString()}</div>
+                            <div className="evac-stat-lbl" style={{ color: '#ef4444' }}>Needs Rescue</div>
+                        </div>
+                    )}
                     <div className="evac-stat-card evac-stat-blue">
                         <ShieldCheck size={16} />
                         <div className="evac-stat-val">{success_rate_pct}%</div>
@@ -438,15 +574,27 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                 </section>
             )}
 
-            {/* ── Unreachable Alert ─────────────────────── */}
-            {total_at_risk_remaining > 0 && (
-                <div className="evac-alert">
-                    <AlertTriangle size={14} />
-                    <span>
-                        <strong>{total_at_risk_remaining.toLocaleString()}</strong> people could not be
-                        assigned to a safe shelter. Manual rescue required.
-                    </span>
-                </div>
+            {/* ── Shelter Gap Analysis ──────────────────── */}
+            <ShelterGapAnalysis
+                suggestions={summary.shelter_suggestions || []}
+                atRiskRemaining={total_at_risk_remaining - genuinely_unreachable}
+                onRerun={onRerunWithSuggestions}
+            />
+
+            {/* ── Manual Rescue Alert ───────────────────── */}
+            {genuinely_unreachable > 0 && (
+                <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8 }}>
+                    <h3 className="panel-title" style={{ color: '#b91c1c' }}>
+                        <AlertTriangle size={13} /> Manual Rescue Required
+                        <span className="panel-title-hint"> — {genuinely_unreachable.toLocaleString()} people stranded</span>
+                    </h3>
+                    <div style={{ fontSize: 10, color: '#7f1d1d', marginBottom: 2, lineHeight: 1.5, background: '#fef2f2', padding: 8, borderRadius: 6, border: '1px solid #fca5a5' }}>
+                        <strong>Isolation Detected:</strong> {genuinely_unreachable.toLocaleString()} people are completely surrounded by floodwater deeper than the 0.15m (6-inch) safe wading limit.
+                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #fecaca' }}>
+                            No safe evacuation route or emergency shelter placement is possible. <strong>Dispatch high-water rescue vehicles or boats immediately.</strong>
+                        </div>
+                    </div>
+                </section>
             )}
 
             {/* ── Shelter Fill Report (clickable) ───────── */}

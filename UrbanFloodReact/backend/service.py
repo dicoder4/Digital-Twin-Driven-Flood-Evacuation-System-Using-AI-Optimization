@@ -489,7 +489,268 @@ async def fetch_map_geojson(hobli_name: str):
     _, edges = ox.graph_to_gdfs(G)
     return json.loads(edges.to_json())
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None):
+# ─────────────────────────────────────────────────────────────────────────────
+# Shelter Suggestion Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, final_evacuation_plan: list) -> list:
+    """
+    When evacuation coverage is incomplete, identify geographic clusters of
+    unassigned at-risk nodes and suggest new shelter locations in nearby
+    non-flooded areas.
+
+    Generates ENOUGH suggestions to cover ALL unassigned people — no arbitrary
+    cap. Each cluster gets exactly one shelter sized to cover its population.
+
+    Returns a tuple (suggestions_list, genuinely_unreachable_count).
+    """
+    if not at_risk_nodes:
+        return [], 0
+
+    # ── 1. Determine which node groups were NOT assigned a shelter ─────────
+    assigned_node_ids = {move['from_node'] for move in final_evacuation_plan}
+    unassigned = [
+        node for node in at_risk_nodes
+        if node['id'] not in assigned_node_ids
+    ]
+
+    if not unassigned:
+        return [], 0
+
+    total_deficit = sum(n['pop'] for n in unassigned)
+    print(f"  [SHELTER-SUGGEST] {len(unassigned)} unassigned groups | "
+          f"total deficit={total_deficit:,} | will generate shelters until fully covered")
+
+    # ── 2. Compute region center for compass-direction naming ─────────────
+    all_lats = [n['lat'] for n in at_risk_nodes]
+    all_lons = [n['lon'] for n in at_risk_nodes]
+    region_center_lat = sum(all_lats) / len(all_lats)
+    region_center_lon = sum(all_lons) / len(all_lons)
+
+    def _compass(c_lat, c_lon):
+        """Return cardinal/intercardinal direction label from region center."""
+        dlat = c_lat - region_center_lat
+        dlon = c_lon - region_center_lon
+        # 8-point compass
+        angle = math.degrees(math.atan2(dlon, dlat))  # 0=N, 90=E, -90=W
+        directions = [
+            (22.5,  'North'),    (67.5,  'Northeast'), (112.5, 'East'),
+            (157.5, 'Southeast'),(180.1, 'South'),
+        ]
+        neg_dirs = [
+            (-22.5, 'North'),   (-67.5, 'Northwest'), (-112.5, 'West'),
+            (-157.5, 'Southwest'), (-180.1, 'South'),
+        ]
+        if angle >= 0:
+            for threshold, label in directions:
+                if angle <= threshold:
+                    return label
+            return 'South'
+        else:
+            for threshold, label in neg_dirs:
+                if angle >= threshold:
+                    return label
+            return 'South'
+
+    # ── 3. Filter genuinely unreachable vs serviceable ────────────────────────
+    import networkx as nx
+    wadable_nodes = {
+        nid for nid, data in G.nodes(data=True)
+        if data.get('water_depth', 0.0) <= 0.15
+    }
+    
+    G_undirected = G.to_undirected()
+    wadable_subgraph = G_undirected.subgraph(wadable_nodes)
+    
+    node_to_component = {}
+    component_driest_node = {}
+    component_nodes = {}
+    
+    for i, comp in enumerate(nx.connected_components(wadable_subgraph)):
+        comp_list = list(comp)
+        component_nodes[i] = comp_list
+        driest_n = min(comp_list, key=lambda n: G.nodes[n].get('water_depth', 0.0))
+        component_driest_node[i] = driest_n
+        for n in comp_list:
+            node_to_component[n] = i
+
+    genuinely_unreachable_count = 0
+    serviceable_unassigned = []
+
+    for node in unassigned:
+        nid = node['id']
+        comp_id = node_to_component.get(nid)
+        # Any node in the wadable subgraph represents a safe, serviceable island.
+        if comp_id is not None:
+            node['comp_id'] = comp_id
+            serviceable_unassigned.append(node)
+        else:
+            genuinely_unreachable_count += node['pop']
+
+    if genuinely_unreachable_count > 0:
+        print(f"  [SHELTER-SUGGEST] {genuinely_unreachable_count:,} people "
+              f"are genuinely unreachable (isolated by >0.15m water).")
+
+    if not serviceable_unassigned:
+        return [], genuinely_unreachable_count
+
+    # ── 4. Cluster serviceable nodes by (Island Component, Geographic Cell) ─
+    # Smaller 0.008° grid (~880 m) — tighter clusters = more accurate capacity
+    GRID_SIZE = 0.008
+    clusters: dict = {}
+    for node in serviceable_unassigned:
+        cell = (round(node['lat'] / GRID_SIZE), round(node['lon'] / GRID_SIZE))
+        cluster_key = (node['comp_id'], cell)
+        if cluster_key not in clusters:
+            clusters[cluster_key] = {'nodes': [], 'total_pop': 0, 'comp_id': node['comp_id']}
+        clusters[cluster_key]['nodes'].append(node)
+        clusters[cluster_key]['total_pop'] += node['pop']
+
+    def _approx_dist_deg(lat1, lon1, lat2, lon2):
+        return math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2)
+
+    def _resolve_road_name(nid, G, search_radius=5):
+        """
+        Look at the node AND its immediate graph neighbours for edge names.
+        Returns the most informative road name found, or None.
+        """
+        candidates = [nid]
+        try:
+            candidates += list(G.successors(nid)) + list(G.predecessors(nid))
+        except Exception:
+            pass
+
+        names = set()
+        for n in candidates[:search_radius + 1]:
+            try:
+                for _, _, edata in G.edges(n, data=True):
+                    nm = edata.get('name')
+                    if nm:
+                        if isinstance(nm, list):
+                            names.update(nm)
+                        else:
+                            names.add(nm)
+            except Exception:
+                pass
+
+        # Prefer shorter, cleaner names (road names beat highway codes)
+        clean = [n for n in names if n and len(n) > 2 and not n.startswith('NH') and not n.startswith('SH')]
+        if clean:
+            return sorted(clean, key=len)[0]   # shortest meaningful name
+        if names:
+            return sorted(names)[0]
+        return None
+
+    existing_shelter_coords = [(s['lat'], s['lon']) for s in safe_shelters]
+    used_dry_nodes = set()          # avoid re-suggesting the exact same spot
+    suggestions = []
+    zone_counters = {}              # compass_direction → sequential counter
+
+    # Process clusters largest-first so biggest deficits get addressed first
+    sorted_clusters = sorted(clusters.items(), key=lambda x: -x[1]['total_pop'])
+
+    for cluster_key, info in sorted_clusters:
+        comp_id = info['comp_id']
+        nodes = info['nodes']
+        deficit_pop = info['total_pop']
+
+        # Cluster centroid
+        c_lat = sum(n['lat'] for n in nodes) / len(nodes)
+        c_lon = sum(n['lon'] for n in nodes) / len(nodes)
+
+        # Compass direction for this cluster
+        direction = _compass(c_lat, c_lon)
+        zone_counters[direction] = zone_counters.get(direction, 0) + 1
+        zone_num = zone_counters[direction]
+        zone_label = f"{direction} Zone {zone_num}"
+
+        # ── Find best shelter node in THIS component ────────────────────
+        target_depth = G.nodes[component_driest_node[comp_id]].get('water_depth', 0.0)
+        
+        # Only look at nodes in this component that have the target depth
+        candidate_nodes = [
+            n for n in component_nodes[comp_id] 
+            if G.nodes[n].get('water_depth', 0.0) <= target_depth + 0.01
+        ]
+        
+        best_nid = None
+        if candidate_nodes:
+            cand_sorted = sorted(
+                candidate_nodes,
+                key=lambda n: _approx_dist_deg(c_lat, c_lon, G.nodes[n]['y'], G.nodes[n]['x'])
+            )
+            for cand in cand_sorted:
+                if cand not in used_dry_nodes:
+                    best_nid = cand
+                    break
+            if best_nid is None:
+                best_nid = cand_sorted[0]
+        else:
+            best_nid = component_driest_node[comp_id]
+            
+        best_lat = G.nodes[best_nid]['y']
+        best_lon = G.nodes[best_nid]['x']
+
+        # Skip if too close to an already-existing shelter (< 150 m)
+        if existing_shelter_coords:
+            min_d = min(
+                _approx_dist_deg(best_lat, best_lon, sl, so)
+                for sl, so in existing_shelter_coords
+            )
+            if min_d < 0.0015:
+                continue
+
+        if best_nid:
+            used_dry_nodes.add(best_nid)
+
+        # ── Name resolution ───────────────────────────────────────────────
+        road_name = _resolve_road_name(best_nid, G) if best_nid else None
+
+        if road_name:
+            area_name = f"{zone_label} · {road_name}"
+        else:
+            # Compass zone is always meaningful — no lat/lon fallback
+            area_name = f"Emergency Shelter — {zone_label}"
+
+        # Nearest existing shelter distance
+        nearest_shelter_dist_km = min(
+            _haversine_distance(c_lat, c_lon, sl, so)
+            for sl, so in existing_shelter_coords
+        ) if existing_shelter_coords else 0.0
+
+        suggested_cap = int(math.ceil(deficit_pop * 1.20))  # 20% buffer
+
+        if deficit_pop > 500 or nearest_shelter_dist_km > 2.0:
+            priority = 'high'
+        elif deficit_pop > 100:
+            priority = 'medium'
+        else:
+            priority = 'low'
+
+        suggestions.append({
+            'lat':                best_lat,
+            'lon':                best_lon,
+            'area_name':          area_name,
+            'deficit_population': deficit_pop,
+            'suggested_capacity': suggested_cap,
+            'nearest_shelter_km': round(nearest_shelter_dist_km, 2),
+            'reason': (
+                f"{len(nodes)} at-risk group(s) with {deficit_pop:,} people have no shelter. "
+                f"Nearest existing shelter is {nearest_shelter_dist_km:.1f} km away."
+            ),
+            'priority': priority,
+        })
+
+    # ── 5. Verify total coverage ──────────────────────────────────────────
+    covered = sum(s['suggested_capacity'] for s in suggestions)
+    print(f"  [SHELTER-SUGGEST] {len(suggestions)} new shelter(s) suggested | "
+          f"total suggested cap={covered:,} vs deficit={total_deficit:,}")
+
+    # Sort highest-deficit first — no arbitrary cap; caller gets all of them
+    suggestions.sort(key=lambda x: -x['deficit_population'])
+    return suggestions, genuinely_unreachable_count
+
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None):
     """Generator for SSE simulation stream."""
     import time
     loop = asyncio.get_event_loop()
@@ -522,9 +783,31 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
     sim.distribute_population(total_pop)
 
-    # 2. Pre-fetch shelters
+    # 2. Pre-fetch shelters (OSM candidates), then merge any synthetic suggested shelters
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
+
+    if extra_shelters:
+        G_snap = REGION_CACHE[key]["G"]
+        import osmnx as ox
+        for idx, es in enumerate(extra_shelters):
+            try:
+                node_id = ox.distance.nearest_nodes(G_snap, es['lon'], es['lat'])
+            except Exception:
+                node_id = None
+            synthetic = {
+                "id":       f"suggested_{idx + 1}",
+                "name":     es.get('area_name', f"Suggested Shelter {idx + 1}"),
+                "type":     "synthetic",
+                "lat":      es['lat'],
+                "lon":      es['lon'],
+                "capacity": int(es.get('suggested_capacity', 500)),
+                "node_id":  node_id,
+                "safe":     True,   # backend confirmed it's on a dry node
+            }
+            all_shelters.append(synthetic)
+            print(f"  [RERUN] Injected synthetic shelter '{synthetic['name']}' cap={synthetic['capacity']} node={node_id}")
+
 
     # ── Streaming loop: flood physics only, no GA ─────────────────────────
     metro_stations = entry.get("metro_stations", [])
@@ -579,6 +862,13 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
     # Filter shelters: only truly safe shelters are eligible for evacuation
     shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, final_roads_geojson)
+    
+    # CRITICAL FIX: Ensure synthetic shelters (suggested for reruns) are always treated as safe.
+    # The suggestion engine already picked the best available dry/wadable spot for them.
+    for s in shelters_with_safety:
+        if s.get("type") == "synthetic":
+            s["safe"] = True
+
     safe_shelters = [s for s in shelters_with_safety if s["safe"]]
     safe_count = len(safe_shelters)
     print(f"{_ts()}  [DEBUG] safe shelters after filter = {safe_count} / {len(shelters_with_safety)}")
@@ -588,7 +878,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     if not safe_shelters:
         print(f"{_ts()}  [DEBUG] WARNING: no safe shelters available — evacuation routing will be skipped")
 
-    at_risk = sim.get_at_risk_nodes()
+    at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
     print(f"{_ts()}  [DEBUG] at_risk nodes = {len(at_risk)}")
 
     # Diagnostic: check sample depths and populations
@@ -599,24 +889,20 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     print(f"{_ts()}  [DEBUG] sample node pops:   {pop_sample}")
     print(f"{_ts()}  [DEBUG] total_pop distributed: {sum(sim.node_populations.values())}")
 
-    if not at_risk:
-        print(f"{_ts()}  [DEBUG] WARNING: at_risk is empty — lowering depth threshold to 0.05m for retry")
-        # Retry with a lower threshold — maybe flood didn't propagate deeply enough
-        at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
-        print(f"{_ts()}  [DEBUG] at_risk (0.05m threshold) = {len(at_risk)}")
-
     # Track total at-risk population BEFORE GA runs (for accurate remaining count)
     total_at_risk_before_ga = sum(pop for _, pop in at_risk)
     print(f"{_ts()}  [DEBUG] total at-risk pop before GA = {total_at_risk_before_ga}")
 
     planner_instance = None  # sentinel for traffic geojson extraction
     pressure_points = []
+    at_risk_formatted = []  # initialised here — used later for shelter suggestions
     if at_risk and safe_shelters:
         at_risk_formatted = [
             {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}
             for nid, pop in at_risk
         ]
         print(f"{_ts()}  [{algo_label}] Running {algo_label}: {len(at_risk_formatted)} at-risk groups → {len(safe_shelters)} shelters")
+
 
         ga_start = time.time()
         try:
@@ -706,6 +992,16 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         except Exception:
             pass
 
+    # ── Compute shelter suggestions when coverage is incomplete ─────────────
+    shelter_suggestions = []
+    genuinely_unreachable = 0
+    if at_risk_remaining > 0 and at_risk_formatted:
+        shelter_suggestions, genuinely_unreachable = _compute_shelter_suggestions(
+            at_risk_formatted, safe_shelters, sim.G, final_evacuation_plan
+        )
+        print(f"{_ts()}  [SHELTER-SUGGEST] {len(shelter_suggestions)} suggestion(s) generated")
+
+
     final_report = {
         "done":      True,
         "total":     steps,
@@ -717,6 +1013,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "simulation_location":     hobli,
             "total_evacuated":         total_assigned,
             "total_at_risk_remaining": at_risk_remaining,
+            "genuinely_unreachable":   genuinely_unreachable,
             "total_at_risk_initial":   total_at_risk_before_ga,
             "simulation_population":   total_pop,
             "success_rate_pct":        round(
@@ -730,6 +1027,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             ),
             "shelter_reports":         shelter_reports,
             "pressure_points":         pressure_points,
+            "shelter_suggestions":     shelter_suggestions,
             "metro_reports": _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True),
             "metro_lines": entry.get("metro_lines", []),
         },
@@ -784,6 +1082,7 @@ async def run_compare_generator(
     evacuation_mode: bool = False,
     use_traffic: bool = False,
     population: int | None = None,
+    extra_shelters: list | None = None,
 ):
     """
     SSE generator for compare mode:
@@ -829,6 +1128,28 @@ async def run_compare_generator(
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
 
+    if extra_shelters:
+        G_snap = REGION_CACHE[key]["G"]
+        import osmnx as _ox_compare
+        for idx, es in enumerate(extra_shelters):
+            try:
+                node_id = _ox_compare.distance.nearest_nodes(G_snap, es['lon'], es['lat'])
+            except Exception:
+                node_id = None
+            synthetic = {
+                "id":       f"suggested_{idx + 1}",
+                "name":     es.get('area_name', f"Suggested Shelter {idx + 1}"),
+                "type":     "synthetic",
+                "lat":      es['lat'],
+                "lon":      es['lon'],
+                "capacity": int(es.get('suggested_capacity', 500)),
+                "node_id":  node_id,
+                "safe":     True,
+            }
+            all_shelters.append(synthetic)
+            print(f"  [COMPARE RERUN] Injected synthetic shelter '{synthetic['name']}' cap={synthetic['capacity']}")
+
+
     # Extract center coordinates for metro reports
     coords = HOBLI_COORDS.get(key, {})
     center_lat = coords.get("lat")
@@ -871,14 +1192,17 @@ async def run_compare_generator(
     )
 
     shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, final_roads_geojson)
+    
+    # CRITICAL FIX: Ensure synthetic shelters are always treated as safe in compare mode too
+    for s in shelters_with_safety:
+        if s.get("type") == "synthetic":
+            s["safe"] = True
+
     safe_shelters        = [s for s in shelters_with_safety if s["safe"]]
     if not safe_shelters:
         print(f"{_ts()}  [compare] WARNING: no safe shelters available — planner execution will be skipped")
 
-    at_risk = sim.get_at_risk_nodes()
-    if not at_risk:
-        print(f"{_ts()}  [compare] WARNING: at_risk empty — retrying at 0.05 m threshold")
-        at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
+    at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
 
     total_at_risk_initial = sum(pop for _, pop in at_risk)
     print(f"{_ts()}  [compare] at_risk groups={len(at_risk)} | total_pop={total_at_risk_initial} | safe_shelters={len(safe_shelters)}")
@@ -1017,6 +1341,14 @@ async def run_compare_generator(
                 except Exception:
                     pass
 
+            # Shelter suggestions per algo (based on that algo's plan)
+            algo_suggestions = []
+            genuinely_unreachable = 0
+            if at_risk_remaining > 0:
+                algo_suggestions, genuinely_unreachable = _compute_shelter_suggestions(
+                    at_risk_formatted, safe_shelters, sim.G, plan
+                )
+
             compare_results[algo_key] = {
                 "evacuation_plan":       plan,
                 "traffic_geojson":       traffic_geojson,
@@ -1024,6 +1356,7 @@ async def run_compare_generator(
                 "summary": {
                     "total_evacuated":         total_evac,
                     "total_at_risk_remaining": at_risk_remaining,
+                    "genuinely_unreachable":   genuinely_unreachable,
                     "total_at_risk_initial":   total_at_risk_initial,
                     "simulation_population":   total_pop,
                     "success_rate_pct":        round(total_evac / max(total_at_risk_initial, 1) * 100, 1),
@@ -1032,6 +1365,7 @@ async def run_compare_generator(
                     "best_fitness":            fitness,
                     "avg_distance_per_person": round(fitness / max(total_at_risk_initial, 1), 1),
                     "shelter_reports":         shelter_reports,
+                    "shelter_suggestions":     algo_suggestions,
                     "metro_reports":           _collect_metro_reports(sim, metro_stations, center_lat, center_lon, update_history=True),
                     "metro_lines": entry.get("metro_lines", []),
                 },

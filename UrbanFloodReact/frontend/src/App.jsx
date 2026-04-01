@@ -230,14 +230,27 @@ export default function App() {
   }, [regions, handleLoadRegion, sim]);
 
   // ── Start single simulation ───────────────────────────────────
-  const handleStart = () => {
+  const handleStart = (extraShelters = null) => {
     if (!regionLoaded) return;
     setCompareResults(null);
     setBusManifest(null);
     setSelectedBusId(null);
     setActiveTab('setup');
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount);
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, extraShelters);
   };
+
+  // ── Re-run with suggested new shelters injected ───────────────
+  const handleRerunWithSuggestions = useCallback((suggestions) => {
+    if (!regionLoaded || !suggestions?.length) return;
+    setCompareResults(null);
+    setBusManifest(null);
+    setSelectedBusId(null);
+    setActiveTab('setup');
+    sim.setStatusMsg(`Re-running with ${suggestions.length} suggested shelter(s)…`);
+    // Use same current params but inject extra shelters from suggestions
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, suggestions);
+  }, [regionLoaded, loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, sim]);
+
 
   // ── DRA Mode: Automatic ACO + Traffic run ────────────────────
   const handleDraRunEvacuation = () => {
@@ -708,7 +721,9 @@ export default function App() {
               onSetCompareAlgo={setCompareActiveAlgo}
               isDraMode={isDraMode}
               evacuationPlan={sim.evacuationPlan || []}
+              onRerunWithSuggestions={handleRerunWithSuggestions}
             />
+
           </div>
 
           <div className="evac-panel" style={{ display: activeTab === 'ai-agent' ? 'flex' : 'none', height: "100%", paddingBottom: "2rem", overflowY: 'auto' }}>

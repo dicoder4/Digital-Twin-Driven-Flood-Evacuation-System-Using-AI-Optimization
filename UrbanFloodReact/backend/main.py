@@ -226,16 +226,26 @@ async def simulate_stream(
     use_traffic: bool = Query(False),
     algorithm:   str  = Query("ga", description="Optimisation algorithm: 'ga', 'aco', or 'pso'"),
     population:  int | None = Query(None, description="Override population count"),
+    extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """SSE stream of flood simulation steps."""
+    import json as _json
+    extra = None
+    if extra_shelters_json:
+        try:
+            extra = _json.loads(extra_shelters_json)
+        except Exception:
+            extra = None
     return StreamingResponse(
         service.run_simulation_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic, algorithm, population
+            evacuation_mode, use_traffic, algorithm, population,
+            extra_shelters=extra,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
 
 
 @app.get("/simulate-compare")
@@ -247,6 +257,7 @@ async def simulate_compare(
     evacuation_mode: bool  = Query(False),
     use_traffic:     bool  = Query(False),
     population:      int | None = Query(None),
+    extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """
     SSE stream for algorithm comparison mode.
@@ -254,14 +265,23 @@ async def simulate_compare(
     in parallel threads. Emits normal flood-step frames during the flood phase,
     then a single 'compare_done' frame with all three algorithm results.
     """
+    import json as _json
+    extra = None
+    if extra_shelters_json:
+        try:
+            extra = _json.loads(extra_shelters_json)
+        except Exception:
+            extra = None
     return StreamingResponse(
         service.run_compare_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic, population
+            evacuation_mode, use_traffic, population,
+            extra_shelters=extra,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
 
 
 @app.get("/shelters/{hobli_name}")
