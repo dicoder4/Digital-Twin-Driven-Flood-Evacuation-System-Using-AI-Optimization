@@ -319,6 +319,66 @@ def _haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+def _resolve_road_name(nid, G, max_depth=3):
+    """
+    Traverse the graph from nid up to max_depth levels to find a readable road name.
+    Useful for unnamed residential junctions that connect to named roads nearby.
+    """
+    from collections import deque
+    queue = deque([(nid, 0)])
+    visited = {nid}
+    names = set()
+
+    while queue:
+        curr, depth = queue.popleft()
+
+        # Check incident edges for names
+        try:
+            # MultiDiGraph usually stores names on edges
+            edge_iter = G.edges(curr, data=True)
+            for _, _, edata in edge_iter:
+                nm = edata.get('name')
+                if nm:
+                    if isinstance(nm, list): names.update(nm)
+                    else: names.add(nm)
+            
+            # For directed graphs, check incoming too
+            if hasattr(G, 'in_edges'):
+                for _, _, edata in G.in_edges(curr, data=True):
+                    nm = edata.get('name')
+                    if nm:
+                         if isinstance(nm, list): names.update(nm)
+                         else: names.add(nm)
+        except Exception:
+            pass
+
+        # Stop as soon as we've found some names at this depth
+        if names:
+            break
+
+        # Move to neighbors if we haven't found a name yet
+        if depth < max_depth:
+            try:
+                # Treat directed graph as undirected for name search
+                succs = list(G.successors(curr)) if hasattr(G, 'successors') else []
+                preds = list(G.predecessors(curr)) if hasattr(G, 'predecessors') else []
+                for neighbor in set(succs + preds):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append((neighbor, depth + 1))
+            except Exception:
+                pass
+
+    # Prefer shorter, cleaner names (road names beat highway codes)
+    # Filter out common abbreviations of highway codes
+    clean = [n for n in names if n and len(n) > 2 and not n.startswith(('NH', 'SH', 'MDR', 'KA'))]
+    
+    if clean:
+        return sorted(clean, key=len)[0]   # shortest meaningful name
+    if names:
+        return sorted(list(names), key=len)[0]
+    return None
+
 async def fetch_resources(location: str):
     """
     Look up IDRN resources for the given location string.
@@ -609,37 +669,7 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
     def _approx_dist_deg(lat1, lon1, lat2, lon2):
         return math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2)
 
-    def _resolve_road_name(nid, G, search_radius=5):
-        """
-        Look at the node AND its immediate graph neighbours for edge names.
-        Returns the most informative road name found, or None.
-        """
-        candidates = [nid]
-        try:
-            candidates += list(G.successors(nid)) + list(G.predecessors(nid))
-        except Exception:
-            pass
-
-        names = set()
-        for n in candidates[:search_radius + 1]:
-            try:
-                for _, _, edata in G.edges(n, data=True):
-                    nm = edata.get('name')
-                    if nm:
-                        if isinstance(nm, list):
-                            names.update(nm)
-                        else:
-                            names.add(nm)
-            except Exception:
-                pass
-
-        # Prefer shorter, cleaner names (road names beat highway codes)
-        clean = [n for n in names if n and len(n) > 2 and not n.startswith('NH') and not n.startswith('SH')]
-        if clean:
-            return sorted(clean, key=len)[0]   # shortest meaningful name
-        if names:
-            return sorted(names)[0]
-        return None
+    # (Function _resolve_road_name moved to top level for reuse)
 
     existing_shelter_coords = [(s['lat'], s['lon']) for s in safe_shelters]
     used_dry_nodes = set()          # avoid re-suggesting the exact same spot

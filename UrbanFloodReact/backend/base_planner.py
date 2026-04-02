@@ -184,35 +184,15 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
 
     def _resolve_node_name(self, node_id):
         """
-        Attempt to resolve a human-readable name for a node by checking adjacent edges.
+        Resolve a readable junction name using the centralized BFS resolver.
         """
-        try:
-            names = set()
-            # Check outgoing edges
-            if node_id in self.G:
-                for u, v, data in self.G.edges(node_id, data=True):
-                    name = data.get('name')
-                    if name:
-                        if isinstance(name, list): names.update(name)
-                        else: names.add(name)
-                
-                # Check incoming edges (if graph is directed)
-                if hasattr(self.G, 'in_edges'):
-                    for u, v, data in self.G.in_edges(node_id, data=True):
-                        name = data.get('name')
-                        if name:
-                            if isinstance(name, list): names.update(name)
-                            else: names.add(name)
-            
-            if not names:
-                return f"Junction near ({round(self.G.nodes[node_id].get('y',0), 4)}, {round(self.G.nodes[node_id].get('x',0), 4)})"
-            
-            unique_names = sorted(list(names))
-            if len(unique_names) > 3:
-                return f"{' / '.join(unique_names[:2])} (+{len(unique_names)-2} roads)"
-            return " / ".join(unique_names)
-        except Exception:
-            return "Unnamed Junction"
+        from service import _resolve_road_name
+        name = _resolve_road_name(node_id, self.G, max_depth=3)
+        if name:
+            return name
+        
+        # Fallback to coordinate name
+        return f"Junction near ({round(self.G.nodes[node_id].get('y',0), 4)}, {round(self.G.nodes[node_id].get('x',0), 4)})"
 
     def run(self):
         raise NotImplementedError("Subclass must implement run()")

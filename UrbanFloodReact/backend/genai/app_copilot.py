@@ -10,13 +10,21 @@ Uses Gemini 2.5 Flash function calling to drive a multi-step flow:
 import os
 import json
 import difflib
-import httpx
 import google.generativeai as genai
+import inspect
+import httpx
 
 from genai.mcp_evacuation_server import (
     get_simulation_state, get_shelter_status, get_route_summary,
     analyze_road_conditions, get_rescue_guidelines, narrate_best_route,
     check_bus_availability, analyze_transit_disruptions, identify_evacuation_hubs
+)
+
+from genai.mcp_flood_intelligence_server import (
+    get_metro_status as _flood_intel_metro,
+    get_flood_impact as _flood_intel_impact,
+    get_shelter_resource_map as _flood_intel_resources,
+    get_vulnerability_hotspots as _flood_intel_hotspots
 )
 
 BACKEND_TOOLS = {
@@ -29,6 +37,10 @@ BACKEND_TOOLS = {
     "check_bus_availability": check_bus_availability,
     "analyze_transit_disruptions": analyze_transit_disruptions,
     "identify_evacuation_hubs": identify_evacuation_hubs,
+    "get_metro_status": _flood_intel_metro,
+    "get_flood_impact": _flood_intel_impact,
+    "get_shelter_resource_map": _flood_intel_resources,
+    "get_vulnerability_hotspots": _flood_intel_hotspots,
 }
 
 COPILOT_SYSTEM_PROMPT = """You are the 'App Copilot' for the Urban Flood Evacuation System.
@@ -223,15 +235,25 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
     Returns a tool-call dict if a location is found, None otherwise.
     """
     # Only trigger for messages that look like they mention a place name
-    location_triggers = ["run", "simulate", "simulation", "sim", "for", "select", "load", "set", "region"]
+    # Trigger words - narrowed to reduce false positives
+    location_triggers = ["run", "simulate", "simulation", "sim", "select", "load", "region"]
     msg_lower = user_msg.lower()
     if not any(t in msg_lower for t in location_triggers):
         return None
 
+    # Stopwords that should NEVER be fuzzy-matched to locations
+    stopwords = {
+        "what", "where", "who", "when", "why", "how", "those", "these", "this", "that",
+        "best", "good", "better", "great", "show", "tell", "give", "want", "need",
+        "help", "green", "blue", "yellow", "purple", "white", "black", "with", "using",
+        "line", "lane", "road", "rail", "metro", "train", "bus", "alternatives"
+    }
+
     # Extract candidate words (> 3 chars, stripped of punctuation)
     words = [w.strip('.,?!:') for w in user_msg.split() if len(w.strip('.,?!:')) > 3]
-    # Filter out trigger words themselves
-    words = [w for w in words if w.lower() not in location_triggers and w.lower() not in ("with", "using", "enable", "mode", "traffic", "live", "rainfall", "default", "defaults")]
+    # Filter out trigger words and stopwords
+    words = [w for w in words if w.lower() not in location_triggers and w.lower() not in stopwords]
+    
     if not words:
         return None
 
@@ -255,8 +277,8 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
         if hm: return {"type": "tool_call", "name": "select_region", "arguments": {"hobli": hm}}
 
     for w in attempts:
-        hm, hr = _best_fuzzy_match(w, available_hoblis, min_ratio=0.6)
-        tm, tr = _best_fuzzy_match(w, list(flat_taluks.keys()), min_ratio=0.6)
+        hm, hr = _best_fuzzy_match(w, available_hoblis, min_ratio=0.75)  # Stricter threshold
+        tm, tr = _best_fuzzy_match(w, list(flat_taluks.keys()), min_ratio=0.75)
         if hm and hr > best_hobli_ratio:
             best_hobli, best_hobli_ratio = hm, hr
         if tm and tr > best_taluk_ratio:
@@ -394,7 +416,11 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
                         print(f"[Copilot] Executing BACKEND tool '{func_name}'")
                         func = BACKEND_TOOLS[func_name]
                         try:
-                            result = func(**args)
+                            # ── FIX: Handle both sync and async tools ──
+                            if inspect.iscoroutinefunction(func):
+                                result = await func(**args)
+                            else:
+                                result = func(**args)
                         except Exception as e:
                             print(f"[Copilot] Tool error: {e}")
                             result = f"Error: {e}"

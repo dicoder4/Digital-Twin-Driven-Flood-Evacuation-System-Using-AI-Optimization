@@ -63,13 +63,24 @@ from genai.mcp_evacuation_server import (
     identify_evacuation_hubs
 )
 
+from genai.mcp_flood_intelligence_server import (
+    get_metro_status as _flood_intel_metro,
+    get_flood_impact as _flood_intel_impact,
+    get_shelter_resource_map as _flood_intel_resources,
+    get_vulnerability_hotspots as _flood_intel_hotspots
+)
+
 AGENT_TOOLS = [
     narrate_best_route, 
     analyze_road_conditions, 
     get_rescue_guidelines,
     check_bus_availability,
     analyze_transit_disruptions,
-    identify_evacuation_hubs
+    identify_evacuation_hubs,
+    _flood_intel_metro,
+    _flood_intel_impact,
+    _flood_intel_resources,
+    _flood_intel_hotspots,
 ]
 
 async def stream_chat(question: str, context_data: dict):
@@ -97,19 +108,66 @@ User Question: {question}
     if gemini_key:
         try:
             import google.generativeai as genai
+            import inspect
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel(
                 model_name="gemini-2.5-flash",
                 system_instruction=CHAT_SYSTEM_PROMPT,
                 tools=AGENT_TOOLS
             )
-            chat = model.start_chat(enable_automatic_function_calling=True)
-            response = chat.send_message(user_prompt, stream=False)
+            
+            # Manual execution loop to support async tools
+            chat = model.start_chat()
+            response = chat.send_message(user_prompt)
+
+            for i in range(10):
+                if not response.candidates or not response.candidates[0].content.parts:
+                    break
+                
+                parts = response.candidates[0].content.parts
+                found_call = False
+                for part in parts:
+                    if part.function_call:
+                        found_call = True
+                        fc = part.function_call
+                        args = {k: v for k, v in fc.args.items()}
+                        
+                        # Find the tool function
+                        func = None
+                        for t in AGENT_TOOLS:
+                            if t.__name__ == fc.name:
+                                func = t
+                                break
+                        
+                        if func:
+                            try:
+                                # Handle both sync and async tools
+                                if inspect.iscoroutinefunction(func):
+                                    result = await func(**args)
+                                else:
+                                    result = func(**args)
+                            except Exception as e:
+                                result = f"Error executing tool: {e}"
+                            
+                            response = chat.send_message(
+                                genai.protos.Content(
+                                    parts=[genai.protos.Part(
+                                        function_response=genai.protos.FunctionResponse(
+                                            name=fc.name,
+                                            response={"result": result}
+                                        )
+                                    )]
+                                )
+                            )
+                
+                if not found_call:
+                    break
+
             try:
                 if response.text:
                     yield "data: " + json.dumps({"text": response.text}) + nl
             except ValueError:
-                pass # Ignore parts with no text
+                pass
             return  # success
         except Exception as e:
             err_text = f"_(Gemini error: {e} — falling back to Groq...)_\n\n"
