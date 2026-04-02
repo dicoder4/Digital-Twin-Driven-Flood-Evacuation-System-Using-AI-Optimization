@@ -52,6 +52,13 @@ Fetches real-time weather information using the Model Context Protocol (MCP):
 - **`mcp_weather_client.py`**: Connects to `@modelcontextprotocol/server-weather` via stdio
 - **`mcp_weather_server.py`**: FastMCP server exposing `get_current_weather` as a tool
 
+### 6. Flood Intelligence Server (`mcp_flood_intelligence_server.py`)
+Provides advanced reasoning tools for deep situational awareness:
+- **Metro System Health**: Aggregates station-level data into line-wise status (Operational, Degraded, or Critical).
+- **Impact Assessment**: Summarizes population risk and identifies flooded landmarks (junctions and stations).
+- **Resource Mapping**: Identifies "Super-Hubs"—safe shelters with immediate access to rescue boats, medical supplies, and food.
+- **Vulnerability Hotspots**: Detects clusters of high-risk populations stranded far from safe zones.
+
 ## Setup Instructions
 
 1. **Environment Variables**: Make sure your `.env` file contains:
@@ -117,11 +124,18 @@ The system includes a dedicated **Model Context Protocol (MCP)** server, allowin
 - **Purpose**: Exposes the private simulation state as a set of standardized "tools" and "resources" that any MCP-compatible agent can use to perform autonomous analysis.
 
 ### Available MCP Tools
+#### Core Evacuation Tools (`mcp_evacuation_server.py`)
 - `get_simulation_state`: Returns a high-level summary of the latest run (success rate, evacuee counts).
 - `get_shelter_status`: Lists all shelters with real-time occupancy and severity levels (🔴 CRITICAL, 🟢 MODERATE, etc.).
 - `get_route_summary`: Provides technical stats on the computed evacuation paths.
 - `get_expert_analysis`: Forces a specific persona (Logistics/Tactical/Civic) to analyze the current data.
 - `ask_evacuation_question`: Allows the external agent to ask free-form questions about the dashboard's state.
+
+#### Intelligence & Reasoning Tools (`mcp_flood_intelligence_server.py`)
+- `get_metro_status`: Analyze metro rail system integrity by line (Operational/Degraded/Critical).
+- `get_flood_impact`: Comprehensive socio-economic impact summary with landmark mapping.
+- `get_shelter_resource_map`: Maps safe shelters with nearby logistics (boats, medical, food).
+- `get_vulnerability_hotspots`: Identifies high-risk population clusters for tactical deployment.
 
 ### Route Recommendations Changes
 - Digital Twin Integration: The context_builder translates real-time coordinates, flood depths, and shelter capacities into a structured tactical summary.
@@ -129,15 +143,16 @@ The system includes a dedicated **Model Context Protocol (MCP)** server, allowin
 - Strategy Generation: The system doesn't just show data; it performs mathematical preprocessing to identify Pressure Junctures (bottlenecks) and feeds these to the LLM for tactical planning.
 - Expert Personas: You have specialized agents (Logistics Chief, Tactical Commander, Civic Authority) that utilize this data for structured, professional reporting.
 
-### Running the MCP Server
+### Running the MCP Servers
 To expose the Digital Twin to external agents:
 1. Ensure the main FastAPI backend is running (`uvicorn main:app`).
-2. Start the MCP server:
+2. Start the desired MCP server:
    ```bash
    cd backend/genai
-   python mcp_evacuation_server.py
+   python mcp_evacuation_server.py          # Core evacuation tools
+   python mcp_flood_intelligence_server.py  # Deep reasoning tools
    ```
-The server will communicate over `stdio` by default, making it easy to plug into Claude Desktop's configuration.
+The servers will communicate over `stdio` by default, making it easy to plug into Claude Desktop's configuration.
 
 ---
 
