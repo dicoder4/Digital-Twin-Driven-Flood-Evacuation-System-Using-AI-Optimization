@@ -27,7 +27,7 @@ const BASE_ROAD_PAINT = {
 const FLOOD_FILL_PAINT = {
     'fill-color': [
         'interpolate', ['linear'], ['coalesce', ['get', 'intensity'], 0.2],
-        0.2, 'rgba(175, 202, 249, 0.75)', // Shallow Blue
+        0.2, 'rgba(197, 215, 248, 0.75)', // Shallow Blue
         0.6, 'rgba(11, 146, 243, 0.45)',  // Moderate Blue
         1.0, 'rgba(2, 45, 125, 0.85)',    // Deep Navy (High Intensity)
     ],

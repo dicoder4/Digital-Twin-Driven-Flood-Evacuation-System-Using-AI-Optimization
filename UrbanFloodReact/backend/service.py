@@ -818,7 +818,7 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
     suggestions.sort(key=lambda x: -x['deficit_population'])
     return suggestions, genuinely_unreachable_count
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None):
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "progressive"):
     """Generator for SSE simulation stream."""
     import time
     loop = asyncio.get_event_loop()
@@ -1154,6 +1154,7 @@ async def run_compare_generator(
     use_traffic: bool = False,
     population: int | None = None,
     extra_shelters: list | None = None,
+    mode: str = "progressive",
 ):
     """
     SSE generator for compare mode:
@@ -1182,7 +1183,11 @@ async def run_compare_generator(
     lakes  = entry["lake_nodes"]
 
     sim = UrbanFloodSimulator(G_ref.copy(), drain_nodes=drains, lake_nodes=lakes)
-    sim.initialize_from_drains(rainfall_mm)
+    # Mode selection
+    if mode == "progressive":
+        sim.set_progressive_rainfall(rainfall_mm, steps)
+    else:
+        sim.initialize_from_drains(rainfall_mm)
 
     # Population
     if population is not None:

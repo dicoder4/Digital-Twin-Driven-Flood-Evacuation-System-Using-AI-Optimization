@@ -234,6 +234,7 @@ async def simulate_stream(
     use_traffic: bool = Query(False),
     algorithm:   str  = Query("ga", description="Optimisation algorithm: 'ga', 'aco', or 'pso'"),
     population:  int | None = Query(None, description="Override population count"),
+    mode:        str  = Query("progressive", description="Rainfall mode: 'progressive' or 'instant'"),
     extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """SSE stream of flood simulation steps."""
@@ -248,7 +249,7 @@ async def simulate_stream(
         service.run_simulation_generator(
             hobli, rainfall_mm, steps, decay_factor,
             evacuation_mode, use_traffic, algorithm, population,
-            extra_shelters=extra,
+            extra_shelters=extra, mode=mode,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -265,6 +266,7 @@ async def simulate_compare(
     evacuation_mode: bool  = Query(False),
     use_traffic:     bool  = Query(False),
     population:      int | None = Query(None),
+    mode:            str  = Query("progressive", description="Rainfall mode: 'progressive' or 'instant'"),
     extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """
@@ -284,7 +286,7 @@ async def simulate_compare(
         service.run_compare_generator(
             hobli, rainfall_mm, steps, decay_factor,
             evacuation_mode, use_traffic, population,
-            extra_shelters=extra,
+            extra_shelters=extra, mode=mode,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
