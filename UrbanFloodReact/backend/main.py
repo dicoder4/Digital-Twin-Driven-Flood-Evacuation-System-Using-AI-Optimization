@@ -55,6 +55,14 @@ async def lifespan(app: FastAPI):
     
     print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
     print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
+    
+    # Bootstrap MongoDB
+    try:
+        from db import bootstrap_mongo_data
+        bootstrap_mongo_data()
+    except Exception as e:
+        print(f"[MONGO DEBUG] Bootstrap failed: {e}")
+
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
     asyncio.create_task(weather_watcher_loop())

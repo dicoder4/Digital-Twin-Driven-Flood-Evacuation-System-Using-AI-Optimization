@@ -19,3 +19,5 @@ groq
 rasterio
 pyproj
 fiona
+pymongo 
+dnspython

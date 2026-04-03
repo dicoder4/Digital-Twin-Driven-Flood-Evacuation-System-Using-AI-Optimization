@@ -69,21 +69,28 @@ POPULATION_STORE: dict = {}
 
 def load_population(csv_path: Path, regions_tree: dict, norm_key_fn) -> None:
     """
-    Parse the BBMP ward CSV, do a two-pass match, populate POPULATION_STORE.
+    Parse the BBMP ward CSV (or MongoDB), do a two-pass match, populate POPULATION_STORE.
     """
     POPULATION_STORE.clear()
 
-    if not csv_path.exists():
-        print(f"  [population] CSV not found: {csv_path}")
-        return
-
     try:
-        df = pd.read_csv(csv_path)
-        df.columns = [c.strip() for c in df.columns]
-        print(f"  [population] Loaded {len(df)} wards from {csv_path.name}")
-    except Exception as e:
-        print(f"  [population] ERROR reading CSV: {e}")
-        return
+        from db import get_population_df
+        df = get_population_df()
+        df.columns = [str(c).strip() for c in df.columns]
+        print(f"  [population] Loaded {len(df)} wards from MongoDB")
+    except Exception as mongo_err:
+        print(f"  [population] Mongo fallback triggered: {mongo_err}")
+        if not csv_path.exists():
+            print(f"  [population] CSV not found: {csv_path}")
+            return
+
+        try:
+            df = pd.read_csv(csv_path)
+            df.columns = [str(c).strip() for c in df.columns]
+            print(f"  [population] Loaded {len(df)} wards from {csv_path.name}")
+        except Exception as e:
+            print(f"  [population] ERROR reading CSV: {e}")
+            return
 
     # Identify columns
     col_ward = next((c for c in df.columns if "ward" in c.lower() and "name" in c.lower()), None)

@@ -23,8 +23,21 @@ def load_coords_from_json(path: Path, district: str) -> dict:
     """
     Returns: dict  norm_key → {lat, lon, original_name, district, num_points}
     """
-    with open(path, encoding="utf-8") as f:
-        records = json.load(f)
+    ctype = "urban" if "urban" in path.name.lower() else "rural"
+    records = None
+    
+    try:
+        from db import get_hobli_coords_raw
+        records = get_hobli_coords_raw(ctype)
+    except Exception as mongo_err:
+        print(f"  [coords] Mongo fallback triggered for {ctype}: {mongo_err}")
+        
+    if records is None:
+        if not path.exists():
+            print(f"  [coords] JSON not found: {path.name}")
+            return {}
+        with open(path, encoding="utf-8") as f:
+            records = json.load(f)
 
     buckets: dict[str, list] = defaultdict(list)
     names_map: dict[str, str] = {}
