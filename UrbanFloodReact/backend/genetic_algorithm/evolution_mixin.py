@@ -144,17 +144,26 @@ class EvolutionMixin:
         shelter_counts = defaultdict(int)
 
         for i, j in enumerate(chromosome):
-            if j < 0:
-                continue  # unassigned — skip, not penalised here
-
             pop = self.at_risk_nodes[i]['pop']
+            
+            if j < 0:
+                # PENALIZE UNASSIGNED MASSIVELY
+                # If we don't penalize this, the GA (which minimizes distance)
+                # will actively try to abandon people to lower its total score!
+                total_dist += 1_000_000 * pop
+                total_time += 1_000_000 * pop
+                continue
+
             dist = self.dist_matrix[i, j]
             t = self.time_matrix[i, j]
 
             if not math.isfinite(dist):
-                dist = 1_000_000
+                # Penalty for assigning to an unreachable shelter
+                # MUST be much worse than unassigned (-1) to prevent the GA
+                # from making fake assignments that fail DECODE.
+                dist = 10_000_000
             if not math.isfinite(t):
-                t = 1_000_000
+                t = 10_000_000
 
             total_dist += dist * pop
             total_time += t * pop
