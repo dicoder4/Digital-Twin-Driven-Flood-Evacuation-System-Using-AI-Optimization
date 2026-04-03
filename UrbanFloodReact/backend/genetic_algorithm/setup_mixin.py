@@ -84,7 +84,7 @@ class SetupMixin:
         Bulk fetches midpoints of required segments.
         Only runs if use_tomtom_traffic=True.
         """
-        limit = 15  # Reduced to conserve API quotas
+        limit = 100  # Reduced to conserve API quotas
         edge_refs = []
         coords = []
         
@@ -279,42 +279,44 @@ class SetupMixin:
     def _compute_greedy_chromosome(self):
         """
         Greedy assignment: each at-risk node gets the nearest reachable shelter
-        (by flood-weighted distance). Respects capacity — once a shelter is full,
-        the next-nearest is tried or overflow distributed to lowest fill ratio.
+        (by flood-weighted distance) that still has remaining capacity.
+
+        Strict capacity enforcement — if all shelters are full, the node is
+        assigned -1 (unassigned sentinel). Unassigned nodes are counted as
+        at_risk_remaining in the service layer and drive shelter suggestions.
         """
         n_shelters = len(self.safe_shelters)
         capacities = [s['capacity'] for s in self.safe_shelters]
-        assigned_counts = [0] * n_shelters
+        remaining = list(capacities)   # tracks remaining capacity per shelter
         chromosome = []
 
         for i in range(len(self.at_risk_nodes)):
             pop = self.at_risk_nodes[i]['pop']
-            # Sort shelters by flood-weighted distance
+            # Sort shelters by flood-weighted distance (nearest first)
             order = np.argsort(self.dist_matrix[i])
-            
-            chosen = int(order[0])
-            best_overflow_j = chosen
-            min_ratio = float('inf')
 
+            chosen = -1  # default: unassigned
             for j in order:
                 j = int(j)
-                ratio = (assigned_counts[j] + pop) / max(1.0, capacities[j])
-                
-                # If there's physical space, take it immediately
-                if ratio <= 1.0:
+                if remaining[j] >= pop:
                     chosen = j
+                    remaining[j] -= pop
                     break
-                
-                # Otherwise, track the shelter with the least proportional overflow
-                if ratio < min_ratio:
-                    min_ratio = ratio
-                    best_overflow_j = j
-            else:
-                # Loop exhausted: all shelters are over capacity. 
-                # Pick the one with the smallest overflow ratio instead of the absolute nearest.
-                chosen = best_overflow_j
 
-            assigned_counts[chosen] += pop
+            # chosen == -1 means no shelter has capacity for this group.
+            # The _capacity_repair pass in _init_population will also validate,
+            # but the greedy seed is already strictly capacity-feasible here.
             chromosome.append(chosen)
+
+        n_unassigned = sum(1 for x in chromosome if x < 0)
+        if n_unassigned:
+            unassigned_pop = sum(
+                self.at_risk_nodes[i]['pop']
+                for i, x in enumerate(chromosome) if x < 0
+            )
+            print(
+                f"  [GA GREEDY] {n_unassigned} node groups ({unassigned_pop} people) "
+                f"left unassigned — shelter capacity exhausted."
+            )
 
         return chromosome

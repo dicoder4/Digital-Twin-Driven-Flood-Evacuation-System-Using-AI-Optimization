@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, CloudRain } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -24,10 +24,13 @@ import { SheltersPanel } from './components/SheltersPanel';
 import { EvacuationPanel } from './components/EvacuationPanel';
 import { FloodMap } from './components/FloodMap';
 import { DraSidebar } from './components/DraSidebar';
+import { PanelOfExperts } from './components/PanelOfExperts';
+import { EvacuationChat } from './components/EvacuationChat';
 import { computeShelterSafety } from './utils/geoUtils';
 import { API_URL } from './config';
 import { AppCopilot } from './components/AppCopilot';
 import { AutomationPanel } from './components/AutomationPanel';
+import { PublicTransportAgent } from './components/PublicTransportAgent';
 import './App.css';
 
 export default function App() {
@@ -42,6 +45,7 @@ export default function App() {
   const [loadedHobli, setLoadedHobli] = useState('');
   const [baseRoadsData, setBaseRoadsData] = useState(null);
   const [selRec, setSelRec] = useState(null);
+  const [busManifest, setBusManifest] = useState(null);
 
   // ── Population / shelter state ────────────────────────────────
   const [populationCount, setPopulationCount] = useState(0);
@@ -74,8 +78,13 @@ export default function App() {
   // ── UI state ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('setup');
   const [selectedShelterId, setSelectedShelterId] = useState(null);
+  const [selectedBusId, setSelectedBusId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
+  const [mapPinBox, setMapPinBox] = useState(null);
+  const [selectedMetro, setSelectedMetro] = useState(null);
+  const [metroStations, setMetroStations] = useState([]);
+  const [metroLines, setMetroLines] = useState([]);
 
   // ── Sidebar resize ────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -112,24 +121,24 @@ export default function App() {
   // Recompute shelter safety on every flood update, then override with backend source of truth
   const sheltersWithSafety = useMemo(() => {
     let computed = computeShelterSafety(shelterCandidates, sim.floodData);
-    
+
     // Once simulation is done or we have a compare report, override with backend's definitive accurate safety
     // Backend also considers high-risk access roads, which frontend doesn't.
     let reports = null;
     if (compareResults && compareActiveAlgo) {
-        reports = compareResults[compareActiveAlgo]?.shelter_reports;
+      reports = compareResults[compareActiveAlgo]?.shelter_reports;
     } else if (sim.finalReport?.summary?.shelter_reports) {
-        reports = sim.finalReport.summary.shelter_reports;
+      reports = sim.finalReport.summary.shelter_reports;
     }
 
     if (reports?.length > 0) {
-        computed = computed.map(c => {
-            const report = reports.find(r => String(r.id) === String(c.id));
-            if (report) {
-                return { ...c, safe: report.safe };
-            }
-            return c;
-        });
+      computed = computed.map(c => {
+        const report = reports.find(r => String(r.id) === String(c.id));
+        if (report) {
+          return { ...c, safe: report.safe };
+        }
+        return c;
+      });
     }
 
     return computed;
@@ -157,11 +166,23 @@ export default function App() {
     setPopulationCount(0);
     setUnsafePeopleCount(0);
     setShelterCandidates([]);
+    setBusManifest(null);
+    setSelectedBusId(null);
+    setMetroLines([]);
+    setMetroStations([]);
+    setSelectedMetro(null);
     setActiveTab('setup');
     try {
       const res = await axios.post(`${API_URL}/load-region`, { hobli: targetHobli });
       const { lat, lon } = res.data;
       setViewState(v => ({ ...v, longitude: lon, latitude: lat, zoom: 14 }));
+      
+      const stations = res.data.metro_stations || [];
+      const lines = res.data.metro_lines || { type: 'FeatureCollection', features: [] };
+      
+      setMetroStations(stations);
+      setMetroLines(lines);
+      
       const mapRes = await axios.get(`${API_URL}/map-data`, { params: { hobli: targetHobli } });
       setBaseRoadsData(mapRes.data);
       setLoadedHobli(targetHobli);
@@ -209,12 +230,27 @@ export default function App() {
   }, [regions, handleLoadRegion, sim]);
 
   // ── Start single simulation ───────────────────────────────────
-  const handleStart = () => {
+  const handleStart = (extraShelters = null) => {
     if (!regionLoaded) return;
     setCompareResults(null);
+    setBusManifest(null);
+    setSelectedBusId(null);
     setActiveTab('setup');
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount);
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, extraShelters);
   };
+
+  // ── Re-run with suggested new shelters injected ───────────────
+  const handleRerunWithSuggestions = useCallback((suggestions) => {
+    if (!regionLoaded || !suggestions?.length) return;
+    setCompareResults(null);
+    setBusManifest(null);
+    setSelectedBusId(null);
+    setActiveTab('setup');
+    sim.setStatusMsg(`Re-running with ${suggestions.length} suggested shelter(s)…`);
+    // Use same current params but inject extra shelters from suggestions
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, suggestions);
+  }, [regionLoaded, loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, sim]);
+
 
   // ── DRA Mode: Automatic ACO + Traffic run ────────────────────
   const handleDraRunEvacuation = () => {
@@ -226,6 +262,8 @@ export default function App() {
     setAlgorithm('aco');
     setUseTraffic(true);
     setEvacuationMode(false);
+    setBusManifest(null);
+    setSelectedBusId(null);
     setActiveTab('setup');
 
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco', populationCount);
@@ -236,6 +274,7 @@ export default function App() {
     compareAbortRef.current = true;   // signal any running compare to stop
     sim.reset();
     setCompareResults(null);
+    setBusManifest(null);
     setCompareRunning(false);
     setCompareProgress('');
     setCompareActiveAlgo(null);
@@ -251,6 +290,8 @@ export default function App() {
     if (!regionLoaded || compareRunning) return;
     compareAbortRef.current = false;
     setCompareResults(null);
+    setBusManifest(null);
+    setSelectedBusId(null);
     setCompareRunning(true);
     setCompareProgress('Flood simulation running…');
     sim.reset();
@@ -301,6 +342,7 @@ export default function App() {
           // Pipe flood / roads data into the shared sim hook for map rendering
           if (data.flood_geojson?.features?.length > 0) sim.setFloodData(data.flood_geojson);
           if (data.roads_geojson?.features?.length > 0) sim.setRoadsData(data.roads_geojson);
+          
           return;
         }
 
@@ -378,11 +420,11 @@ export default function App() {
     };
   }, [regionLoaded, compareRunning, loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, sim]);
 
-  // Auto-switch to Evacuation tab when single-algo sim completes
   useEffect(() => {
     if (sim.simulationDone && !compareRunning) {
       setActiveTab('evacuation');
       setSelectedShelterId(null);
+      setSelectedBusId(null);
       setShowTrafficPins(false);
     }
   }, [sim.simulationDone, compareRunning]);
@@ -405,7 +447,7 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ '--sidebar-w': `${sidebarWidth}px` }}>
       {/* ─── Sidebar ───────────────────────────────────────── */}
       <aside className="sidebar" ref={sidebarRef} style={{ width: sidebarWidth }}>
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
@@ -453,6 +495,12 @@ export default function App() {
             title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
           ><Route size={11} /> Evacuation</button>
           <button
+            className={`sidebar-tab ${activeTab === 'ai-agent' ? 'active' : ''}`}
+            onClick={() => setActiveTab('ai-agent')}
+            disabled={!sim.simulationDone && !compareResults}
+            title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
+          ><Cpu size={11} /> Resources</button>
+          <button
             className={`sidebar-tab ${activeTab === 'automation' ? 'active' : ''}`}
             onClick={() => setActiveTab('automation')}
           ><CloudRain size={11} /> Sentinel</button>
@@ -461,8 +509,8 @@ export default function App() {
         <div className="sidebar-content custom-scrollbar">
 
           {/* ── SETUP TAB ────────────────────────────────── */}
-          {activeTab === 'setup' && (
-            isDraMode ? (
+          <div style={{ display: activeTab === 'setup' ? 'block' : 'none' }}>
+            {isDraMode ? (
               <DraSidebar
                 allHoblis={regions.allHoblis}
                 selHobli={regions.selHobli}
@@ -656,10 +704,10 @@ export default function App() {
                   </>
                 )}
               </>
-            )
-          )}
+            )}
+          </div>
 
-          {activeTab === 'evacuation' && (
+          <div style={{ display: activeTab === 'evacuation' ? 'block' : 'none', height: '100%' }}>
             <EvacuationPanel
               locationName={loadedHobli}
               summary={sim.finalReport?.summary}
@@ -673,20 +721,56 @@ export default function App() {
               onSetCompareAlgo={setCompareActiveAlgo}
               isDraMode={isDraMode}
               evacuationPlan={sim.evacuationPlan || []}
+              onRerunWithSuggestions={handleRerunWithSuggestions}
             />
-          )}
 
+          </div>
 
-          {activeTab === 'automation' && (
-              <div className="evac-panel" style={{height: "100%", paddingBottom: "2rem"}}>
-                  <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
-                      sim.setStatusMsg("Sentinel Auto-Triggered!");
-                      await handleLoadRegion(autoHobli);
-                      sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
-                      setActiveTab('evacuation');
-                  }} />
+          <div className="evac-panel" style={{ display: activeTab === 'ai-agent' ? 'flex' : 'none', height: "100%", paddingBottom: "2rem", overflowY: 'auto' }}>
+            {sim.simulationDone || compareResults ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <PublicTransportAgent
+                  evacuationPlan={compareResults && compareActiveAlgo ? compareResults[compareActiveAlgo]?.evacuation_plan : (sim.evacuationPlan || [])}
+                  onManifestGenerated={setBusManifest}
+                  shelters={sheltersWithSafety}
+                  selectedBusId={selectedBusId}
+                  onSelectBus={setSelectedBusId}
+                  metroReports={compareResults && compareActiveAlgo ? compareResults[compareActiveAlgo]?.metro_reports : (sim.finalReport?.summary?.metro_reports || [])}
+                  metroStations={metroStations}
+                  onSelectMetro={setSelectedMetro}
+                  selectedMetroId={selectedMetro ? (selectedMetro.id || `${selectedMetro.name}::${selectedMetro.line || ''}`) : null}
+                  loadedHobli={loadedHobli}
+                />
+                {compareResults && compareActiveAlgo ? (
+                  <>
+                    <PanelOfExperts
+                      locationName={loadedHobli}
+                      summary={compareResults[compareActiveAlgo]}
+                      evacuationPlan={compareResults[compareActiveAlgo]?.evacuation_plan ?? []}
+                    />
+                  </>
+                ) : sim.finalReport?.summary ? (
+                  <>
+                    <PanelOfExperts locationName={loadedHobli} summary={sim.finalReport?.summary} evacuationPlan={sim.evacuationPlan || []} />
+                  </>
+                ) : null}
               </div>
-          )}
+            ) : (
+              <div className="evac-empty">
+                <Cpu size={32} className="evac-empty-icon" style={{ marginBottom: "1rem", color: "#64748b" }} />
+                <p style={{ color: "#64748b", textAlign: "center", lineHeight: "1.5" }}>Run a simulation to interact with the AI Evacuation Agent.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="evac-panel" style={{ display: activeTab === 'automation' ? 'flex' : 'none', height: "100%", paddingBottom: "2rem" }}>
+            <AutomationPanel onTriggerSimulation={async (autoHobli, thresholdMm) => {
+              sim.setStatusMsg("Sentinel Auto-Triggered!");
+              await handleLoadRegion(autoHobli);
+              sim.start(autoHobli, thresholdMm > 0 ? thresholdMm : 150, 5, 0.5, false, true, 'ga', 0);
+              setActiveTab('evacuation');
+            }} />
+          </div>
         </div>
 
         <div className="status-bar">
@@ -722,6 +806,20 @@ export default function App() {
         showTraffic={useTraffic && (sim.simulationDone || !!compareResults)}
         showTrafficPins={showTrafficPins}
         onToggleTrafficPins={() => setShowTrafficPins(v => !v)}
+        busManifest={busManifest}
+        selectedBusId={selectedBusId}
+        mapPinBox={mapPinBox}
+        onMapClick={(lat, lon) => {
+          setMapPinBox(prev => {
+            if (!prev) return { lat, lon };
+            // Increased proximity threshold (~500m area) to ensure easy removal
+            const dist = Math.abs(prev.lat - lat) + Math.abs(prev.lon - lon);
+            if (dist < 0.005) return null; 
+            return { lat, lon };
+          });
+        }}
+        selectedMetro={selectedMetro}
+        metroLines={metroLines}
       />
 
       <AppCopilot
@@ -729,6 +827,7 @@ export default function App() {
         availableHoblis={regions.allHoblis || []}
         regionsTree={regions.regionsTree || {}}
         populationCount={populationCount}
+        mapPin={mapPinBox}
         onNavigate={(tab) => {
           if (tab === 'evacuate' || tab === 'evacuation') {
             setActiveTab('evacuation');

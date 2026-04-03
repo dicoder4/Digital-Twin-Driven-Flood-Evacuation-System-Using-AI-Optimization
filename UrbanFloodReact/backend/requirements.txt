@@ -16,3 +16,8 @@ google-generativeai
 mcp
 pydantic
 groq
+rasterio
+pyproj
+fiona
+pymongo 
+dnspython

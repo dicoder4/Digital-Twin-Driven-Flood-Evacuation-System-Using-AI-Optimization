@@ -182,6 +182,17 @@ async def build_expert_context(summary_data: dict, evacuation_plan: list = None)
         "pressure_junctures": summary_data.get("pressure_points", []),
     }
 
+    # ── Add Metro Context if available ─────────────────────────────────────
+    metro_reports = summary_data.get("metro_reports", [])
+    if metro_reports:
+        context["metro_reports"] = metro_reports
+        context["metro_summary"] = {
+            "total_stations": len(metro_reports),
+            "unsafe_stations": sum(1 for s in metro_reports if s.get("status") == "unsafe"),
+            "caution_stations": sum(1 for s in metro_reports if s.get("status") == "caution"),
+            "safe_stations": sum(1 for s in metro_reports if s.get("status") == "safe"),
+        }
+
     if route_summary:
         context["route_overview"] = route_summary
 

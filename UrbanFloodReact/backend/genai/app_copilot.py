@@ -10,8 +10,38 @@ Uses Gemini 2.5 Flash function calling to drive a multi-step flow:
 import os
 import json
 import difflib
-import httpx
 import google.generativeai as genai
+import inspect
+import httpx
+
+from genai.mcp_evacuation_server import (
+    get_simulation_state, get_shelter_status, get_route_summary,
+    analyze_road_conditions, get_rescue_guidelines, narrate_best_route,
+    check_bus_availability, analyze_transit_disruptions, identify_evacuation_hubs
+)
+
+from genai.mcp_flood_intelligence_server import (
+    get_metro_status as _flood_intel_metro,
+    get_flood_impact as _flood_intel_impact,
+    get_shelter_resource_map as _flood_intel_resources,
+    get_vulnerability_hotspots as _flood_intel_hotspots
+)
+
+BACKEND_TOOLS = {
+    "get_simulation_state": get_simulation_state,
+    "get_shelter_status": get_shelter_status,
+    "get_route_summary": get_route_summary,
+    "analyze_road_conditions": analyze_road_conditions,
+    "get_rescue_guidelines": get_rescue_guidelines,
+    "narrate_best_route": narrate_best_route,
+    "check_bus_availability": check_bus_availability,
+    "analyze_transit_disruptions": analyze_transit_disruptions,
+    "identify_evacuation_hubs": identify_evacuation_hubs,
+    "get_metro_status": _flood_intel_metro,
+    "get_flood_impact": _flood_intel_impact,
+    "get_shelter_resource_map": _flood_intel_resources,
+    "get_vulnerability_hotspots": _flood_intel_hotspots,
+}
 
 COPILOT_SYSTEM_PROMPT = """You are the 'App Copilot' for the Urban Flood Evacuation System.
 Your job is to help the user navigate the application and run flood simulations.
@@ -148,7 +178,7 @@ def _build_tools(available_hoblis: list, flat_taluks: dict) -> list:
     ]
 
 
-def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest_msg: str) -> str:
+def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest_msg: str, map_pin: dict = None) -> str:
     """Inject dynamic location context into the system prompt."""
     hoblis_str = ", ".join(available_hoblis) if available_hoblis else "Hebbal, Yelahanka, Varthur, Begur (etc)"
 
@@ -171,7 +201,9 @@ You will receive location tool calls pre-resolved. Focus on:
 2. Parameter confirmation → call `ask_clarification` with options:
    ["▶ Start with defaults (ACO, 150mm)", "🔄 Start with GA instead", "🔄 Start with PSO instead", "📊 Start Compare Mode (GA vs ACO vs PSO)", "🚗 Enable live traffic", "⚡ Enable evac mode (1% population, faster)", "☁️ Use real-time rainfall"]
 3. Running simulations with specified params → call `run_simulation`
-4. General workflow questions → answer concisely
+4. For questions about the disaster, evacuation routes, transport, shelters, or anything else, CALL YOUR TOOLS to inspect the crisis database.
+
+{f"- CRITICAL: The user has dropped a PIN on the map at coordinates lat={map_pin['lat']}, lon={map_pin['lon']}. Whenever they ask to check buses 'here', 'at the pinned location', 'selected location', or 'this location', you MUST automatically use these exact coordinates ({map_pin['lat']}, {map_pin['lon']}) for any tool calls requiring `lat` and `lon`." if map_pin else ""}
 """
     return COPILOT_SYSTEM_PROMPT + validation
 
@@ -181,7 +213,8 @@ def _convert_messages(messages: list) -> list:
     history = []
     for msg in messages:
         role = "user" if msg["role"] == "user" else "model"
-        history.append({"role": role, "parts": [msg["content"]]})
+        content = msg.get("content", "")
+        history.append({"role": role, "parts": [content]})
     return history
 
 
@@ -202,15 +235,25 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
     Returns a tool-call dict if a location is found, None otherwise.
     """
     # Only trigger for messages that look like they mention a place name
-    location_triggers = ["run", "simulate", "simulation", "sim", "for", "select", "load", "set", "region"]
+    # Trigger words - narrowed to reduce false positives
+    location_triggers = ["run", "simulate", "simulation", "sim", "select", "load", "region"]
     msg_lower = user_msg.lower()
     if not any(t in msg_lower for t in location_triggers):
         return None
 
+    # Stopwords that should NEVER be fuzzy-matched to locations
+    stopwords = {
+        "what", "where", "who", "when", "why", "how", "those", "these", "this", "that",
+        "best", "good", "better", "great", "show", "tell", "give", "want", "need",
+        "help", "green", "blue", "yellow", "purple", "white", "black", "with", "using",
+        "line", "lane", "road", "rail", "metro", "train", "bus", "alternatives"
+    }
+
     # Extract candidate words (> 3 chars, stripped of punctuation)
     words = [w.strip('.,?!:') for w in user_msg.split() if len(w.strip('.,?!:')) > 3]
-    # Filter out trigger words themselves
-    words = [w for w in words if w.lower() not in location_triggers and w.lower() not in ("with", "using", "enable", "mode", "traffic", "live", "rainfall", "default", "defaults")]
+    # Filter out trigger words and stopwords
+    words = [w for w in words if w.lower() not in location_triggers and w.lower() not in stopwords]
+    
     if not words:
         return None
 
@@ -234,8 +277,8 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
         if hm: return {"type": "tool_call", "name": "select_region", "arguments": {"hobli": hm}}
 
     for w in attempts:
-        hm, hr = _best_fuzzy_match(w, available_hoblis, min_ratio=0.6)
-        tm, tr = _best_fuzzy_match(w, list(flat_taluks.keys()), min_ratio=0.6)
+        hm, hr = _best_fuzzy_match(w, available_hoblis, min_ratio=0.75)  # Stricter threshold
+        tm, tr = _best_fuzzy_match(w, list(flat_taluks.keys()), min_ratio=0.75)
         if hm and hr > best_hobli_ratio:
             best_hobli, best_hobli_ratio = hm, hr
         if tm and tr > best_taluk_ratio:
@@ -283,7 +326,7 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
     return None
 
 
-async def ask_copilot(messages: list, available_hoblis: list = None, regions_tree: dict = None) -> dict:
+async def ask_copilot(messages: list, available_hoblis: list = None, regions_tree: dict = None, map_pin: dict = None) -> dict:
     """
     Sends conversation to Gemini 2.5 Flash with function calling.
     Returns one of:
@@ -319,47 +362,114 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
 
     try:
         genai.configure(api_key=api_key)
+        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg, map_pin)
 
-        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg)
-        tools = _build_tools(available_hoblis or [], flat_taluks)
+        # --- Fix: Ensure tool list is consistent (either all functions or all protos) ---
+        # Gemini SDK takes a list of functions OR a list of protos. Mixing can be flaky.
+        # We'll convert our frontend declarations to a format Gemini likes, or just use parts.
+        
+        # Define safety settings to prevent unnecessary blocks
+        safety_settings = {
+            genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+        }
 
+        # Instead of protos.Tool, we'll just pass a list of functions where possible.
+        # But for navigate/ask_clarification we need the custom schema.
+        # Let's use the explicit tool declaration approach.
+        frontend_tools_obj = _build_tools(available_hoblis or [], flat_taluks)
+        backend_funcs = list(BACKEND_TOOLS.values())
+        
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
             system_instruction=system_instruction,
-            tools=tools,
+            tools=backend_funcs + frontend_tools_obj,
+            safety_settings=safety_settings
         )
 
         history = _convert_messages(messages[:-1]) if len(messages) > 1 else []
-
         chat = model.start_chat(history=history)
+        
+        print(f"[Copilot] Sending message: '{latest_user_msg}'")
         response = chat.send_message(latest_user_msg)
 
-        # Check for function calls
-        for part in response.parts:
-            if part.function_call:
-                fc = part.function_call
-                func_name = fc.name
-                args = {k: v for k, v in fc.args.items()}
+        # Agent execution loop for backend tools (max 10 iterations)
+        for i in range(10):
+            # Safe parts access
+            if not response.candidates or not response.candidates[0].content or not response.candidates[0].content.parts:
+                print(f"[Copilot] Iteration {i}: No parts in response. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'N/A'}")
+                break
+            
+            parts = response.candidates[0].content.parts
+            has_backend_call = False
+            
+            for part in parts:
+                if part.function_call:
+                    fc = part.function_call
+                    func_name = fc.name
+                    args = {k: v for k, v in fc.args.items()}
+                    print(f"[Copilot] Iteration {i}: Model called '{func_name}' with {args}")
 
-                # Intercept ask_clarification — return as chat message with options buttons
-                if func_name == "ask_clarification":
-                    return {
-                        "type": "message",
-                        "content": args.get("message", "Which option do you prefer?"),
-                        "options": list(args.get("options", [])),
-                    }
+                    if func_name in BACKEND_TOOLS:
+                        print(f"[Copilot] Executing BACKEND tool '{func_name}'")
+                        func = BACKEND_TOOLS[func_name]
+                        try:
+                            # ── FIX: Handle both sync and async tools ──
+                            if inspect.iscoroutinefunction(func):
+                                result = await func(**args)
+                            else:
+                                result = func(**args)
+                        except Exception as e:
+                            print(f"[Copilot] Tool error: {e}")
+                            result = f"Error: {e}"
+                        
+                        # Send result back and continue loop
+                        response = chat.send_message(
+                            genai.protos.Content(
+                                parts=[genai.protos.Part(
+                                    function_response=genai.protos.FunctionResponse(
+                                        name=func_name,
+                                        response={"result": result}
+                                    )
+                                )]
+                            )
+                        )
+                        has_backend_call = True
+                        break # Re-evaluate the new response from the top
+                        
+                    else:
+                        # Frontend / App tool! Return immediately to UI.
+                        print(f"[Copilot] Identified FRONTEND tool '{func_name}'. Returning to UI.")
+                        if func_name == "ask_clarification":
+                            return {
+                                "type": "message",
+                                "content": args.get("message", "Which option do you prefer?"),
+                                "options": list(args.get("options", [])),
+                            }
+                        return {
+                            "type": "tool_call",
+                            "name": func_name,
+                            "arguments": args,
+                        }
+            
+            if not has_backend_call:
+                # If we're here, either it's plain text or we've finished the tool chain
+                print(f"[Copilot] Iteration {i}: No further backend calls. Checking for text output.")
+                break
 
-                return {
-                    "type": "tool_call",
-                    "name": func_name,
-                    "arguments": args,
-                }
-
-        # Plain text response
-        content = response.text or "I couldn't process that request."
-        return {"type": "message", "content": content, "options": []}
+        # Final check for text output
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            # Check if any part has text
+            text_parts = [p.text for p in response.candidates[0].content.parts if p.text]
+            if text_parts:
+                return {"type": "message", "content": "\n".join(text_parts), "options": []}
+        
+        return {"type": "message", "content": "I'm sorry, I couldn't process that request properly. (Empty Response)", "options": []}
 
     except Exception as e:
+        print(f"[Copilot] CRITICAL ERROR: {e}")
         # If Gemini fails (e.g. rate limit 429), attempt fallback to Groq
         if "429" in str(e) or "quota" in str(e).lower():
             print(f"Gemini rate limit hit, falling back to Groq... ({e})")

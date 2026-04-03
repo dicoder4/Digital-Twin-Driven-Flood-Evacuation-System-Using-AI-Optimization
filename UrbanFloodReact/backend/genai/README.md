@@ -52,6 +52,13 @@ Fetches real-time weather information using the Model Context Protocol (MCP):
 - **`mcp_weather_client.py`**: Connects to `@modelcontextprotocol/server-weather` via stdio
 - **`mcp_weather_server.py`**: FastMCP server exposing `get_current_weather` as a tool
 
+### 6. Flood Intelligence Server (`mcp_flood_intelligence_server.py`)
+Provides advanced reasoning tools for deep situational awareness:
+- **Metro System Health**: Aggregates station-level data into line-wise status (Operational, Degraded, or Critical).
+- **Impact Assessment**: Summarizes population risk and identifies flooded landmarks (junctions and stations).
+- **Resource Mapping**: Identifies "Super-Hubs"—safe shelters with immediate access to rescue boats, medical supplies, and food.
+- **Vulnerability Hotspots**: Detects clusters of high-risk populations stranded far from safe zones.
+
 ## Setup Instructions
 
 1. **Environment Variables**: Make sure your `.env` file contains:
@@ -117,11 +124,18 @@ The system includes a dedicated **Model Context Protocol (MCP)** server, allowin
 - **Purpose**: Exposes the private simulation state as a set of standardized "tools" and "resources" that any MCP-compatible agent can use to perform autonomous analysis.
 
 ### Available MCP Tools
+#### Core Evacuation Tools (`mcp_evacuation_server.py`)
 - `get_simulation_state`: Returns a high-level summary of the latest run (success rate, evacuee counts).
 - `get_shelter_status`: Lists all shelters with real-time occupancy and severity levels (🔴 CRITICAL, 🟢 MODERATE, etc.).
 - `get_route_summary`: Provides technical stats on the computed evacuation paths.
 - `get_expert_analysis`: Forces a specific persona (Logistics/Tactical/Civic) to analyze the current data.
 - `ask_evacuation_question`: Allows the external agent to ask free-form questions about the dashboard's state.
+
+#### Intelligence & Reasoning Tools (`mcp_flood_intelligence_server.py`)
+- `get_metro_status`: Analyze metro rail system integrity by line (Operational/Degraded/Critical).
+- `get_flood_impact`: Comprehensive socio-economic impact summary with landmark mapping.
+- `get_shelter_resource_map`: Maps safe shelters with nearby logistics (boats, medical, food).
+- `get_vulnerability_hotspots`: Identifies high-risk population clusters for tactical deployment.
 
 ### Route Recommendations Changes
 - Digital Twin Integration: The context_builder translates real-time coordinates, flood depths, and shelter capacities into a structured tactical summary.
@@ -129,15 +143,16 @@ The system includes a dedicated **Model Context Protocol (MCP)** server, allowin
 - Strategy Generation: The system doesn't just show data; it performs mathematical preprocessing to identify Pressure Junctures (bottlenecks) and feeds these to the LLM for tactical planning.
 - Expert Personas: You have specialized agents (Logistics Chief, Tactical Commander, Civic Authority) that utilize this data for structured, professional reporting.
 
-### Running the MCP Server
+### Running the MCP Servers
 To expose the Digital Twin to external agents:
 1. Ensure the main FastAPI backend is running (`uvicorn main:app`).
-2. Start the MCP server:
+2. Start the desired MCP server:
    ```bash
    cd backend/genai
-   python mcp_evacuation_server.py
+   python mcp_evacuation_server.py          # Core evacuation tools
+   python mcp_flood_intelligence_server.py  # Deep reasoning tools
    ```
-The server will communicate over `stdio` by default, making it easy to plug into Claude Desktop's configuration.
+The servers will communicate over `stdio` by default, making it easy to plug into Claude Desktop's configuration.
 
 ---
 
@@ -232,4 +247,112 @@ Once the live rainfall passes your set threshold (or if you artificially set the
 - The log will flash a `🚨 THRESHOLD EVENT!`.
 - The daemon will autonomously disarm itself (`active = False`) to prevent CPU-locking simulation spam.
 - The UI will instantly force-trigger `sim.start()` to map out and render Evacuation Routes and algorithm paths natively on your digital twin dashboard.
+
+---
+
+## Public Transport Agent (Multi-Modal Fleet Deployment)
+
+The **Public Transport Agent** acts as an automated logistics coordinator, bridging the gap between computed evacuation routes and real-world transit availability. It uses a high-fidelity GIS extraction engine to integrate BMTC bus networks and Namma Metro/Railway transit lines into a unified evacuation manifest.
+
+### How it Works
+1.  **Multi-Modal Route Analysis**: It takes the raw AI-optimised (ACO/GA/PSO) evacuation paths and identifies intersections with the regional transit backbone.
+2.  **GTFS & Reference Integration**:
+    - **BMTC Bus**: Queries the GTFS database (via `transport_agent.py`) to find the nearest physical bus stops to flood zones.
+    - **Namma Metro/Railway**: Uses a hybrid extraction logic matching OSM geometry against KML/CSV reference data. It extracts **all stations and lines** (Metro + Rail) and stores them with visibility metadata.
+3.  **Context-Aware Rendering**:
+    - **Default State**: All stations and lines are calculated and stored, but **hidden by default** on the map for a clean UI.
+    - **Interactive Line Display**: When a user clicks on a station name in the Public Transport Agent panel:
+      - That specific station renders as a marker on the map
+      - The **entire line** associated with that station (all segments for that line_name) becomes visible
+      - Line highlighting is **toggleable**: clicking the same station again hides the line
+    - **Complete Line Geometry**: The backend ensures all line segments for a given line (e.g., Purple Line) are extracted and available so the entire route displays when any station on that line is clicked.
+    - **Multi-Transport Support**: Seamlessly handles Purple/Green/Blue/Yellow Metro lines and Indian Railways with proper labeling and color coding.
+4.  **Intelligent Mapping**:
+    - **Physical Routes**: Prioritizes real-world BMTC route numbers (e.g., `500D`, `335E`) and Metro/Rail line labels by correctly mapping GTFS `route_id` and KML attributes.
+    - **Emergency Shuttles**: If no commercial route exists for a specific stop, it designates a dynamic "Emergency Shuttle".
+    - **Fleet Sorting**: Automatically sorts the manifest to show high-capacity transit (Metro/Rail) at the top of the list for better logistical visibility.
+5.  **Sequential Deployment**: Generates clean, sequential Fleet IDs (`BUS-001`, `METRO-001`, `TRAIN-001`...) after sorting, ensuring the manifest remains organized.
+6.  **Performance (TTL Caching)**: Implements a high-speed, in-memory cache for GTFS and GIS data with a **10-minute TTL** and **file-mtime awareness**. This ensures sub-millisecond route matching while automatically detecting if the underlying GTFS or KML files are updated on disk.
+
+### How to Use
+1.  Run a flood simulation on the main dashboard to generate evacuation paths.
+2.  Switch to the **Resources** tab in the sidebar.
+3.  Click **Load Network** to fetch all Namma Metro/Rail stations and lines for the selected region.
+4.  In the **Namma Metro/Rail Network** section, click on any station name to render it and its associated line on the 3D map.
+5.  Clicking any row will **draw the transit vehicle's designated path** dynamically on the map!
+
+---
+
+---
+
+## GIS Physics Engine — 3D Terrain & Hydraulics
+
+The simulation is powered by a high-fidelity **GIS Physics Engine** (`gis_terrain_loader.py`) that integrates real-world topography into the flood model.
+
+### 1. 3D Terrain Integration (DEM)
+- **Source**: NASA SRTM 30m Global Digital Elevation Model (via OpenTopography API).
+- **Mechanism**: The system automatically downloads a 3D elevation grid for every selected Hobli.
+- **Impact**: Flood water no longer spreads in uniform circles; it now physically flows **downhill** into valleys and pools in low-lying areas based on real-world meter-accurate elevation.
+
+### 2. Slope-Weighted Flow Physics
+- **Dynamic Acceleration**: The `flood_simulator.py` math is slope-aware. Water transfer speed is dynamically multiplied (up to 3x) when moving between nodes with steep elevation drops.
+- **Hydraulic Head**: Flow is driven by `H = elevation + water_depth`, ensuring natural gravity-driven propagation.
+
+### 3. Manning's Roughness (Surface Friction)
+- **Infrastructure Awareness**: The engine assigns a **Manning's n** coefficient to every road segment based on its OSM metadata.
+- **Flow Efficiency**: 
+    - 🏎️ **Motorways/Trunks**: High efficiency (water rushes fast across smooth asphalt).
+    - 🏠 **Residential Streets**: Baseline efficiency.
+    - 🌲 **Paths/Living Streets**: Low efficiency (high friction slows water movement).
+
+### 4. Terrain-Aware Evacuation Planning
+- **Smart Routing**: The evacuation planners (GA, ACO, PSO) are terrain-intelligent. 
+- **Hazard Penalties**: The system mathematically penalizes routing people "downhill" into potential traps. The AI actively prefers **uphill evacuation paths** to shelters on higher, safer ground.
+- **Shelter Safety**: Every shelter is tagged with its absolute elevation, allowing the **Logistics Chief** to prioritize high-ground hubs during a crisis.
+
+### 5. Enhanced Hydrology Seeding & Fail-Safe Fallback
+- **Advanced Seeding**: The system uses a dedicated **Overpass API query** to identify drains, canals, and lake boundaries with higher precision than standard library wrappers.
+- **Seeding Points**: Thousands of "overflow points" are automatically mapped to the nearest road nodes to act as the source of the flood.
+- **Graceful Fallback**: If the GIS hydrology server is unavailable or reaches a rate limit:
+    - The system logs a `[gis/warning]`.
+    - It automatically falls back to an internal **OSMnx extraction** logic using local geometric centroids.
+    - This ensures the simulation NEVER crashes and will always run with at least baseline OpenStreetMap data.
+
+---
+
+## Unified App Copilot (Omni-Modal AI)
+
+The **App Copilot** is the central, unified intelligence interface for the entire Urban Flood Digital Twin. It possesses a full "App-Level Tools" payload, enabling it to act as both a **UI Navigator** and a **Disaster Data Analyst** simultaneously.
+
+### How it Works
+The Copilot is hooked into a deep integration loop (`app_copilot.py`). When you send a message, the LLM evaluates whether you want to click a button on the UI (Frontend Navigation) or request complex tactical intelligence from the backend databases (Backend Tools). It silently executes the targeted tool and returns natural, conversational insights in the unified interface.
+
+### Useful Copilot Prompts
+
+You can use the Copilot to control the app or analyze the disaster state. Here are some powerful prompts to try:
+
+**Frontend Control & Simulation:**
+- *"Take me to Hebbal and run the Genetic Algorithm with 180mm of rainfall."*
+- *"Enable live traffic and start the ACO simulation."*
+- *"Compare all algorithms for Yelahanka."*
+- *"Switch to the Evacuation tab."*
+
+**Tactical Analysis & Data Retrieval:**
+- *"What is the capacity of the State Disaster Response Force shelter?"*
+- *"List the top 3 most congested evacuation routes right now."*
+- *"Generate an official public warning for the current situation."*
+- *"Are there any critical pressure junctures causing bottlenecks?"*
+- *"Which transit networks will be disabled by the 2-meter flood in Indiranagar?"*
+- *"Identify the primary evacuation hubs for the Koramangala flood zone."*
+- *"What is the safest route to the nearest shelter?"*
+- *"Which junctions are experiencing the worst bottlenecks?"*
+- *"How many evacuees are assigned to each shelter?"*
+- *"Are there any shelters exceeding their capacity?"*
+- *"Which optimization algorithm performed the best for this simulation?"*
+
+**📌 Pinned Location Analysis (Map Integration):**
+*The Copilot is spatially aware. Simply **click anywhere on the map** to drop a red "PINNED LOCATION", and the Copilot will automatically inherit those coordinates!*
+- *"We need buses for immediate evacuation right here. What's available?"*
+- *"Check for available transit networks at the pinned location."*
+- *"Are there any bus stops near the selected location on the map?"*
 

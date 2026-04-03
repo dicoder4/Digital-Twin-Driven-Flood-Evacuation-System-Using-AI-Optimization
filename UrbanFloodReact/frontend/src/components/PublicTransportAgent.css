@@ -1,0 +1,158 @@
+.pta-section {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.pta-header {
+    border-bottom: 2px solid #f1f5f9;
+    padding-bottom: 0.75rem;
+}
+
+.pta-generate-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background: #059669;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.pta-generate-btn:hover:not(:disabled) {
+    background: #047857;
+    transform: translateY(-1px);
+}
+
+.pta-generate-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
+.pta-accordion {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: white;
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+}
+
+.pta-accordion-header {
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    background: #f1f5f9;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.pta-accordion-header:hover {
+    background: #e2e8f0;
+}
+
+.pta-accordion-content {
+    padding: 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+.pta-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.pta-stat-box {
+    background: #f0fdf4;
+    padding: 0.75rem;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #dcfce7;
+}
+
+.pta-stat-val {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #16a34a;
+}
+
+.pta-stat-label {
+    font-size: 0.7rem;
+    color: #15803d;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.pta-table-wrapper {
+    max-height: 250px;
+    overflow-y: auto;
+    border-radius: 6px;
+    border: 1px solid #f1f5f9;
+}
+
+.pta-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.pta-table th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    color: #64748b;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.pta-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.pta-table tr:hover {
+    background-color: #f8fafc;
+}
+
+.pta-row-selected {
+    background-color: #f0fdf4 !important;
+}
+
+.pta-status-pill {
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.pta-status-operational {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.pta-status-flooded {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

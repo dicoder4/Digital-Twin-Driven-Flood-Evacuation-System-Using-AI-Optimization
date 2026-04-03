@@ -1,0 +1,11 @@
+column_name,description
+station_name,Name of the metro station
+station_code,Unique identifier code for each station
+line,Metro line name (Purple Line, Green Line, Yellow Line)
+sequence,Order of the station in a specific metro line
+is_interchange,Indicates whether the station is an interchange (1 = Yes, 0 = No)
+next_station_code,Code of the next station in the route (NULL if terminal station)
+latitude,Latitude coordinate of the station
+longitude,Longitude coordinate of the station
+distance_to_next_km,Distance between current station and next station in kilometers
+line_color,Hex color code representing the metro line

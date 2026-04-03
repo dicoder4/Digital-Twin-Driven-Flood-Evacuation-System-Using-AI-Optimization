@@ -12,24 +12,26 @@ import sys
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
 
 # Ensure backend directory is in python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+from typing import Optional
 
 try:
-    from region_manager import initialise, norm_key, REGIONS_TREE
+    from region_manager import initialise, norm_key, REGIONS_TREE, REGION_CACHE, HOBLI_COORDS
     from generate_people import load_population, POPULATION_CSV
 except ImportError:
     # Try importing as package if top-level script
-    from UrbanFloodReact.backend.region_manager import initialise, norm_key, REGIONS_TREE
+    from UrbanFloodReact.backend.region_manager import initialise, norm_key, REGIONS_TREE, REGION_CACHE, HOBLI_COORDS
     from UrbanFloodReact.backend.generate_people import load_population, POPULATION_CSV
 
 # Import service layer
@@ -53,6 +55,14 @@ async def lifespan(app: FastAPI):
     
     print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
     print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
+    
+    # Bootstrap MongoDB
+    try:
+        from db import bootstrap_mongo_data
+        bootstrap_mongo_data()
+    except Exception as e:
+        print(f"[MONGO DEBUG] Bootstrap failed: {e}")
+
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
     asyncio.create_task(weather_watcher_loop())
@@ -60,6 +70,14 @@ async def lifespan(app: FastAPI):
     yield
     print("━━ Backend shutting down ━━")
 
+
+
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/automation/status" not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 app = FastAPI(lifespan=lifespan, title="Urban Flood Digital Twin API")
 
@@ -149,11 +167,12 @@ class CopilotRequest(BaseModel):
     messages: list
     available_hoblis: list = []
     regions_tree: dict = {}
+    map_pin: Optional[dict] = None
 
 @app.post("/app-copilot")
 async def app_copilot_endpoint(req: CopilotRequest):
     from genai.app_copilot import ask_copilot
-    return await ask_copilot(req.messages, req.available_hoblis, req.regions_tree)
+    return await ask_copilot(req.messages, req.available_hoblis, req.regions_tree, req.map_pin)
 
 
 @app.get("/regions")
@@ -161,6 +180,16 @@ async def get_regions():
     """District → Taluk → [Hobli] cascade tree for the UI."""
     return await service.get_all_regions()
 
+class TransportPlanRequest(BaseModel):
+    evacuation_plan: list
+
+@app.post("/public-transport-plan")
+async def public_transport_plan(req: TransportPlanRequest):
+    """Generate an on-demand bus fleet manifest based on GTFS data and ACO routes."""
+    from genai.transport_agent import compute_bus_evacuation_plan
+    
+    plan_result = compute_bus_evacuation_plan(req.evacuation_plan)
+    return plan_result
 
 @app.get("/population/{hobli_name}")
 async def population(hobli_name: str):
@@ -205,16 +234,26 @@ async def simulate_stream(
     use_traffic: bool = Query(False),
     algorithm:   str  = Query("ga", description="Optimisation algorithm: 'ga', 'aco', or 'pso'"),
     population:  int | None = Query(None, description="Override population count"),
+    extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """SSE stream of flood simulation steps."""
+    import json as _json
+    extra = None
+    if extra_shelters_json:
+        try:
+            extra = _json.loads(extra_shelters_json)
+        except Exception:
+            extra = None
     return StreamingResponse(
         service.run_simulation_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic, algorithm, population
+            evacuation_mode, use_traffic, algorithm, population,
+            extra_shelters=extra,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
 
 
 @app.get("/simulate-compare")
@@ -226,6 +265,7 @@ async def simulate_compare(
     evacuation_mode: bool  = Query(False),
     use_traffic:     bool  = Query(False),
     population:      int | None = Query(None),
+    extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """
     SSE stream for algorithm comparison mode.
@@ -233,14 +273,23 @@ async def simulate_compare(
     in parallel threads. Emits normal flood-step frames during the flood phase,
     then a single 'compare_done' frame with all three algorithm results.
     """
+    import json as _json
+    extra = None
+    if extra_shelters_json:
+        try:
+            extra = _json.loads(extra_shelters_json)
+        except Exception:
+            extra = None
     return StreamingResponse(
         service.run_compare_generator(
             hobli, rainfall_mm, steps, decay_factor,
-            evacuation_mode, use_traffic, population
+            evacuation_mode, use_traffic, population,
+            extra_shelters=extra,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
 
 
 @app.get("/shelters/{hobli_name}")
@@ -272,6 +321,12 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
         "condition": weather_data.get("description", "Unknown"),
         "temp_c": weather_data.get("temp_c"),
     }
+
+
+@app.get("/metro-stations/{hobli_name}")
+async def get_metro_stations(hobli_name: str):
+    """Return cached metro stations for a hobli."""
+    return await service.fetch_metro_stations(hobli_name)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,203 @@ def _get_planner_class(algorithm: str):
         raise ValueError(f"Unknown algorithm '{algorithm}'. Choose from: {list(_PLANNER_MAP.keys())}")
     return _PLANNER_MAP[key]
 
+
+def _metro_status_from_score(score: float, previous_status: str | None = None) -> str:
+    """Map a continuous risk score to safe/caution/unsafe with hysteresis margins."""
+    low_threshold = 0.20
+    high_threshold = 0.50
+    margin = 0.04
+
+    if previous_status == "safe":
+        if score < low_threshold + margin:
+            return "safe"
+    elif previous_status == "unsafe":
+        if score > high_threshold - margin:
+            return "unsafe"
+
+    if score >= high_threshold:
+        return "unsafe"
+    if score >= low_threshold:
+        return "caution"
+    return "safe"
+
+
+def _k_hop_nodes(graph, source_node, max_hops: int = 2) -> list:
+    """Return unique nodes up to max_hops from source (BFS)."""
+    if source_node not in graph:
+        return []
+    visited = {source_node}
+    frontier = {source_node}
+    for _ in range(max_hops):
+        next_frontier = set()
+        for node in frontier:
+            for nb in graph.neighbors(node):
+                if nb not in visited:
+                    visited.add(nb)
+                    next_frontier.add(nb)
+        if not next_frontier:
+            break
+        frontier = next_frontier
+    return list(visited)
+
+
+def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, center_lat: float, center_lon: float, update_history: bool = True) -> list:
+    """
+    Build metro station risk reports using:
+      - distance from hobli centre (exclude stations >2km)
+      - snapping distance to graph (safe if >50m)
+      - local neighbourhood flood depths (2-hop proxy)
+      - access viability near station
+      - temporal EMA smoothing
+    """
+    if not hasattr(sim, "_metro_status_history"):
+        sim._metro_status_history = {}
+
+    reports = []
+    graph = sim.G
+
+    for station in metro_stations:
+        station_name = station.get("name") or "Unknown Station"
+        station_line = station.get("line")
+        station_key = str(station.get("id") or f"{station_name}::{station_line or ''}")
+        station_lat = station.get("lat")
+        station_lon = station.get("lon")
+
+        # --- 1. Distance to hobli centre ---
+        dist_km = _haversine_distance(center_lat, center_lon, station_lat, station_lon)
+        if dist_km > 2.0:   # outside 2km simulation radius
+            reports.append({
+                "id": station.get("id", station_key),
+                "name": station_name,
+                "lat": station_lat,
+                "lon": station_lon,
+                "line": station_line,
+                "colour": station.get("colour"),
+                "transport_type": station.get("transport_type", "metro"),
+                "flooded": False,
+                "status": "safe",
+                "risk_score": 0.0,
+                "max_depth_m": 0.0,
+                "mean_depth_m": 0.0,
+                "access_viability": 1.0,
+                "confidence": "high",
+                "confidence_reason": "outside simulation radius",
+            })
+            continue
+
+        # --- 2. Snap to graph with distance limit ---
+        node_id = station.get("node_id")
+        snap_dist = None
+        if node_id is not None and node_id in graph:
+            # Use existing node_id, but verify it's close enough
+            node_lat = graph.nodes[node_id]['y']
+            node_lon = graph.nodes[node_id]['x']
+            snap_dist = _haversine_distance(station_lat, station_lon, node_lat, node_lon) * 1000  # convert to meters
+        else:
+            # Snap anew
+            try:
+                node_id, snap_dist_m = ox.nearest_nodes(graph, station_lon, station_lat, return_dist=True)
+                snap_dist = snap_dist_m
+            except Exception:
+                node_id = None
+                snap_dist = None
+
+        if node_id is None or node_id not in graph or (snap_dist is not None and snap_dist > 50):
+            reports.append({
+                "id": station.get("id", station_key),
+                "name": station_name,
+                "lat": station_lat,
+                "lon": station_lon,
+                "line": station_line,
+                "colour": station.get("colour"),
+                "transport_type": station.get("transport_type", "metro"),
+                "flooded": False,
+                "status": "safe",
+                "risk_score": 0.0,
+                "max_depth_m": 0.0,
+                "mean_depth_m": 0.0,
+                "access_viability": 1.0,
+                "confidence": "medium",
+                "confidence_reason": f"station too far from road network ({snap_dist:.1f}m)",
+            })
+            continue
+
+        # --- 3. Proceed with neighbourhood analysis ---
+        neighborhood_nodes = _k_hop_nodes(graph, node_id, max_hops=2)
+        depths = [float(graph.nodes[n].get("water_depth", 0.0)) for n in neighborhood_nodes]
+
+        if not depths:
+            depths = [0.0]
+
+        max_depth = max(depths)
+        mean_depth = sum(depths) / max(len(depths), 1)
+
+        if station_lat is not None and station_lon is not None and neighborhood_nodes:
+            nearest = sorted(
+                neighborhood_nodes,
+                key=lambda n: (graph.nodes[n].get("y", station_lat) - station_lat) ** 2
+                + (graph.nodes[n].get("x", station_lon) - station_lon) ** 2,
+            )[:3]
+        else:
+            nearest = neighborhood_nodes[:3]
+
+        if nearest:
+            accessible = sum(1 for n in nearest if float(graph.nodes[n].get("water_depth", 0.0)) <= 0.20)
+            access_viability = accessible / len(nearest)
+        else:
+            access_viability = 0.0
+
+        raw_score = min(1.0, (0.55 * max_depth) + (0.35 * mean_depth) + (0.10 * (1.0 - access_viability)))
+                # DEBUG: for Konankunte Cross
+        if station_name == "Konanakunte Cross":
+            print(f"[DEBUG] {station_name}: snap_dist={snap_dist:.1f}m, "
+                  f"max_depth={max_depth:.3f}m, mean_depth={mean_depth:.3f}m, "
+                  f"access_viability={access_viability:.2f}, raw_score={raw_score:.3f}")
+            print(f"  neighborhood nodes: {neighborhood_nodes[:5]}")
+            for n in neighborhood_nodes[:5]:
+                print(f"    node {n}: depth={graph.nodes[n].get('water_depth', 0):.3f}m")
+
+        history = sim._metro_status_history.get(station_key, {})
+        previous_ema = float(history.get("ema_score", raw_score))
+        ema_score = 0.5 * previous_ema + 0.5 * raw_score if history else raw_score
+        previous_status = history.get("status")
+        status = _metro_status_from_score(ema_score, previous_status=previous_status)
+
+        confidence = "high"
+        confidence_reason = "dense local neighbourhood available"
+        if len(neighborhood_nodes) < 4:
+            confidence = "medium"
+            confidence_reason = "limited neighbourhood sample"
+        if snap_dist is not None and snap_dist > 30:
+            confidence = "medium"
+            confidence_reason = f"snap distance {snap_dist:.1f}m"
+
+        if update_history:
+            sim._metro_status_history[station_key] = {
+                "ema_score": ema_score,
+                "status": status,
+            }
+
+        reports.append({
+            "id": station.get("id", station_key),
+            "name": station_name,
+            "lat": station_lat,
+            "lon": station_lon,
+            "line": station_line,
+            "colour": station.get("colour"),
+            "transport_type": station.get("transport_type", "metro"),
+            "flooded": status == "unsafe",
+            "status": status,
+            "risk_score": round(ema_score, 3),
+            "max_depth_m": round(max_depth, 3),
+            "mean_depth_m": round(mean_depth, 3),
+            "access_viability": round(access_viability, 3),
+            "confidence": confidence,
+            "confidence_reason": confidence_reason,
+        })
+
+    return reports
+
 async def get_all_regions():
     """Return the hierarchy tree of regions."""
     return REGIONS_TREE
@@ -84,10 +281,30 @@ async def process_load_region(hobli_name: str):
         raise HTTPException(status_code=404, detail=f"Hobli '{hobli_name}' not in coordinate map.")
 
     try:
-        # Offload CPU-bound graph loading to executor
-        await asyncio.get_event_loop().run_in_executor(None, get_region, key)
+        loop = asyncio.get_event_loop()
+        # 1) Offload CPU-bound graph loading to executor
+        await loop.run_in_executor(None, get_region, key)
+        # 2) Metro extraction happens only when user clicks "Load Network"
+        from region_manager import extract_metro_data
+        metro_entry = await loop.run_in_executor(None, extract_metro_data, key, True)
     except Exception as e:
+        print(f"[ERROR] Metro extraction failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to load graph: {e}")
+
+    metro_lines = metro_entry.get("metro_lines", {})
+    metro_stations = metro_entry.get("metro_stations", [])
+    
+    # Ensure metro_lines is a FeatureCollection
+    if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
+        print(f"[metro] Returning {len(metro_lines.get('features', []))} line segments")
+    elif isinstance(metro_lines, list):
+        print(f"[metro] Converting metro_lines array to FeatureCollection ({len(metro_lines)} features)")
+        metro_lines = {"type": "FeatureCollection", "features": metro_lines}
+    else:
+        print(f"[metro] WARNING: Unexpected metro_lines format: {type(metro_lines)}")
+        metro_lines = {"type": "FeatureCollection", "features": []}
 
     return {
         "status":   "loaded",
@@ -95,6 +312,8 @@ async def process_load_region(hobli_name: str):
         "lat":      coords["lat"],
         "lon":      coords["lon"],
         "district": coords["district"],
+        "metro_stations": metro_stations,
+        "metro_lines": metro_lines,
     }
 
 def _haversine_distance(lat1, lon1, lat2, lon2):
@@ -108,81 +327,171 @@ def _haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+def _resolve_road_name(nid, G, max_depth=3):
+    """
+    Traverse the graph from nid up to max_depth levels to find a readable road name.
+    Useful for unnamed residential junctions that connect to named roads nearby.
+    """
+    from collections import deque
+    queue = deque([(nid, 0)])
+    visited = {nid}
+    names = set()
+
+    while queue:
+        curr, depth = queue.popleft()
+
+        # Check incident edges for names
+        try:
+            # MultiDiGraph usually stores names on edges
+            edge_iter = G.edges(curr, data=True)
+            for _, _, edata in edge_iter:
+                nm = edata.get('name')
+                if nm:
+                    if isinstance(nm, list): names.update(nm)
+                    else: names.add(nm)
+            
+            # For directed graphs, check incoming too
+            if hasattr(G, 'in_edges'):
+                for _, _, edata in G.in_edges(curr, data=True):
+                    nm = edata.get('name')
+                    if nm:
+                         if isinstance(nm, list): names.update(nm)
+                         else: names.add(nm)
+        except Exception:
+            pass
+
+        # Stop as soon as we've found some names at this depth
+        if names:
+            break
+
+        # Move to neighbors if we haven't found a name yet
+        if depth < max_depth:
+            try:
+                # Treat directed graph as undirected for name search
+                succs = list(G.successors(curr)) if hasattr(G, 'successors') else []
+                preds = list(G.predecessors(curr)) if hasattr(G, 'predecessors') else []
+                for neighbor in set(succs + preds):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append((neighbor, depth + 1))
+            except Exception:
+                pass
+
+    # Prefer shorter, cleaner names (road names beat highway codes)
+    # Filter out common abbreviations of highway codes
+    clean = [n for n in names if n and len(n) > 2 and not n.startswith(('NH', 'SH', 'MDR', 'KA'))]
+    
+    if clean:
+        return sorted(clean, key=len)[0]   # shortest meaningful name
+    if names:
+        return sorted(list(names), key=len)[0]
+    return None
+
 async def fetch_resources(location: str):
     """
     Look up IDRN resources for the given location string.
     If no matches found (or location is 'Unknown'), return default set (Bengaluru).
     """
     try:
-        # Load activity mapping from JSON if not cached
+        # Load activity mapping from JSON / MongoDB if not cached
         if not hasattr(fetch_resources, "activity_map"):
-            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            json_path = os.path.join(root, "backend/data/resource_definitions.json")
-            if not os.path.exists(json_path):
-                 json_path = "UrbanFloodReact/backend/data/resource_definitions.json"
-                 
             fetch_resources.activity_map = {}
-            if os.path.exists(json_path):
-                with open(json_path, 'r') as f:
-                    data = json.load(f)
-                    for activity, categories in data.items():
-                        for cat_name, items in categories.items():
-                            for item in items: # Assuming dict with {code, name} or legacy string
-                                if isinstance(item, dict):
-                                    item_name = item.get('name', '').lower()
-                                else:
-                                    item_name = str(item).lower()
-                                fetch_resources.activity_map[item_name] = activity
-
-        # Load CSV data
-        if not hasattr(fetch_resources, "cache") or fetch_resources.cache is None or fetch_resources.cache.empty:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            dfs = []
+            try:
+                from db import get_resource_definitions
+                data = get_resource_definitions()
+                print("[MONGO DEBUG] Using resource definitions from Mongo")
+            except Exception as mongo_err:
+                print(f"[MONGO DEBUG] Mongo fallback triggered for resource definitions: {mongo_err}")
+                root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                json_path = os.path.join(root, "backend/data/resource_definitions.json")
+                if not os.path.exists(json_path):
+                     json_path = "UrbanFloodReact/backend/data/resource_definitions.json"
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        data = json.load(f)
+                else:
+                    data = {}
             
-            # 1. Logistics
-            log_path = os.path.join(base_dir, "data", "logistics_resources.csv")
-            if os.path.exists(log_path):
-                try:
-                    cdf = pd.read_csv(log_path)
-                    cdf["Category"] = "Logistics"
-                    dfs.append(cdf)
-                except Exception: pass
+            for activity, categories in data.items():
+                for cat_name, items in categories.items():
+                    for item in items: # Assuming dict with {code, name} or legacy string
+                        if isinstance(item, dict):
+                            item_name = item.get('name', '').lower()
+                        else:
+                            item_name = str(item).lower()
+                        fetch_resources.activity_map[item_name] = activity
 
-            # 2. Tactical
-            tac_path = os.path.join(base_dir, "data", "tactical_resources.csv")
-            if os.path.exists(tac_path):
-                try:
-                    cdf = pd.read_csv(tac_path)
-                    if "Category" not in cdf.columns:
-                        cdf["Category"] = "Tactical"
-                    dfs.append(cdf)
-                except Exception: pass
+        # Load CSV / Mongo data
+        if not hasattr(fetch_resources, "cache") or fetch_resources.cache is None or fetch_resources.cache.empty:
+            dfs = []
+            try:
+                from db import get_logistics_df, get_tactical_df
+                cdf_log = get_logistics_df()
+                cdf_log["Category"] = "Logistics"
+                dfs.append(cdf_log)
+                
+                cdf_tac = get_tactical_df()
+                if "Category" not in cdf_tac.columns:
+                    cdf_tac["Category"] = "Tactical"
+                dfs.append(cdf_tac)
+                print("[MONGO DEBUG] Loaded tactical/logistics resources from Mongo")
+            except Exception as mongo_err:
+                print(f"[MONGO DEBUG] Mongo fallback triggered for cache resources: {mongo_err}")
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # 1. Logistics
+                log_path = os.path.join(base_dir, "data", "logistics_resources.csv")
+                if os.path.exists(log_path):
+                    try:
+                        cdf = pd.read_csv(log_path)
+                        cdf["Category"] = "Logistics"
+                        dfs.append(cdf)
+                    except Exception: pass
+
+                # 2. Tactical
+                tac_path = os.path.join(base_dir, "data", "tactical_resources.csv")
+                if os.path.exists(tac_path):
+                    try:
+                        cdf = pd.read_csv(tac_path)
+                        if "Category" not in cdf.columns:
+                            cdf["Category"] = "Tactical"
+                        dfs.append(cdf)
+                    except Exception: pass
             
             if dfs:
                 df = pd.concat(dfs, ignore_index=True)
                 df = df.fillna("N/A")
                 fetch_resources.cache = df
             else:
-                 # Fallback to IDRN
-                 candidates = [
-                    os.path.join(base_dir, "data", "idrn_resources_scraped.csv"),
-                    os.path.join(os.getcwd(), "UrbanFloodReact", "backend", "data", "idrn_resources_scraped.csv"),
-                 ]
-                 csv_path = None
-                 for p in candidates:
-                    if os.path.exists(p):
-                        csv_path = p
-                        break
-                
-                 if csv_path:
-                    try:
-                        df = pd.read_csv(csv_path)
-                        df = df.fillna("N/A")
-                        fetch_resources.cache = df
-                    except Exception:
+                 # Fallback to IDRN (Mongo -> CSV)
+                 try:
+                     from db import get_idrn_df
+                     df = get_idrn_df()
+                     df = df.fillna("N/A")
+                     fetch_resources.cache = df
+                     print("[MONGO DEBUG] Fallback to IDRN using Mongo succeeded")
+                 except Exception as mongo_idrn_err:
+                     print(f"[MONGO DEBUG] Mongo fallback triggered for IDRN: {mongo_idrn_err}")
+                     base_dir = os.path.dirname(os.path.abspath(__file__))
+                     candidates = [
+                        os.path.join(base_dir, "data", "idrn_resources_scraped.csv"),
+                        os.path.join(os.getcwd(), "UrbanFloodReact", "backend", "data", "idrn_resources_scraped.csv"),
+                     ]
+                     csv_path = None
+                     for p in candidates:
+                        if os.path.exists(p):
+                            csv_path = p
+                            break
+                    
+                     if csv_path:
+                        try:
+                            df = pd.read_csv(csv_path)
+                            df = df.fillna("N/A")
+                            fetch_resources.cache = df
+                        except Exception:
+                            return []
+                     else:
                         return []
-                 else:
-                    return []
         else:
             df = fetch_resources.cache
 
@@ -278,7 +587,238 @@ async def fetch_map_geojson(hobli_name: str):
     _, edges = ox.graph_to_gdfs(G)
     return json.loads(edges.to_json())
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None):
+# ─────────────────────────────────────────────────────────────────────────────
+# Shelter Suggestion Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, final_evacuation_plan: list) -> list:
+    """
+    When evacuation coverage is incomplete, identify geographic clusters of
+    unassigned at-risk nodes and suggest new shelter locations in nearby
+    non-flooded areas.
+
+    Generates ENOUGH suggestions to cover ALL unassigned people — no arbitrary
+    cap. Each cluster gets exactly one shelter sized to cover its population.
+
+    Returns a tuple (suggestions_list, genuinely_unreachable_count).
+    """
+    if not at_risk_nodes:
+        return [], 0
+
+    # ── 1. Determine which node groups were NOT assigned a shelter ─────────
+    assigned_node_ids = {move['from_node'] for move in final_evacuation_plan}
+    unassigned = [
+        node for node in at_risk_nodes
+        if node['id'] not in assigned_node_ids
+    ]
+
+    if not unassigned:
+        return [], 0
+
+    total_deficit = sum(n['pop'] for n in unassigned)
+    print(f"  [SHELTER-SUGGEST] {len(unassigned)} unassigned groups | "
+          f"total deficit={total_deficit:,} | will generate shelters until fully covered")
+
+    # ── 2. Compute region center for compass-direction naming ─────────────
+    all_lats = [n['lat'] for n in at_risk_nodes]
+    all_lons = [n['lon'] for n in at_risk_nodes]
+    region_center_lat = sum(all_lats) / len(all_lats)
+    region_center_lon = sum(all_lons) / len(all_lons)
+
+    def _compass(c_lat, c_lon):
+        """Return cardinal/intercardinal direction label from region center."""
+        dlat = c_lat - region_center_lat
+        dlon = c_lon - region_center_lon
+        # 8-point compass
+        angle = math.degrees(math.atan2(dlon, dlat))  # 0=N, 90=E, -90=W
+        directions = [
+            (22.5,  'North'),    (67.5,  'Northeast'), (112.5, 'East'),
+            (157.5, 'Southeast'),(180.1, 'South'),
+        ]
+        neg_dirs = [
+            (-22.5, 'North'),   (-67.5, 'Northwest'), (-112.5, 'West'),
+            (-157.5, 'Southwest'), (-180.1, 'South'),
+        ]
+        if angle >= 0:
+            for threshold, label in directions:
+                if angle <= threshold:
+                    return label
+            return 'South'
+        else:
+            for threshold, label in neg_dirs:
+                if angle >= threshold:
+                    return label
+            return 'South'
+
+    # ── 3. Filter genuinely unreachable vs serviceable ────────────────────────
+    import networkx as nx
+    wadable_nodes = {
+        nid for nid, data in G.nodes(data=True)
+        if data.get('water_depth', 0.0) <= 0.15
+    }
+    
+    G_undirected = G.to_undirected()
+    wadable_subgraph = G_undirected.subgraph(wadable_nodes)
+    
+    node_to_component = {}
+    component_driest_node = {}
+    component_nodes = {}
+    
+    for i, comp in enumerate(nx.connected_components(wadable_subgraph)):
+        comp_list = list(comp)
+        component_nodes[i] = comp_list
+        driest_n = min(comp_list, key=lambda n: G.nodes[n].get('water_depth', 0.0))
+        component_driest_node[i] = driest_n
+        for n in comp_list:
+            node_to_component[n] = i
+
+    genuinely_unreachable_count = 0
+    serviceable_unassigned = []
+
+    for node in unassigned:
+        nid = node['id']
+        comp_id = node_to_component.get(nid)
+        # Any node in the wadable subgraph represents a safe, serviceable island.
+        if comp_id is not None:
+            node['comp_id'] = comp_id
+            serviceable_unassigned.append(node)
+        else:
+            genuinely_unreachable_count += node['pop']
+
+    if genuinely_unreachable_count > 0:
+        print(f"  [SHELTER-SUGGEST] {genuinely_unreachable_count:,} people "
+              f"are genuinely unreachable (isolated by >0.15m water).")
+
+    if not serviceable_unassigned:
+        return [], genuinely_unreachable_count
+
+    # ── 4. Cluster serviceable nodes by (Island Component, Geographic Cell) ─
+    # Smaller 0.008° grid (~880 m) — tighter clusters = more accurate capacity
+    GRID_SIZE = 0.008
+    clusters: dict = {}
+    for node in serviceable_unassigned:
+        cell = (round(node['lat'] / GRID_SIZE), round(node['lon'] / GRID_SIZE))
+        cluster_key = (node['comp_id'], cell)
+        if cluster_key not in clusters:
+            clusters[cluster_key] = {'nodes': [], 'total_pop': 0, 'comp_id': node['comp_id']}
+        clusters[cluster_key]['nodes'].append(node)
+        clusters[cluster_key]['total_pop'] += node['pop']
+
+    def _approx_dist_deg(lat1, lon1, lat2, lon2):
+        return math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2)
+
+    # (Function _resolve_road_name moved to top level for reuse)
+
+    existing_shelter_coords = [(s['lat'], s['lon']) for s in safe_shelters]
+    used_dry_nodes = set()          # avoid re-suggesting the exact same spot
+    suggestions = []
+    zone_counters = {}              # compass_direction → sequential counter
+
+    # Process clusters largest-first so biggest deficits get addressed first
+    sorted_clusters = sorted(clusters.items(), key=lambda x: -x[1]['total_pop'])
+
+    for cluster_key, info in sorted_clusters:
+        comp_id = info['comp_id']
+        nodes = info['nodes']
+        deficit_pop = info['total_pop']
+
+        # Cluster centroid
+        c_lat = sum(n['lat'] for n in nodes) / len(nodes)
+        c_lon = sum(n['lon'] for n in nodes) / len(nodes)
+
+        # Compass direction for this cluster
+        direction = _compass(c_lat, c_lon)
+        zone_counters[direction] = zone_counters.get(direction, 0) + 1
+        zone_num = zone_counters[direction]
+        zone_label = f"{direction} Zone {zone_num}"
+
+        # ── Find best shelter node in THIS component ────────────────────
+        target_depth = G.nodes[component_driest_node[comp_id]].get('water_depth', 0.0)
+        
+        # Only look at nodes in this component that have the target depth
+        candidate_nodes = [
+            n for n in component_nodes[comp_id] 
+            if G.nodes[n].get('water_depth', 0.0) <= target_depth + 0.01
+        ]
+        
+        best_nid = None
+        if candidate_nodes:
+            cand_sorted = sorted(
+                candidate_nodes,
+                key=lambda n: _approx_dist_deg(c_lat, c_lon, G.nodes[n]['y'], G.nodes[n]['x'])
+            )
+            for cand in cand_sorted:
+                if cand not in used_dry_nodes:
+                    best_nid = cand
+                    break
+            if best_nid is None:
+                best_nid = cand_sorted[0]
+        else:
+            best_nid = component_driest_node[comp_id]
+            
+        best_lat = G.nodes[best_nid]['y']
+        best_lon = G.nodes[best_nid]['x']
+
+        # Skip if too close to an already-existing shelter (< 150 m)
+        if existing_shelter_coords:
+            min_d = min(
+                _approx_dist_deg(best_lat, best_lon, sl, so)
+                for sl, so in existing_shelter_coords
+            )
+            if min_d < 0.0015:
+                continue
+
+        if best_nid:
+            used_dry_nodes.add(best_nid)
+
+        # ── Name resolution ───────────────────────────────────────────────
+        road_name = _resolve_road_name(best_nid, G) if best_nid else None
+
+        if road_name:
+            area_name = f"{zone_label} · {road_name}"
+        else:
+            # Compass zone is always meaningful — no lat/lon fallback
+            area_name = f"Emergency Shelter — {zone_label}"
+
+        # Nearest existing shelter distance
+        nearest_shelter_dist_km = min(
+            _haversine_distance(c_lat, c_lon, sl, so)
+            for sl, so in existing_shelter_coords
+        ) if existing_shelter_coords else 0.0
+
+        suggested_cap = int(math.ceil(deficit_pop * 1.20))  # 20% buffer
+
+        if deficit_pop > 500 or nearest_shelter_dist_km > 2.0:
+            priority = 'high'
+        elif deficit_pop > 100:
+            priority = 'medium'
+        else:
+            priority = 'low'
+
+        suggestions.append({
+            'lat':                best_lat,
+            'lon':                best_lon,
+            'area_name':          area_name,
+            'deficit_population': deficit_pop,
+            'suggested_capacity': suggested_cap,
+            'nearest_shelter_km': round(nearest_shelter_dist_km, 2),
+            'reason': (
+                f"{len(nodes)} at-risk group(s) with {deficit_pop:,} people have no shelter. "
+                f"Nearest existing shelter is {nearest_shelter_dist_km:.1f} km away."
+            ),
+            'priority': priority,
+        })
+
+    # ── 5. Verify total coverage ──────────────────────────────────────────
+    covered = sum(s['suggested_capacity'] for s in suggestions)
+    print(f"  [SHELTER-SUGGEST] {len(suggestions)} new shelter(s) suggested | "
+          f"total suggested cap={covered:,} vs deficit={total_deficit:,}")
+
+    # Sort highest-deficit first — no arbitrary cap; caller gets all of them
+    suggestions.sort(key=lambda x: -x['deficit_population'])
+    return suggestions, genuinely_unreachable_count
+
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None):
     """Generator for SSE simulation stream."""
     import time
     loop = asyncio.get_event_loop()
@@ -289,13 +829,18 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Region '{hobli}' not loaded: {e}")
 
-    entry  = REGION_CACHE[key]
-    G_ref  = entry["G"]
+    entry = REGION_CACHE[key]
+    G_ref = entry["G"]
     drains = entry["drain_nodes"]
-    lakes  = entry["lake_nodes"]
+    lakes = entry["lake_nodes"]
 
     sim = UrbanFloodSimulator(G_ref.copy(), drain_nodes=drains, lake_nodes=lakes)
-    sim.initialize_from_drains(rainfall_mm)
+
+    # Mode selection
+    if mode == "progressive":
+        sim.set_progressive_rainfall(rainfall_mm, steps)
+    else:
+        sim.initialize_from_drains(rainfall_mm)
 
     # 1. Distribute population on nodes
     if population is not None:
@@ -311,15 +856,44 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
     sim.distribute_population(total_pop)
 
-    # 2. Pre-fetch shelters
+    # 2. Pre-fetch shelters (OSM candidates), then merge any synthetic suggested shelters
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
 
+    if extra_shelters:
+        G_snap = REGION_CACHE[key]["G"]
+        import osmnx as ox
+        for idx, es in enumerate(extra_shelters):
+            try:
+                node_id = ox.distance.nearest_nodes(G_snap, es['lon'], es['lat'])
+            except Exception:
+                node_id = None
+            synthetic = {
+                "id":       f"suggested_{idx + 1}",
+                "name":     es.get('area_name', f"Suggested Shelter {idx + 1}"),
+                "type":     "synthetic",
+                "lat":      es['lat'],
+                "lon":      es['lon'],
+                "capacity": int(es.get('suggested_capacity', 500)),
+                "node_id":  node_id,
+                "safe":     True,   # backend confirmed it's on a dry node
+            }
+            all_shelters.append(synthetic)
+            print(f"  [RERUN] Injected synthetic shelter '{synthetic['name']}' cap={synthetic['capacity']} node={node_id}")
+
+
     # ── Streaming loop: flood physics only, no GA ─────────────────────────
+    metro_stations = entry.get("metro_stations", [])
+
+    coords = HOBLI_COORDS.get(key, {})
+    center_lat = coords.get("lat")
+    center_lon = coords.get("lon")
+    
     for i in range(steps):
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
 
+        _collect_metro_reports(sim, metro_stations, center_lat, center_lon, update_history=True)
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
 
@@ -359,6 +933,13 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
     # Filter shelters: only truly safe shelters are eligible for evacuation
     shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, final_roads_geojson)
+    
+    # CRITICAL FIX: Ensure synthetic shelters (suggested for reruns) are always treated as safe.
+    # The suggestion engine already picked the best available dry/wadable spot for them.
+    for s in shelters_with_safety:
+        if s.get("type") == "synthetic":
+            s["safe"] = True
+
     safe_shelters = [s for s in shelters_with_safety if s["safe"]]
     safe_count = len(safe_shelters)
     print(f"{_ts()}  [DEBUG] safe shelters after filter = {safe_count} / {len(shelters_with_safety)}")
@@ -368,7 +949,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     if not safe_shelters:
         print(f"{_ts()}  [DEBUG] WARNING: no safe shelters available — evacuation routing will be skipped")
 
-    at_risk = sim.get_at_risk_nodes()
+    at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
     print(f"{_ts()}  [DEBUG] at_risk nodes = {len(at_risk)}")
 
     # Diagnostic: check sample depths and populations
@@ -379,24 +960,20 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     print(f"{_ts()}  [DEBUG] sample node pops:   {pop_sample}")
     print(f"{_ts()}  [DEBUG] total_pop distributed: {sum(sim.node_populations.values())}")
 
-    if not at_risk:
-        print(f"{_ts()}  [DEBUG] WARNING: at_risk is empty — lowering depth threshold to 0.05m for retry")
-        # Retry with a lower threshold — maybe flood didn't propagate deeply enough
-        at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
-        print(f"{_ts()}  [DEBUG] at_risk (0.05m threshold) = {len(at_risk)}")
-
     # Track total at-risk population BEFORE GA runs (for accurate remaining count)
     total_at_risk_before_ga = sum(pop for _, pop in at_risk)
     print(f"{_ts()}  [DEBUG] total at-risk pop before GA = {total_at_risk_before_ga}")
 
     planner_instance = None  # sentinel for traffic geojson extraction
     pressure_points = []
+    at_risk_formatted = []  # initialised here — used later for shelter suggestions
     if at_risk and safe_shelters:
         at_risk_formatted = [
             {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}
             for nid, pop in at_risk
         ]
         print(f"{_ts()}  [{algo_label}] Running {algo_label}: {len(at_risk_formatted)} at-risk groups → {len(safe_shelters)} shelters")
+
 
         ga_start = time.time()
         try:
@@ -486,6 +1063,16 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         except Exception:
             pass
 
+    # ── Compute shelter suggestions when coverage is incomplete ─────────────
+    shelter_suggestions = []
+    genuinely_unreachable = 0
+    if at_risk_remaining > 0 and at_risk_formatted:
+        shelter_suggestions, genuinely_unreachable = _compute_shelter_suggestions(
+            at_risk_formatted, safe_shelters, sim.G, final_evacuation_plan
+        )
+        print(f"{_ts()}  [SHELTER-SUGGEST] {len(shelter_suggestions)} suggestion(s) generated")
+
+
     final_report = {
         "done":      True,
         "total":     steps,
@@ -497,6 +1084,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "simulation_location":     hobli,
             "total_evacuated":         total_assigned,
             "total_at_risk_remaining": at_risk_remaining,
+            "genuinely_unreachable":   genuinely_unreachable,
             "total_at_risk_initial":   total_at_risk_before_ga,
             "simulation_population":   total_pop,
             "success_rate_pct":        round(
@@ -510,6 +1098,9 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             ),
             "shelter_reports":         shelter_reports,
             "pressure_points":         pressure_points,
+            "shelter_suggestions":     shelter_suggestions,
+            "metro_reports": _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True),
+            "metro_lines": entry.get("metro_lines", []),
         },
     }
     try:
@@ -562,6 +1153,7 @@ async def run_compare_generator(
     evacuation_mode: bool = False,
     use_traffic: bool = False,
     population: int | None = None,
+    extra_shelters: list | None = None,
 ):
     """
     SSE generator for compare mode:
@@ -607,11 +1199,42 @@ async def run_compare_generator(
     shelter_resp = await fetch_shelters(hobli)
     all_shelters = shelter_resp["shelters"]
 
+    if extra_shelters:
+        G_snap = REGION_CACHE[key]["G"]
+        import osmnx as _ox_compare
+        for idx, es in enumerate(extra_shelters):
+            try:
+                node_id = _ox_compare.distance.nearest_nodes(G_snap, es['lon'], es['lat'])
+            except Exception:
+                node_id = None
+            synthetic = {
+                "id":       f"suggested_{idx + 1}",
+                "name":     es.get('area_name', f"Suggested Shelter {idx + 1}"),
+                "type":     "synthetic",
+                "lat":      es['lat'],
+                "lon":      es['lon'],
+                "capacity": int(es.get('suggested_capacity', 500)),
+                "node_id":  node_id,
+                "safe":     True,
+            }
+            all_shelters.append(synthetic)
+            print(f"  [COMPARE RERUN] Injected synthetic shelter '{synthetic['name']}' cap={synthetic['capacity']}")
+
+
+    # Extract center coordinates for metro reports
+    coords = HOBLI_COORDS.get(key, {})
+    center_lat = coords.get("lat")
+    center_lon = coords.get("lon")
+
     # ── Phase 1: stream flood steps (identical to single-algo mode) ──────────
+    metro_stations = entry.get("metro_stations", [])
     print(f"{_ts()}  [compare] Starting flood simulation ({steps} steps)")
     for i in range(steps):
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact    = await loop.run_in_executor(None, sim.calculate_flood_impact)
+
+        # Keep temporal metro status history warm at each step
+        _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True)
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
 
@@ -640,14 +1263,17 @@ async def run_compare_generator(
     )
 
     shelters_with_safety = filter_safe_shelters(all_shelters, final_flood_geojson, final_roads_geojson)
+    
+    # CRITICAL FIX: Ensure synthetic shelters are always treated as safe in compare mode too
+    for s in shelters_with_safety:
+        if s.get("type") == "synthetic":
+            s["safe"] = True
+
     safe_shelters        = [s for s in shelters_with_safety if s["safe"]]
     if not safe_shelters:
         print(f"{_ts()}  [compare] WARNING: no safe shelters available — planner execution will be skipped")
 
-    at_risk = sim.get_at_risk_nodes()
-    if not at_risk:
-        print(f"{_ts()}  [compare] WARNING: at_risk empty — retrying at 0.05 m threshold")
-        at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
+    at_risk = sim.get_at_risk_nodes(depth_threshold_m=0.05)
 
     total_at_risk_initial = sum(pop for _, pop in at_risk)
     print(f"{_ts()}  [compare] at_risk groups={len(at_risk)} | total_pop={total_at_risk_initial} | safe_shelters={len(safe_shelters)}")
@@ -786,6 +1412,14 @@ async def run_compare_generator(
                 except Exception:
                     pass
 
+            # Shelter suggestions per algo (based on that algo's plan)
+            algo_suggestions = []
+            genuinely_unreachable = 0
+            if at_risk_remaining > 0:
+                algo_suggestions, genuinely_unreachable = _compute_shelter_suggestions(
+                    at_risk_formatted, safe_shelters, sim.G, plan
+                )
+
             compare_results[algo_key] = {
                 "evacuation_plan":       plan,
                 "traffic_geojson":       traffic_geojson,
@@ -793,6 +1427,7 @@ async def run_compare_generator(
                 "summary": {
                     "total_evacuated":         total_evac,
                     "total_at_risk_remaining": at_risk_remaining,
+                    "genuinely_unreachable":   genuinely_unreachable,
                     "total_at_risk_initial":   total_at_risk_initial,
                     "simulation_population":   total_pop,
                     "success_rate_pct":        round(total_evac / max(total_at_risk_initial, 1) * 100, 1),
@@ -801,6 +1436,9 @@ async def run_compare_generator(
                     "best_fitness":            fitness,
                     "avg_distance_per_person": round(fitness / max(total_at_risk_initial, 1), 1),
                     "shelter_reports":         shelter_reports,
+                    "shelter_suggestions":     algo_suggestions,
+                    "metro_reports":           _collect_metro_reports(sim, metro_stations, center_lat, center_lon, update_history=True),
+                    "metro_lines": entry.get("metro_lines", []),
                 },
             }
 
@@ -818,3 +1456,24 @@ async def run_compare_generator(
             v["traffic_geojson"] = None
         yield f"data: {json.dumps(final_frame)}\n\n"
 
+async def fetch_metro_stations(hobli_name: str) -> dict:
+    """
+    Return cached metro stations and lines for the given hobli.
+    """
+    # 1. Ensure region is loaded
+    key = norm_key(hobli_name)
+    if key not in REGION_CACHE:
+        await process_load_region(hobli_name)
+    
+    # 2. Return cached metro network already loaded during /load-region click
+    entry = REGION_CACHE.get(key, {})
+    
+    stations = entry.get("metro_stations", [])
+    lines = entry.get("metro_lines", [])
+    
+    return {
+        "hobli": hobli_name,
+        "total": len(stations),
+        "stations": stations,
+        "lines": lines
+    }

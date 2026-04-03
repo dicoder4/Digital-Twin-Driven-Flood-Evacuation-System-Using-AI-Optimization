@@ -41,7 +41,7 @@ export function useSimulation() {
         setRoadsData(null);
     }, []);
 
-    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm = 'ga', populationCount = null) => {
+    const start = useCallback((hobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm = 'ga', populationCount = null, extraShelters = null) => {
         reset();
         setIsRunning(true);
         setSimulationDone(false);
@@ -62,8 +62,12 @@ export function useSimulation() {
         if (populationCount !== null && populationCount > 0) {
             params.append('population', populationCount);
         }
+        if (extraShelters && extraShelters.length > 0) {
+            params.append('extra_shelters_json', JSON.stringify(extraShelters));
+        }
         
         const es = new EventSource(`${API_URL}/simulate-stream?${params}`);
+
         esRef.current = es;
 
         es.onmessage = async (evt) => {
