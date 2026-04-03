@@ -1559,12 +1559,28 @@ async def run_advanced_analysis_generator(
         PClass = _get_planner_class(algo_key)
         planner = PClass(at_risk, safe_shelters, sim.G, pop_size=40, generations=30, n_ants=40, iterations=30, n_particles=40, use_tomtom_traffic=use_traffic)
         decoded_plan = planner.run() 
-        breakdown = planner._fitness_breakdown(planner.best_chromosome if hasattr(planner, 'best_chromosome') else [])
-        
-        # Fallback for best_chromosome if not set (GA uses best_idx instead of best_chromosome)
-        if not hasattr(planner, 'best_chromosome') or planner.best_chromosome is None:
-             # GA stores best decoded results but we need the chromosome for breakdown
-             pass # For now, use best_fitness if breakdown fails
+        # Try to get breakdown, fallback to empty if missing or error
+        try:
+            # GA uses best_chromosome, check if set
+            best_chrom = getattr(planner, 'best_chromosome', None)
+            if best_chrom is not None:
+                # Ensure it's a list if it's a numpy array
+                if hasattr(best_chrom, 'tolist'):
+                    best_chrom = best_chrom.tolist()
+                breakdown = planner._fitness_breakdown(best_chrom)
+            else:
+                breakdown = {
+                    "distance_score": 0, "time_score": 0, 
+                    "capacity_penalty": 0, "terrain_penalty": 0,
+                    "total_fitness": planner.best_fitness
+                }
+        except Exception as e:
+            print(f"  [Analysis] Breakdown failed for {algo_key}: {e}")
+            breakdown = {
+                "distance_score": 0, "time_score": 0, 
+                "capacity_penalty": 0, "terrain_penalty": 0,
+                "total_fitness": planner.best_fitness
+            }
              
         return algo_key, planner.best_fitness, planner.fitness_history, decoded_plan, breakdown
 
