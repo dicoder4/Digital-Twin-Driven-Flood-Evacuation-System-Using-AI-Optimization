@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
+import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
 
 
 const ALGO_COLORS = {
@@ -172,6 +173,45 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
 
 export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null }) {
     const [genaiOpen, setGenaiOpen] = useState(false);
+    
+    // ── Analysis Logic ──
+    const [analysisOpen, setAnalysisOpen] = useState(false);
+    const [analysisMetrics, setAnalysisMetrics] = useState(null);
+    const [isAnalysing, setIsAnalysing] = useState(false);
+
+    const handleRunAnalysis = () => {
+        if (isAnalysing) return;
+        setIsAnalysing(true);
+        setAnalysisMetrics(null);
+
+        const url = new URL('http://localhost:8000/simulate-analysis');
+        url.searchParams.append('hobli', locationName);
+        url.searchParams.append('use_traffic', showTraffic);
+
+        const eventSource = new EventSource(url.href);
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.error) {
+                console.error("Analysis error:", data.error);
+                setIsAnalysing(false);
+                eventSource.close();
+                return;
+            }
+            if (data.analysis_done) {
+                setAnalysisMetrics(data.metrics);
+                setIsAnalysing(false);
+                setAnalysisOpen(true);
+                eventSource.close();
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error("Analysis SSE error:", err);
+            setIsAnalysing(false);
+            eventSource.close();
+        };
+    };
 
     // ── Compare table must be checked FIRST — summary is null after compare ──
     // (compare runs its own EventSources and never sets sim.finalReport)
@@ -284,7 +324,27 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 4 }}>
                         Fitness = flood-weighted distance + travel time + overflow penalty (lower = better routes)
                     </div>
+
+                    <button 
+                        className={`analyse-algos-btn ${isAnalysing ? 'analysing' : ''}`}
+                        onClick={handleRunAnalysis}
+                        disabled={isAnalysing}
+                    >
+                        {isAnalysing ? (
+                            <><RefreshCw size={12} className="spin" /> Calculating Stability...</>
+                        ) : (
+                            <><BrainCircuit size={12} /> Analyse Algorithm performance</>
+                        )}
+                        <ChevronRight size={12} />
+                    </button>
                 </section>
+
+                <AlgoAnalysisPopup 
+                    isOpen={analysisOpen} 
+                    onClose={() => setAnalysisOpen(false)}
+                    metrics={analysisMetrics}
+                    locationName={locationName}
+                />
 
                 {/* ── Per-algo detail view (appears when an algo is active) ────── */}
                 {ad && adColor && (

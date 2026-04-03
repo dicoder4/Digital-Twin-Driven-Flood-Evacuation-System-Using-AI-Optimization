@@ -61,6 +61,7 @@ class ACOEvacuationPlanner(BaseEvacuationPlanner):
         self.beta       = beta
         self.rho        = rho
         self.q          = q
+        self.fitness_history = []  # Track convergence speed
 
         n_risk     = len(at_risk_nodes)
         n_shelters = len(safe_shelters)
@@ -167,6 +168,7 @@ class ACOEvacuationPlanner(BaseEvacuationPlanner):
 
             # 4. Clamp to prevent numerical explosion
             np.clip(self._tau, 1e-6, 1e6, out=self._tau)
+            self.fitness_history.append(float(best_fitness))
 
             if (iteration + 1) % 10 == 0:
                 print(f"  [ACO] iter {iteration+1}/{self.iterations} "

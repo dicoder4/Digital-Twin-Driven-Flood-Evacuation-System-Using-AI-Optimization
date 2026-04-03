@@ -292,6 +292,30 @@ async def simulate_compare(
 
 
 
+@app.get("/simulate-analysis")
+async def simulate_analysis(
+    hobli:           str   = Query(...),
+    rainfall_mm:     float = Query(150.0),
+    steps:           int   = Query(20),
+    decay_factor:    float = Query(0.5),
+    population:      int | None = Query(None),
+    use_traffic:     bool  = Query(False),
+):
+    """
+    SSE stream for advanced algorithm performance analysis.
+    Runs each algorithm 5 times to compute stability, convergence, and diversity.
+    """
+    return StreamingResponse(
+        service.run_advanced_analysis_generator(
+            hobli, rainfall_mm, steps, decay_factor,
+            population=population, use_traffic=use_traffic,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 @app.get("/shelters/{hobli_name}")
 async def get_shelters(hobli_name: str):
     """

@@ -45,6 +45,7 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
         self.generations = generations
         self.mutation_rate = mutation_rate
         self.use_tomtom_traffic = use_tomtom_traffic
+        self.fitness_history = []  # Track convergence speed
 
         n_risk = len(at_risk_nodes)
         n_shelters = len(safe_shelters)
@@ -95,11 +96,14 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
                     new_pop.append(self._mutate(c2))
 
             population = new_pop
+            best_in_gen = float(np.min(fitness_scores))
+            self.fitness_history.append(best_in_gen)
 
         fitness_scores = np.array([self._fitness(c) for c in population])
         best_idx = int(np.argmin(fitness_scores))
         self.best_fitness = float(fitness_scores[best_idx])
-        best = population[best_idx]
+        self.best_chromosome = population[best_idx]
+        best = self.best_chromosome
         print(f"  [GA] Best fitness = {self.best_fitness:.1f}")
         return self._decode(best)
 

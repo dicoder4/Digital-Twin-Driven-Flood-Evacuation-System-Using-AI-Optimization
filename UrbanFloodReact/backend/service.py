@@ -1477,3 +1477,140 @@ async def fetch_metro_stations(hobli_name: str) -> dict:
         "stations": stations,
         "lines": lines
     }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Advanced Algorithm Analysis (Convergence, Stability, Diversity)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _calculate_convergence_speed(history: list) -> int:
+    """Find the iteration index where fitness first reaches 95% of its final improvement."""
+    if not history: return 0
+    start_f = history[0]
+    end_f = history[-1]
+    total_gain = start_f - end_f
+    if total_gain <= 0: return len(history)
+    
+    target = start_f - (0.95 * total_gain)
+    for i, f in enumerate(history):
+        if f <= target:
+            return i + 1
+    return len(history)
+
+def _calculate_path_diversity(plan: list) -> float:
+    """Calculate the diversity of routes based on unique edge usage."""
+    all_edges = []
+    for route in plan:
+        path = route.get("path_nodes", [])
+        # Create a list of edges (pairs of adjacent nodes)
+        edges = [(path[i], path[i+1]) for i in range(len(path)-1)]
+        all_edges.extend(edges)
+    
+    if not all_edges: return 1.0
+    unique_edges = set(all_edges)
+    # Diversity = Unique Edges / Total Edge Instances
+    return round(len(unique_edges) / len(all_edges), 3)
+
+async def run_advanced_analysis_generator(
+    hobli: str, rainfall_mm: float, steps: int, decay_factor: float,
+    population: int | None = None, use_traffic: bool = False
+):
+    """
+    Runs GA, ACO, and PSO 5 times each to calculate Stochastic Stability (Mean/StdDev).
+    Also yields convergence and diversity metrics.
+    """
+    import time
+    import numpy as np
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    key = norm_key(hobli)
+    
+    # 1. Setup Simulation (same as compare mode)
+    entry = REGION_CACHE[key]
+    sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
+    sim.initialize_from_drains(rainfall_mm)
+    
+    if population is not None: total_pop = population
+    else: 
+        pop_data = await get_hobli_population(hobli)
+        total_pop = pop_data.get("total_population", 0)
+    
+    # Scale for testing efficiency
+    total_pop = max(1, total_pop // 100)
+    sim.distribute_population(total_pop)
+    
+    shelter_resp = await fetch_shelters(hobli)
+    safe_shelters = [s for s in shelter_resp["shelters"]] # Assume safe for analysis
+    
+    for _ in range(steps):
+        await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
+    
+    at_risk_raw = sim.get_at_risk_nodes(depth_threshold_m=0.05)
+    at_risk = [{"id": n, "pop": p, "lat": sim.G.nodes[n]["y"], "lon": sim.G.nodes[n]["x"]} for n, p in at_risk_raw]
+
+    if not at_risk or not safe_shelters:
+        yield f"data: {json.dumps({'error': 'No at-risk population or shelters'})}\n\n"
+        return
+
+    # 2. Parallel Stability Runs (5 runs per algorithm)
+    n_runs = 5
+    results = {"ga": [], "aco": [], "pso": []}
+    
+    def _single_run(algo_key):
+        PClass = _get_planner_class(algo_key)
+        planner = PClass(at_risk, safe_shelters, sim.G, pop_size=40, generations=30, n_ants=40, iterations=30, n_particles=40, use_tomtom_traffic=use_traffic)
+        decoded_plan = planner.run() 
+        breakdown = planner._fitness_breakdown(planner.best_chromosome if hasattr(planner, 'best_chromosome') else [])
+        
+        # Fallback for best_chromosome if not set (GA uses best_idx instead of best_chromosome)
+        if not hasattr(planner, 'best_chromosome') or planner.best_chromosome is None:
+             # GA stores best decoded results but we need the chromosome for breakdown
+             pass # For now, use best_fitness if breakdown fails
+             
+        return algo_key, planner.best_fitness, planner.fitness_history, decoded_plan, breakdown
+
+    print(f"{_ts()} [Analysis] Starting stability test (5 runs per algorithm)...")
+    analysis_data = {}
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+        futures = []
+        for algo in ["ga", "aco", "pso"]:
+            for _ in range(n_runs):
+                futures.append(pool.submit(_single_run, algo))
+        
+        for fut in concurrent.futures.as_completed(futures):
+            algo, fitness, history, plan, breakdown = fut.result()
+            results[algo].append({"fitness": fitness, "history": history, "plan": plan, "breakdown": breakdown})
+
+    # 3. Aggregate Metrics
+    for algo, runs in results.items():
+        fitnesses = [r["fitness"] for r in runs]
+        histories = [r["history"] for r in runs]
+        plans = [r["plan"] for r in runs]
+        
+        mean_fit = np.mean(fitnesses)
+        std_fit = np.std(fitnesses)
+        
+        # Stability Score: 1 - (StdDev / Mean) -> 1.0 is perfectly stable
+        stability = max(0, 1.0 - (std_fit / mean_fit)) if mean_fit > 0 else 0
+        
+        # Average convergence speed and diversity across runs
+        avg_conv = np.mean([_calculate_convergence_speed(h) for h in histories])
+        avg_div = np.mean([_calculate_path_diversity(p) for p in plans])
+        
+        analysis_data[algo] = {
+            "mean_fitness": round(float(mean_fit), 1),
+            "std_dev": round(float(std_fit), 2),
+            "stability_score": round(float(stability), 3),
+            "convergence_speed": float(avg_conv),
+            "path_diversity": float(avg_div),
+            "fitness_history": histories[0],
+            "breakdown": runs[0]["breakdown"]
+        }
+
+    final_payload = {
+        "analysis_done": True,
+        "metrics": analysis_data,
+        "location": hobli,
+        "timestamp": datetime.now().isoformat()
+    }
+    yield f"data: {json.dumps(final_payload)}\n\n"

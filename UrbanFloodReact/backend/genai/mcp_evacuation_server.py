@@ -45,12 +45,13 @@ mcp = FastMCP("Urban Flood Evacuation AI Server")
 _STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_state.json")
 
 
-def update_state(summary_data: dict, evacuation_plan: list = None, hobli: str = None):
+def update_state(summary_data: dict, evacuation_plan: list = None, hobli: str = None, algorithm_analysis: dict = None):
     """Write the latest simulation results to the shared state file on disk."""
     state = {
         "summary_data": summary_data,
         "evacuation_plan": evacuation_plan or [],
         "hobli": hobli or "",
+        "algorithm_analysis": algorithm_analysis,
     }
     with open(_STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
@@ -62,7 +63,7 @@ def _load_state() -> dict:
         with open(_STATE_FILE, "r") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"summary_data": None, "evacuation_plan": None, "hobli": None}
+        return {"summary_data": None, "evacuation_plan": None, "hobli": None, "algorithm_analysis": None}
 
 
 def _get_enriched_context() -> dict:
@@ -79,6 +80,7 @@ def _get_enriched_context() -> dict:
             build_expert_context(
                 state["summary_data"],
                 state.get("evacuation_plan"),
+                state.get("algorithm_analysis")
             )
         )
         

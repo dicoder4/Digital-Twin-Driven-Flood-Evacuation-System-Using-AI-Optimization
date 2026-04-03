@@ -66,6 +66,7 @@ class PSOEvacuationPlanner(BaseEvacuationPlanner):
         self.c1          = c1
         self.c2          = c2
         self.v_max       = v_max
+        self.fitness_history = []  # Track convergence speed
 
         # Pre-compute nearest-shelter lookup for mutation fallback
         # nearest_shelter[i] = shelter index closest to at-risk node i
@@ -164,6 +165,8 @@ class PSOEvacuationPlanner(BaseEvacuationPlanner):
                     if fit < gbest_fitness:
                         gbest         = positions[p_idx].copy()
                         gbest_fitness = fit
+            
+            self.fitness_history.append(float(gbest_fitness))
 
             if (iteration + 1) % 10 == 0:
                 print(f"  [PSO] iter {iteration+1}/{self.iterations} "

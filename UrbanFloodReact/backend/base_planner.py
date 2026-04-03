@@ -143,6 +143,49 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
 
         return total_dist + 0.5 * total_time + penalty + terrain_penalty
 
+    def _fitness_breakdown(self, chromosome: list) -> dict:
+        """
+        Calculates separate fitness components for analysis.
+        """
+        total_dist      = 0.0
+        total_time      = 0.0
+        terrain_penalty = 0.0
+        shelter_counts  = defaultdict(int)
+
+        for i, j in enumerate(chromosome):
+            pop  = self.at_risk_nodes[i]['pop']
+            dist = self.dist_matrix[i, j]
+            t    = self.time_matrix[i, j]
+
+            if not math.isfinite(dist): dist = 1_000_000
+            if not math.isfinite(t):    t    = 1_000_000
+
+            source_elev = self.at_risk_nodes[i].get('elevation', 900.0)
+            dest_elev   = self.safe_shelters[j].get('elevation', 900.0)
+            
+            if dest_elev < source_elev:
+                terrain_penalty += (source_elev - dest_elev) * 50.0 * pop
+            if dest_elev < 880.0:
+                terrain_penalty += 500.0 * pop
+
+            total_dist        += dist * pop
+            total_time        += t    * pop
+            shelter_counts[j] += pop
+
+        penalty = 0.0
+        for j, count in shelter_counts.items():
+            cap = self.safe_shelters[j]['capacity']
+            if count > cap:
+                penalty += ((count - cap) ** 2) * self.CAPACITY_PENALTY
+
+        return {
+            "distance_score": round(total_dist, 1),
+            "time_score": round(0.5 * total_time, 1),
+            "capacity_penalty": round(penalty, 1),
+            "terrain_penalty": round(terrain_penalty, 1),
+            "total_fitness": round(total_dist + 0.5 * total_time + penalty + terrain_penalty, 1)
+        }
+
     # ─────────────────────────────────────────────────────────────────────────
     # run() must be implemented by each concrete planner
     # ─────────────────────────────────────────────────────────────────────────
