@@ -30,6 +30,8 @@ class UrbanFloodSimulator:
         self.node_populations = {} # node_id -> person_count
         self.shelter_occupancy = {} # shelter_id -> person_count
         self.total_evacuated = 0
+        # New attribute for progressive rainfall
+        self.rainfall_per_step_m = 0.0
 
     def initialize_flood(self, rainfall_mm):
         """
@@ -73,90 +75,78 @@ class UrbanFloodSimulator:
             
         return self.G
 
+    def set_progressive_rainfall(self, total_rainfall_mm: float, steps: int):
+        """Set up progressive rainfall over the given steps."""
+        self.rainfall_per_step_m = total_rainfall_mm / steps / 1000.0
+        # Reset water depths to zero
+        nx.set_node_attributes(self.G, 0.0, 'water_depth')
+        print(f"  [flood_sim] Progressive rainfall: {total_rainfall_mm} mm over {steps} steps, "
+              f"{self.rainfall_per_step_m*1000:.2f} mm per step")
+
     def propagate_flood_step(self, decay_factor=0.5):
-        """
-        Propagate water based on Hydraulic Head (Elevation + Water Depth).
-        Water flows from High Head to Low Head.
-        """
+        # 1. Add incremental rainfall
+        if self.rainfall_per_step_m > 0:
+            for node in self.G.nodes:
+                self.G.nodes[node]['water_depth'] = self.G.nodes[node].get('water_depth', 0.0) + self.rainfall_per_step_m
+
+        # 2. Existing propagation logic (unchanged)
         current_depths = nx.get_node_attributes(self.G, 'water_depth')
         elevations = nx.get_node_attributes(self.G, 'elevation')
-        
-        # Ensure elevation data exists
         if not elevations:
-             elevations = {n: 0.0 for n in self.G.nodes()}
+            elevations = {n: 0.0 for n in self.G.nodes()}
         for n in self.G.nodes():
-            if n not in elevations: elevations[n] = 0.0
+            if n not in elevations:
+                elevations[n] = 0.0
 
-        # ── Accumulate changes ─────────────────────────────────────────
         depth_transfers = {n: 0.0 for n in self.G.nodes()}
-
-        # For every node with water
         for node in self.G.nodes():
-            if node not in current_depths: continue
-            
+            if node not in current_depths:
+                continue
             water_depth = current_depths[node]
-            if water_depth <= 0.001: continue 
-
+            if water_depth <= 0.05:  # Surface retention threshold
+                continue
             node_head = elevations[node] + water_depth
-            
             neighbors = list(self.G.neighbors(node))
             lower_head_neighbors = []
             total_head_diff = 0
-
-            # Find neighbors with LOWER TOTAL HEAD
             for n in neighbors:
                 n_elev = elevations.get(n, 0.0)
                 n_water = current_depths.get(n, 0.0)
                 n_head = n_elev + n_water
-                
                 if n_head < node_head:
-                    # Drive flow by head difference
                     head_diff = node_head - n_head
                     lower_head_neighbors.append((n, head_diff))
                     total_head_diff += head_diff
-
             if not lower_head_neighbors:
                 continue
-
-            # Distribute water
-            # Flow amount depends on how much water is available 'above' the neighbor's head?
-            # Simplified: Move a fraction of the water depth
             flow_out = water_depth * decay_factor
-
             total_outflow = 0.0
             per_neighbour = []
-
             for n, diff in lower_head_neighbors:
                 fraction = diff / total_head_diff
-                
-                # GIS Physics Enhancement 1: Slope-weighted flow
-                # Steeper drops transfer water faster (up to 3x)
                 n_elev = elevations.get(n, 0.0)
                 node_elev = elevations.get(node, 0.0)
                 slope_factor = 1.0 + min(abs(node_elev - n_elev) / 10.0, 2.0)
-                
-                # GIS Physics Enhancement 2: Manning's roughness
-                # Different surfaces resist flow differently (residential vs motorways)
                 edge_data = self.G.get_edge_data(node, n, default={})
                 if isinstance(edge_data, dict) and 0 in edge_data:
                     edge_data = edge_data[0]
                 efficiency = edge_data.get('flow_efficiency', 1.0)
-                
-                # Combined physics amount
                 amount = flow_out * fraction * slope_factor * efficiency
                 per_neighbour.append((n, amount))
                 total_outflow += amount
-                
             scale = min(1.0, water_depth / total_outflow) if total_outflow > 0 else 1.0
-            
             for n, amount in per_neighbour:
                 scaled_amount = amount * scale
                 depth_transfers[node] -= scaled_amount
-                depth_transfers[n]    += scaled_amount
-        
-        # ── Apply all at once, guard against negatives ─────────────────
+                depth_transfers[n] += scaled_amount
         for n, delta in depth_transfers.items():
-            current_depths[n] = max(0.0, current_depths.get(n, 0.0) + delta)
+            new_depth = max(0.0, current_depths.get(n, 0.0) + delta)
+            current_depths[n] = new_depth
+            
+            # --- NEW: Track historical max depth ---
+            prev_max = self.G.nodes[n].get('max_water_depth', 0.0)
+            if new_depth > prev_max:
+                self.G.nodes[n]['max_water_depth'] = new_depth
 
         nx.set_node_attributes(self.G, current_depths, 'water_depth')
         return self.G
@@ -182,14 +172,16 @@ class UrbanFloodSimulator:
 
     def get_at_risk_nodes(self, depth_threshold_m=0.15):
         """
-        Identify nodes where water depth > threshold and there are people present.
+        Identify nodes where max historical water depth > threshold and there are people present.
         Returns a list of (node_id, population)
         """
-        node_depths = nx.get_node_attributes(self.G, 'water_depth')
         at_risk = []
-        for n, depth in node_depths.items():
+        for n in self.G.nodes():
+            current_depth = self.G.nodes[n].get('water_depth', 0.0)
+            max_depth = max(self.G.nodes[n].get('max_water_depth', 0.0), current_depth)
+            
             pop = self.node_populations.get(n, 0)
-            if depth > depth_threshold_m and pop > 0:
+            if max_depth > depth_threshold_m and pop > 0:
                 at_risk.append((n, pop))
         return at_risk
 

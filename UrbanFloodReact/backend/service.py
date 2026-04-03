@@ -195,10 +195,18 @@ def _collect_metro_reports(sim: UrbanFloodSimulator, metro_stations: list, cente
             access_viability = 0.0
 
         raw_score = min(1.0, (0.55 * max_depth) + (0.35 * mean_depth) + (0.10 * (1.0 - access_viability)))
+                # DEBUG: for Konankunte Cross
+        if station_name == "Konanakunte Cross":
+            print(f"[DEBUG] {station_name}: snap_dist={snap_dist:.1f}m, "
+                  f"max_depth={max_depth:.3f}m, mean_depth={mean_depth:.3f}m, "
+                  f"access_viability={access_viability:.2f}, raw_score={raw_score:.3f}")
+            print(f"  neighborhood nodes: {neighborhood_nodes[:5]}")
+            for n in neighborhood_nodes[:5]:
+                print(f"    node {n}: depth={graph.nodes[n].get('water_depth', 0):.3f}m")
 
         history = sim._metro_status_history.get(station_key, {})
         previous_ema = float(history.get("ema_score", raw_score))
-        ema_score = 0.65 * previous_ema + 0.35 * raw_score if history else raw_score
+        ema_score = 0.5 * previous_ema + 0.5 * raw_score if history else raw_score
         previous_status = history.get("status")
         status = _metro_status_from_score(ema_score, previous_status=previous_status)
 
@@ -821,13 +829,18 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Region '{hobli}' not loaded: {e}")
 
-    entry  = REGION_CACHE[key]
-    G_ref  = entry["G"]
+    entry = REGION_CACHE[key]
+    G_ref = entry["G"]
     drains = entry["drain_nodes"]
-    lakes  = entry["lake_nodes"]
+    lakes = entry["lake_nodes"]
 
     sim = UrbanFloodSimulator(G_ref.copy(), drain_nodes=drains, lake_nodes=lakes)
-    sim.initialize_from_drains(rainfall_mm)
+
+    # Mode selection
+    if mode == "progressive":
+        sim.set_progressive_rainfall(rainfall_mm, steps)
+    else:
+        sim.initialize_from_drains(rainfall_mm)
 
     # 1. Distribute population on nodes
     if population is not None:
@@ -880,9 +893,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
 
-        # Keep temporal metro status history warm at each step
-        _collect_metro_reports(sim, metro_stations,  center_lat, center_lon,update_history=True)
-
+        _collect_metro_reports(sim, metro_stations, center_lat, center_lon, update_history=True)
         flood_gdf = impact["flood_gdf"]
         roads_gdf = impact["roads_gdf"]
 
