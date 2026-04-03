@@ -9,5 +9,6 @@ UrbanFloodReact/backend/cache/
 UrbanFloodReact/backend/__pycache__/
 UrbanFloodReact/backend/genai/mcp_state.json
 UrbanFloodReact/cache/
-
+UrbanFloodReact/frontend/package-lock.json
+UrbanFloodReact/frontend/package.json
 

@@ -108,6 +108,9 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
         shelter_counts  = defaultdict(int)
 
         for i, j in enumerate(chromosome):
+            if j < 0:
+                continue
+
             pop  = self.at_risk_nodes[i]['pop']
             dist = self.dist_matrix[i, j]
             t    = self.time_matrix[i, j]
@@ -153,6 +156,9 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
         shelter_counts  = defaultdict(int)
 
         for i, j in enumerate(chromosome):
+            if j < 0:
+                continue
+
             pop  = self.at_risk_nodes[i]['pop']
             dist = self.dist_matrix[i, j]
             t    = self.time_matrix[i, j]

@@ -127,48 +127,6 @@ class EvolutionMixin:
 
         return chromosome
 
-    # ── Fitness ───────────────────────────────────────────────────────────────
-
-    def _fitness(self, chromosome):
-        """
-        Multi-factor fitness (lower = better):
-          - Weighted sum of flood-aware network distance per person
-          - Weighted sum of travel time per person
-          - HARD REJECTION (inf) if any shelter exceeds capacity
-
-        Unassigned nodes (index -1) contribute zero distance/time — they
-        are already counted as at_risk_remaining in the service layer.
-        """
-        total_dist = 0.0
-        total_time = 0.0
-        shelter_counts = defaultdict(int)
-
-        for i, j in enumerate(chromosome):
-            if j < 0:
-                continue  # unassigned — skip, not penalised here
-
-            pop = self.at_risk_nodes[i]['pop']
-            dist = self.dist_matrix[i, j]
-            t = self.time_matrix[i, j]
-
-            if not math.isfinite(dist):
-                dist = 1_000_000
-            if not math.isfinite(t):
-                t = 1_000_000
-
-            total_dist += dist * pop
-            total_time += t * pop
-            shelter_counts[j] += pop
-
-        # Hard capacity enforcement — any violation → infinite cost.
-        # This guarantees the GA never selects an over-capacity chromosome.
-        for j, count in shelter_counts.items():
-            cap = self.safe_shelters[j]['capacity']
-            if count > cap:
-                return float('inf')
-
-        return total_dist + 0.5 * total_time
-
     # ── Selection ─────────────────────────────────────────────────────────────
 
     def _selection(self, population, fitness_scores):
