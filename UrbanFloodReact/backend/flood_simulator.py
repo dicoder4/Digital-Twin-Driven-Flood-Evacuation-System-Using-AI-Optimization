@@ -103,7 +103,7 @@ class UrbanFloodSimulator:
             if node not in current_depths:
                 continue
             water_depth = current_depths[node]
-            if water_depth <= 0.001:
+            if water_depth <= 0.05:  # Surface retention threshold
                 continue
             node_head = elevations[node] + water_depth
             neighbors = list(self.G.neighbors(node))
@@ -140,7 +140,13 @@ class UrbanFloodSimulator:
                 depth_transfers[node] -= scaled_amount
                 depth_transfers[n] += scaled_amount
         for n, delta in depth_transfers.items():
-            current_depths[n] = max(0.0, current_depths.get(n, 0.0) + delta)
+            new_depth = max(0.0, current_depths.get(n, 0.0) + delta)
+            current_depths[n] = new_depth
+            
+            # --- NEW: Track historical max depth ---
+            prev_max = self.G.nodes[n].get('max_water_depth', 0.0)
+            if new_depth > prev_max:
+                self.G.nodes[n]['max_water_depth'] = new_depth
 
         nx.set_node_attributes(self.G, current_depths, 'water_depth')
         return self.G
@@ -166,14 +172,16 @@ class UrbanFloodSimulator:
 
     def get_at_risk_nodes(self, depth_threshold_m=0.15):
         """
-        Identify nodes where water depth > threshold and there are people present.
+        Identify nodes where max historical water depth > threshold and there are people present.
         Returns a list of (node_id, population)
         """
-        node_depths = nx.get_node_attributes(self.G, 'water_depth')
         at_risk = []
-        for n, depth in node_depths.items():
+        for n in self.G.nodes():
+            current_depth = self.G.nodes[n].get('water_depth', 0.0)
+            max_depth = max(self.G.nodes[n].get('max_water_depth', 0.0), current_depth)
+            
             pop = self.node_populations.get(n, 0)
-            if depth > depth_threshold_m and pop > 0:
+            if max_depth > depth_threshold_m and pop > 0:
                 at_risk.append((n, pop))
         return at_risk
 
