@@ -817,8 +817,8 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
             for sl, so in existing_shelter_coords
         ) if existing_shelter_coords else 0.0
 
-        # Buffer to 2.0x to guarantee 100% evacuation in a single re-run
-        suggested_cap = int(math.ceil(deficit_pop * 2.0))
+        # Buffer to 2.5x to guarantee 100% evacuation even with small clustering gaps
+        suggested_cap = int(math.ceil(deficit_pop * 2.5))
 
         if deficit_pop > 500 or nearest_shelter_dist_km > 2.0:
             priority = 'high'
@@ -1054,33 +1054,33 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     
     # ── STATEFUL RE-RUN LOGIC ───────────────────────────────────────────────
     is_rerun = bool(extra_shelters is not None and len(extra_shelters) > 0)
-    if not is_rerun:
-        SIMULATION_SESSION_CACHE["pinned_routes"] = []
 
-    used_capacity = defaultdict(int)
+    used_capacity = {}
     pinned_node_ids = set()
     
     if is_rerun:
-        pinned_pop = sum(r.get('pop', 0) for r in SIMULATION_SESSION_CACHE["pinned_routes"])
-        print(f"{_ts()}  [STATE] Re-run detected. Pinning {len(SIMULATION_SESSION_CACHE['pinned_routes'])} routes ({pinned_pop:,} people).")
         for route in SIMULATION_SESSION_CACHE["pinned_routes"]:
             uid = route.get('from_node')
             sid = route.get('to_shelter')
             p = route.get('pop', 0)
-            used_capacity[sid] += p
+            used_capacity[sid] = used_capacity.get(sid, 0) + p
             pinned_node_ids.add(uid)
-            
-    # Deduct capacity consumed by people evacuated in the previous run
-    deduct_count = 0
-    for s in safe_shelters:
-        sid = s.get('id')
-        if sid in used_capacity:
-            used = used_capacity[sid]
-            s['capacity'] = max(0, s['capacity'] - used)
-            deduct_count += 1
 
-    if is_rerun:
-        print(f"{_ts()}  [STATE] Adjusted capacity for {deduct_count} safe shelters.")
+        # Deduct capacity consumed by people evacuated in the previous run
+        deduct_count = 0
+        pinned_pop = sum(r.get('pop', 0) for r in SIMULATION_SESSION_CACHE["pinned_routes"])
+        print(f"{_ts()}  [STATE] Re-run detected. Pinning {len(SIMULATION_SESSION_CACHE['pinned_routes'])} routes ({pinned_pop:,} people).")
+        
+        for s in safe_shelters:
+            sid = s.get('id')
+            if sid in used_capacity:
+                used = used_capacity[sid]
+                s['capacity'] = max(0, s['capacity'] - used)
+                deduct_count += 1
+        print(f"{_ts()}  [STATE] Adjusted capacity for {deduct_count} existing safe shelters.")
+    else:
+        # Reset cache on a fresh run
+        SIMULATION_SESSION_CACHE["pinned_routes"] = []
 
     initial_evacuated_count = sim.total_evacuated
     at_risk_formatted = []  # initialised here — used later for shelter suggestions
