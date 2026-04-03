@@ -21,6 +21,7 @@ from shapely.ops import unary_union
 
 from coord_loader   import load_coords_from_json, norm_key  # noqa: F401 (re-export norm_key)
 from rainfall_loader import load_rainfall_excels
+import db
 
 # â”€â”€ Module-level state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 HOBLI_COORDS:  dict = {}
@@ -473,17 +474,37 @@ def _extract_namma_metro_reference_from_csv():
     network_csv = namma_dir / "bengaluru_metro_network.csv"
     stations_csv = namma_dir / "bengaluru_metro_stations.csv"
 
-    if not network_csv.exists() or not stations_csv.exists():
-        return {"type": "FeatureCollection", "features": []}, {}
+    station_line_map = {}
+    network_rows = []
+    station_rows = []
+
+    # 1. Try Mongo
+    try:
+        network_df = db.get_metro_network_df()
+        station_df = db.get_metro_stations_ref_df()
+        if not network_df.empty and not station_df.empty:
+            network_rows = network_df.to_dict(orient="records")
+            station_rows = station_df.to_dict(orient="records")
+            print("    [metro] Fetched reference CSVs from MongoDB")
+    except Exception as e:
+        print(f"    [metro] Mongo CSV ref fetch failed, falling back: {e}")
+
+    # 2. Fallback to Local
+    if not network_rows or not station_rows:
+        if not network_csv.exists() or not stations_csv.exists():
+            return {"type": "FeatureCollection", "features": []}, {}
+
+        try:
+            with open(network_csv, newline="", encoding="utf-8") as f:
+                network_rows = list(csv.DictReader(f))
+            with open(stations_csv, newline="", encoding="utf-8") as f:
+                station_rows = list(csv.DictReader(f))
+            print("    [metro] Loaded reference CSVs from local disk")
+        except Exception as e:
+            print(f"    [gis/warn] NammaMetro local CSV load failed: {e}")
+            return {"type": "FeatureCollection", "features": []}, {}
 
     try:
-        with open(network_csv, newline="", encoding="utf-8") as f:
-            network_rows = list(csv.DictReader(f))
-
-        with open(stations_csv, newline="", encoding="utf-8") as f:
-            station_rows = list(csv.DictReader(f))
-
-        station_line_map = {}
         for row in station_rows:
             station_name = _sanitize_val(row.get("station_name"))
             line_name = _sanitize_val(row.get("line"))
@@ -494,7 +515,6 @@ def _extract_namma_metro_reference_from_csv():
             
             key = _station_key(station_name)
             if key in station_line_map:
-                # Add if not already present in the semicolon-separated list
                 if line_name not in station_line_map[key]:
                     station_line_map[key] = f"{station_line_map[key]}; {line_name}"
             else:
@@ -1392,13 +1412,28 @@ def _extract_metro_lines_from_kml(center, include_rail=False):
 
 def _load_metro_lines_from_geojson(center):
     """Load metro lines from authoritative GeoJSON, using description for colour detection."""
-    if not METRO_GEOJSON.exists():
-        return {"type": "FeatureCollection", "features": []}
+    data = None
+    # 1. Try Mongo
+    try:
+        data = db.get_metro_lines_geojson()
+        if data:
+            print("    [metro] Fetched authoritative GeoJSON from MongoDB")
+    except Exception as e:
+        print(f"    [metro] Mongo GeoJSON fetch failed, falling back: {e}")
 
-    import json
+    # 2. Fallback to Local
+    if not data:
+        if not METRO_GEOJSON.exists():
+            return {"type": "FeatureCollection", "features": []}
 
-    with open(METRO_GEOJSON) as f:
-        data = json.load(f)
+        import json
+        try:
+            with open(METRO_GEOJSON) as f:
+                data = json.load(f)
+            print("    [metro] Loaded authoritative GeoJSON from local disk")
+        except Exception as e:
+            print(f"    [metro/warn] Local GeoJSON load failed: {e}")
+            return {"type": "FeatureCollection", "features": []}
 
     features = []
     for feature in data.get("features", []):

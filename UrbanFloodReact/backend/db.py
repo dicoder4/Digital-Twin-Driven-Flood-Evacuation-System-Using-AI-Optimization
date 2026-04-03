@@ -26,16 +26,19 @@ def _get_db():
     
     mongo_url = os.getenv("MONGO_URL") or os.getenv("MONGO_URI")
     if not mongo_url:
+        print("[MONGO DEBUG] MONGO_URL not found in environment variables.")
         return None
 
     try:
         # Avoid hanging on connection attempts if Mongo is unreachable
-        _client = MongoClient(mongo_url, serverSelectionTimeoutMS=2000)
+        # Increased timeout to 5s to handle slower Atlas handshakes
+        _client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000)
         # Ping to verify connection
         _client.admin.command('ping')
         _db = _client.get_database("flood_evacuation_db")
         return _db
     except Exception as e:
+        print(f"[MONGO DEBUG] Failed to connect to MongoDB: {e}")
         logger.warning(f"[MONGO DEBUG] Failed to connect to MongoDB: {e}")
         _client = None
         _db = None
@@ -46,9 +49,19 @@ def bootstrap_mongo_data():
     Called on app startup. Reads local resources and writes them to Mongo
     if the collections are currently empty.
     """
-    db = _get_db()
+    import time
+    
+    db = None
+    retries = 3
+    for i in range(retries):
+        db = _get_db()
+        if db is not None:
+            break
+        print(f"[MONGO DEBUG] Bootstrap connection attempt {i+1} failed (timeout/replica set delay). Retrying in 3s...")
+        time.sleep(3)
+
     if db is None:
-        print("[MONGO DEBUG] Skipping bootstrap: MongoDB is not configured or unreachable.")
+        print("[MONGO DEBUG] Skipping bootstrap: MongoDB setup failed after retries.")
         return
 
     data_dir = Path(__file__).parent / "data"
@@ -160,6 +173,42 @@ def bootstrap_mongo_data():
             if rain_inserted > 0:
                 print(f"[MONGO DEBUG] Inserted rainfall documents for May, June, July.")
 
+        # 8. Metro Network Data
+        metro_net_col = db["metro_network"]
+        if metro_net_col.count_documents({}) == 0:
+            metro_dir = data_dir / "NammaMetro"
+            csv_path = metro_dir / "bengaluru_metro_network.csv"
+            if csv_path.exists():
+                df = pd.read_csv(csv_path)
+                records = df.to_dict(orient="records")
+                if records:
+                    metro_net_col.insert_many(records)
+                    print(f"[MONGO DEBUG] Inserted {len(records)} records into metro_network.")
+
+        # 9. Metro Stations Reference
+        metro_sta_col = db["metro_stations_ref"]
+        if metro_sta_col.count_documents({}) == 0:
+            metro_dir = data_dir / "NammaMetro"
+            csv_path = metro_dir / "bengaluru_metro_stations.csv"
+            if csv_path.exists():
+                df = pd.read_csv(csv_path)
+                records = df.to_dict(orient="records")
+                if records:
+                    metro_sta_col.insert_many(records)
+                    print(f"[MONGO DEBUG] Inserted {len(records)} records into metro_stations_ref.")
+
+        # 10. Metro Lines GeoJSON
+        metro_geo_col = db["metro_lines_geojson"]
+        if metro_geo_col.count_documents({}) == 0:
+            metro_dir = data_dir / "NammaMetro"
+            geo_path = metro_dir / "metro-lines-stations.geojson"
+            if geo_path.exists():
+                with open(geo_path, 'r') as f:
+                    data = json.load(f)
+                    # Insert as a single document for the whole feature collection
+                    metro_geo_col.insert_one({"_id": "metro_lines", "data": data})
+                    print("[MONGO DEBUG] Inserted metro_lines_geojson.")
+
     except Exception as e:
         print(f"[MONGO DEBUG] Error during bootstrap: {e}")
 
@@ -234,3 +283,21 @@ def get_rainfall_df_for_month(month: str) -> pd.DataFrame:
     
     print(f"[MONGO DEBUG] Successfully fetched {month} rainfall from MongoDB")
     return pd.DataFrame(doc["records"])
+
+def get_metro_network_df() -> pd.DataFrame:
+    return _get_resource_collection_df("metro_network")
+
+def get_metro_stations_ref_df() -> pd.DataFrame:
+    return _get_resource_collection_df("metro_stations_ref")
+
+def get_metro_lines_geojson() -> dict:
+    db = _get_db()
+    if db is None:
+        raise ConnectionError("MongoDB not available")
+    
+    doc = db["metro_lines_geojson"].find_one({"_id": "metro_lines"})
+    if not doc or "data" not in doc:
+        raise ValueError("No metro lines GeoJSON in Mongo")
+    
+    print("[MONGO DEBUG] Successfully fetched metro lines GeoJSON from MongoDB")
+    return doc["data"]
