@@ -1532,7 +1532,7 @@ async def run_advanced_analysis_generator(
     # 1. Setup Simulation (same as compare mode)
     entry = REGION_CACHE[key]
     sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
-    sim.set_progressive_rainfall(rainfall_mm, 5)
+    sim.initialize_from_drains(rainfall_mm)
     
     if population is not None: 
         total_pop = population
