@@ -239,12 +239,14 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         const ad = activeData ? {
             total_evacuated:        activeData.total_evacuated ?? 0,
             total_at_risk_remaining: activeData.total_at_risk_remaining ?? 0,
+            genuinely_unreachable:   activeData.genuinely_unreachable ?? 0,
             total_at_risk_initial:  activeData.total_at_risk_initial ?? 0,
             simulation_population:  activeData.simulation_population ?? 0,
             success_rate_pct:       activeData.success_rate_pct ?? 0,
             ga_execution_time:      activeData.ga_execution_time ?? 0,
             shelter_reports:        activeData.shelter_reports ?? [],
             traffic_segment_count:  activeData.traffic_segment_count ?? 0,
+            shelter_suggestions:    activeData.shelter_suggestions ?? [],
         } : null;
         const adTotalConsidered = ad ? (ad.total_at_risk_initial || (ad.total_evacuated + ad.total_at_risk_remaining)) : 0;
         const adSortedShelters  = ad ? [...ad.shelter_reports].sort((a, b) => b.occupancy_pct - a.occupancy_pct) : [];
@@ -360,11 +362,20 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                     <div className="evac-stat-val">{ad.total_evacuated.toLocaleString()}</div>
                                     <div className="evac-stat-lbl">Evacuated</div>
                                 </div>
-                                <div className={`evac-stat-card ${ad.total_at_risk_remaining > 0 ? 'evac-stat-red' : 'evac-stat-green'}`}>
-                                    <AlertTriangle size={16} />
-                                    <div className="evac-stat-val">{ad.total_at_risk_remaining.toLocaleString()}</div>
-                                    <div className="evac-stat-lbl">Unreachable</div>
-                                </div>
+                                {((ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 || ad.genuinely_unreachable === 0) && (
+                                    <div className={`evac-stat-card ${(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? 'evac-stat-orange' : 'evac-stat-green'}`} style={(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? { border: '1px solid #fdba74', background: '#fff7ed' } : {}}>
+                                        <Users size={16} color={(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? "#f97316" : undefined} />
+                                        <div className="evac-stat-val" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#c2410c' : undefined }}>{(ad.total_at_risk_remaining - ad.genuinely_unreachable).toLocaleString()}</div>
+                                        <div className="evac-stat-lbl" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{ad.genuinely_unreachable > 0 ? 'At Risk' : 'At Risk'}</div>
+                                    </div>
+                                )}
+                                {ad.genuinely_unreachable > 0 && (
+                                    <div className="evac-stat-card evac-stat-red" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                        <AlertTriangle size={16} color="#dc2626" />
+                                        <div className="evac-stat-val" style={{ color: '#b91c1c' }}>{ad.genuinely_unreachable.toLocaleString()}</div>
+                                        <div className="evac-stat-lbl" style={{ color: '#ef4444' }}>Needs Rescue</div>
+                                    </div>
+                                )}
                                 <div className="evac-stat-card evac-stat-blue">
                                     <ShieldCheck size={16} />
                                     <div className="evac-stat-val">{ad.success_rate_pct}%</div>
@@ -407,12 +418,28 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         </section>
 
                         {/* Shelter gap analysis — only when coverage is incomplete */}
-                        {ad.total_at_risk_remaining > 0 && (
+                        {(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 && (
                             <ShelterGapAnalysis
                                 suggestions={ad.shelter_suggestions || []}
-                                atRiskRemaining={ad.total_at_risk_remaining}
+                                atRiskRemaining={ad.total_at_risk_remaining - ad.genuinely_unreachable}
                                 onRerun={onRerunWithSuggestions}
                             />
+                        )}
+
+                        {/* ── Manual Rescue Alert — added to Compare Mode ───────────────────── */}
+                        {ad.genuinely_unreachable > 0 && (
+                            <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8 }}>
+                                <h3 className="panel-title" style={{ color: '#b91c1c' }}>
+                                    <AlertTriangle size={13} /> Manual Rescue Required
+                                    <span className="panel-title-hint"> — {ad.genuinely_unreachable.toLocaleString()} people stranded</span>
+                                </h3>
+                                <div style={{ fontSize: 10, color: '#7f1d1d', marginBottom: 2, lineHeight: 1.5, background: '#fef2f2', padding: 8, borderRadius: 6, border: '1px solid #fca5a5' }}>
+                                    <strong>Isolation Detected:</strong> {ad.genuinely_unreachable.toLocaleString()} people are completely surrounded by floodwater deeper than the 0.15m (6-inch) safe wading limit.
+                                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #fecaca' }}>
+                                        No safe evacuation route or emergency shelter placement is possible. <strong>Dispatch high-water rescue vehicles or boats immediately.</strong>
+                                    </div>
+                                </div>
+                            </section>
                         )}
 
                         {adSortedShelters.length > 0 && (

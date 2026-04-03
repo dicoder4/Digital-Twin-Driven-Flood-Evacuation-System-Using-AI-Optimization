@@ -3,12 +3,15 @@ import {
   X, BarChart2, Activity, Zap, Shield,
   TrendingDown, TrendingUp, Info, Cpu,
   ChevronRight, BrainCircuit, MessageSquare,
-  BarChart, Layers, Timer, Repeat
+  BarChartIcon, Layers, Timer, Repeat
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Bar
+  Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Bar, BarChart
 } from 'recharts';
+import { API_URL } from '../config';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /**
  * AlgoAnalysisPopup.jsx
@@ -28,10 +31,11 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
 
-  if (!isOpen || !metrics) return null;
+  // NOTE: `algoKeys` is computed below from `metrics` to avoid showing empty cards.
 
   // 1. Prepare data for Convergence Chart
   const chartData = useMemo(() => {
+    if (!metrics) return [];
     const gaHistory = metrics.ga?.fitness_history || [];
     const acoHistory = metrics.aco?.fitness_history || [];
     const psoHistory = metrics.pso?.fitness_history || [];
@@ -50,19 +54,35 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
     return data;
   }, [metrics]);
 
-  // 1.1 Prepare fitness breakdown data
-  const breakdownData = useMemo(() => {
-    return algoKeys.map(key => ({
-      name: key.toUpperCase(),
-      Distance: metrics[key]?.breakdown?.distance_score || 0,
-      Time: metrics[key]?.breakdown?.time_score || 0,
-      CapacityPenalty: metrics[key]?.breakdown?.capacity_penalty || 0,
-      TerrainPenalty: metrics[key]?.breakdown?.terrain_penalty || 0,
-    }));
+  // 1. Diagnostics: Log analysis metrics when they arrive
+  useEffect(() => {
+    if (metrics) {
+      console.log("[AlgoAnalysisDeepDive] Received Metrics:", metrics);
+    }
   }, [metrics]);
 
-  // 2. Prepare stability/diversity breakdown
-  const algoKeys = ['ga', 'aco', 'pso'];
+  const algoKeys = useMemo(() => {
+    if (!metrics) return [];
+    // Only include keys that have actual data
+    return Object.keys(metrics).filter(k => metrics[k] && typeof metrics[k] === 'object');
+  }, [metrics]);
+
+  const breakdownData = useMemo(() => {
+    if (algoKeys.length === 0) return [];
+    return algoKeys.map(key => {
+      const b = metrics[key]?.breakdown || {};
+      return {
+        name: key.toUpperCase(),
+        Distance: b.distance_score || 0,
+        Time: b.time_score || 0,
+        CapacityPenalty: b.capacity_penalty || 0,
+        TerrainPenalty: b.terrain_penalty || 0,
+        UnassignedPenalty: b.unassigned_penalty || 0,
+      };
+    });
+  }, [metrics, algoKeys]);
+
+  if (!isOpen || !metrics) return null;
 
   // ── Research Planner Logic ──────────────────────────────────────────────────
   const runResearchPlanner = async () => {
@@ -70,46 +90,95 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
 
     setIsTyping(true);
 
-    // Prepare the payload for the agent
-    const contextStr = JSON.stringify(metrics, null, 2);
+    const outgoing = {
+      question: `Perform a deep logical analysis of these algorithm metrics for the ${locationName} region. Specifically explain which algorithm is superior based on Convergence Speed, Stochastic Stability, and Path Diversity. Translate these mathematical results into real-world evacuation survival reasoning.`,
+      context: {
+        mode: 'compare',
+        algorithm_analysis: metrics,
+        location: locationName
+      }
+    };
+
+    console.info('[AlgoAnalysis] Sending research planner body:', outgoing);
 
     try {
-      const response = await fetch('http://localhost:8000/evacuation-chat', {
+      const response = await fetch(`${API_URL}/algorithm-analysis-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: `Perform a deep logical analysis of these algorithm metrics for the ${locationName} region. Specifically explain which algorithm is superior based on Convergence Speed, Stochastic Stability, and Path Diversity. Translate these mathematical results into real-world evacuation survival reasoning.`,
-          context: {
-            mode: 'compare',
-            algorithm_analysis: metrics,
-            location: locationName
-          }
+          metrics: metrics,
+          location: locationName
         })
       });
 
+      console.info('[AlgoAnalysis] Response status:', response.status, 'headers:', response.headers.get('content-type'));
+
+      // If server didn't return a streaming body, fallback to text/json
+      if (!response.body) {
+        const text = await response.text();
+        console.warn('[AlgoAnalysis] No streaming body, fallback text:', text.slice(0, 1000));
+        setChatMessages([{ role: 'assistant', content: text }]);
+        return;
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let currentMsg = { role: 'assistant', content: '' };
-      setChatMessages([currentMsg]);
+
+      // initialise chat message shown in UI
+      setChatMessages([{ role: 'assistant', content: '' }]);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value);
+        const chunk = decoder.decode(value, { stream: true });
+        console.debug('[AlgoAnalysis] SSE chunk:', chunk.slice(0, 1000));
+
+        // Common SSE format: lines beginning with 'data: '
         const lines = chunk.split('\n');
+        let appended = false;
+
         for (const line of lines) {
+          if (!line) continue;
           if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            if (data.token) {
-              currentMsg.content += data.token;
-              setChatMessages([{ ...currentMsg }]);
+            try {
+              const data = JSON.parse(line.slice(6));
+              // If backend streams tokens under `token` use that, otherwise append raw `text` or string
+              const token = data.token ?? data.text ?? (typeof data === 'string' ? data : null);
+              if (token) {
+                setChatMessages(prev => {
+                  const last = prev[0] || { role: 'assistant', content: '' };
+                  const updated = [{ ...last, content: (last.content || '') + token }];
+                  return updated;
+                });
+                appended = true;
+              }
+            } catch (e) {
+              // Not JSON — append raw text after 'data: '
+              const raw = line.slice(6);
+              setChatMessages(prev => {
+                const last = prev[0] || { role: 'assistant', content: '' };
+                const updated = [{ ...last, content: (last.content || '') + raw }];
+                return updated;
+              });
+              appended = true;
             }
           }
         }
+
+        // If no SSE data lines found, append chunk as plain text (fallback)
+        if (!appended) {
+          setChatMessages(prev => {
+            const last = prev[0] || { role: 'assistant', content: '' };
+            const updated = [{ ...last, content: (last.content || '') + chunk }];
+            return updated;
+          });
+        }
       }
+
+      console.info('[AlgoAnalysis] Research planner stream complete');
     } catch (err) {
-      console.error("Agent Analysis Error:", err);
-      setChatMessages([{ role: 'assistant', content: "Failed to connect to the Research Planner. Please ensure the backend is running." }]);
+      console.error('Agent Analysis Error:', err);
+      setChatMessages([{ role: 'assistant', content: 'Failed to connect to the Research Planner. Please ensure the backend is running.' }]);
     } finally {
       setIsTyping(false);
     }
@@ -152,7 +221,7 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
             className={`tab-btn ${activeTab === 'breakdown' ? 'active' : ''}`}
             onClick={() => setActiveTab('breakdown')}
           >
-            <BarChart size={14} /> Fitness Breakdown
+            <BarChartIcon size={14} /> Fitness Breakdown
           </button>
           <button
             className={`tab-btn ${activeTab === 'agent' ? 'active' : ''}`}
@@ -170,8 +239,8 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
           {activeTab === 'summary' && (
             <div className="summary-grid">
               {algoKeys.map(key => {
-                const m = metrics[key];
-                const C = ALGO_CONFIG[key];
+                const m = metrics[key] || {};
+                const C = ALGO_CONFIG[key] || { name: key.toUpperCase(), color: '#64748b', icon: Info };
                 const Icon = C.icon;
                 return (
                   <div key={key} className="algo-card" style={{ borderColor: C.color }}>
@@ -295,14 +364,14 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
           )}
 
           {activeTab === 'breakdown' && (
-            <div className="chart-container">
+            <div className="chart-container" style={{ minHeight: '400px' }}>
               <div className="chart-header">
                 <h3>Fitness Component Breakdown</h3>
                 <p>Comparing internal cost factors across algorithms (Lower = Better)</p>
               </div>
               <div className="chart-wrapper">
                 <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={breakdownData} layout="vertical">
+                  <BarChart data={breakdownData} layout="vertical" margin={{ left: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" width={60} tick={{ fontSize: 12, fontWeight: 700 }} />
@@ -314,7 +383,8 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                     <Bar dataKey="Distance" stackId="a" fill="#3b82f6" radius={[4, 0, 0, 4]} />
                     <Bar dataKey="Time" stackId="a" fill="#0ea5e9" />
                     <Bar dataKey="CapacityPenalty" stackId="a" fill="#ef4444" />
-                    <Bar dataKey="TerrainPenalty" stackId="a" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="TerrainPenalty" stackId="a" fill="#f59e0b" />
+                    <Bar dataKey="UnassignedPenalty" stackId="a" fill="#a855f7" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -343,7 +413,9 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                           <Cpu size={12} /> Research Planner Assistant
                         </div>
                         <div className="bubble-content">
-                          {msg.content}
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
                           {isTyping && <span className="typing-cursor">●</span>}
                         </div>
                       </div>
@@ -356,7 +428,7 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .analysis-overlay {
           position: fixed;
           top: 0;
@@ -543,7 +615,7 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
           text-transform: uppercase;
           letter-spacing: 0.05em;
           margin-bottom: 4px;
-        }
+          }
 
         .val-wrap {
           display: flex;
@@ -678,6 +750,31 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
           background: #f8fafc;
           border: 1px solid #e2e8f0;
           color: #334155;
+          width: 100%;
+        }
+
+        .bubble-content h1, .bubble-content h2, .bubble-content h3 {
+          margin: 16px 0 8px;
+          border-bottom: 1px solid #e2e8f0;
+          padding-bottom: 4px;
+          color: #1e293b;
+        }
+        .bubble-content p { margin: 8px 0; }
+        .bubble-content table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 16px 0;
+          font-size: 12px;
+        }
+        .bubble-content th, .bubble-content td {
+          border: 1px solid #e2e8f0;
+          padding: 8px;
+          text-align: left;
+        }
+        .bubble-content th { background: #f1f5f9; }
+        .bubble-content ul, .bubble-content ol {
+          padding-left: 20px;
+          margin: 8px 0;
         }
 
         .bubble-header {

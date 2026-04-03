@@ -598,7 +598,45 @@ Heavy flooding reported in [Hobli Name].
 ❌ AVOID: [Blocked routes or full shelters]
 📞 HELPLINE: 112 / 1070
 *Do not panic. Follow police instructions.*
+""",   
+    "algo_analyst": """You are an AI Algorithm Performance Analyst for disaster evacuation optimisation.
+
+You are given the results of 5 independent runs of GA, ACO, and PSO.
+Your task: Determine which algorithm is **overall best** for this specific flood scenario.
+
+═══════════════════════════════════════════
+RULES – STRICT:
+1. Base your conclusion ONLY on the metrics provided: mean_fitness, std_dev, stability_score, convergence_speed, path_diversity.
+2. Explain which metric is most critical for this scenario (e.g., stability matters if real-time replanning is impossible).
+3. Provide a final ranking (1st, 2nd, 3rd) with a one-sentence justification per algorithm.
+4. If two algorithms are nearly identical, state that explicitly.
+5. Output MUST be valid Markdown with the following structure (no extra text before/after):
+
+# Algorithm Performance Analysis — [Location]
+
+## 📊 Quantitative Summary
+| Algorithm | Mean Fitness ↓ | Std Dev | Stability ↑ | Convergence (iter) ↓ | Diversity ↑ |
+|----------|---------------|---------|-------------|----------------------|-------------|
+| GA       | ...           | ...     | ...         | ...                  | ...         |
+| ACO      | ...           | ...     | ...         | ...                  | ...         |
+| PSO      | ...           | ...     | ...         | ...                  | ...         |
+
+## 🧠 Interpretation
+- **Most stable:** [Algo] because ...
+- **Fastest convergence:** [Algo] because ...
+- **Best path diversity:** [Algo] because ...
+
+## 🏆 Final Recommendation
+1. **🥇 [Algo]** – [one sentence why it's best overall]
+2. **🥈 [Algo]** – [why second]
+3. **🥉 [Algo]** – [why third]
+
+## ⚠️ Scenario‑Specific Caveats
+- [Any weakness of the top algorithm that could matter under different conditions]
+
+Do NOT include any other sections. Do NOT discuss resource allocation or shelter occupancy.
 """,
+
 }
 
 
@@ -855,3 +893,38 @@ async def stream_advice(persona: str, summary_data: dict):
     yield "data: " + json.dumps({
         "text": "_(No AI provider available. Set GEMINI_API_KEY or GROQ_API_KEY.)_"
     }) + nl
+
+async def stream_algorithm_analysis(metrics: dict, location: str):
+    """
+    Stream a performance analysis of GA, ACO, PSO based on their metrics.
+    Similar to stream_advice but with a different system prompt and context.
+    """
+    # Build a minimal context that only contains algorithm_analysis
+    context = {
+        "algorithm_analysis": metrics,
+        "simulation": {"location": location, "algorithm": "Multi-Algo Comparison"}
+    }
+    context_str = json.dumps(context, indent=2)
+    system_prompt = PERSONAS["algo_analyst"]
+    
+    prompt_text = (
+        f"Algorithm comparison metrics for {location}:\n{context_str}\n\n"
+        f"Provide your analysis following the required format exactly."
+    )
+    nl = "\n\n"
+    
+    # ── Primary: Gemini 2.5 Flash ──
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+            response = model.generate_content(prompt_text, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    yield "data: " + json.dumps({"text": chunk.text}) + nl
+            return
+        except Exception as e:
+            yield "data: " + json.dumps({"text": f"_(Gemini error: {e})_"}) + nl
+    

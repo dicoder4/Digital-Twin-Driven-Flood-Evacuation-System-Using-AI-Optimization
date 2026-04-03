@@ -818,7 +818,7 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
     suggestions.sort(key=lambda x: -x['deficit_population'])
     return suggestions, genuinely_unreachable_count
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "progressive"):
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "instant"):
     """Generator for SSE simulation stream."""
     import time
     loop = asyncio.get_event_loop()
@@ -1154,7 +1154,7 @@ async def run_compare_generator(
     use_traffic: bool = False,
     population: int | None = None,
     extra_shelters: list | None = None,
-    mode: str = "progressive",
+    mode: str = "instant",
 ):
     """
     SSE generator for compare mode:
@@ -1532,15 +1532,15 @@ async def run_advanced_analysis_generator(
     # 1. Setup Simulation (same as compare mode)
     entry = REGION_CACHE[key]
     sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
-    sim.initialize_from_drains(rainfall_mm)
+    sim.set_progressive_rainfall(rainfall_mm, 5)
     
-    if population is not None: total_pop = population
+    if population is not None: 
+        total_pop = population
     else: 
         pop_data = await get_hobli_population(hobli)
         total_pop = pop_data.get("total_population", 0)
     
-    # Scale for testing efficiency
-    total_pop = max(1, total_pop // 100)
+    # Use full population to introduce realistic capacity stress
     sim.distribute_population(total_pop)
     
     shelter_resp = await fetch_shelters(hobli)
@@ -1562,31 +1562,40 @@ async def run_advanced_analysis_generator(
     
     def _single_run(algo_key):
         PClass = _get_planner_class(algo_key)
-        planner = PClass(at_risk, safe_shelters, sim.G, pop_size=40, generations=30, n_ants=40, iterations=30, n_particles=40, use_tomtom_traffic=use_traffic)
-        decoded_plan = planner.run() 
-        # Try to get breakdown, fallback to empty if missing or error
+        planner = PClass(at_risk, safe_shelters, sim.G,
+                        pop_size=40, generations=30,
+                        n_ants=40, iterations=30,
+                        n_particles=40,
+                        use_tomtom_traffic=use_traffic)
+        decoded_plan = planner.run()
+
+        # ── Reconstruct assignment chromosome from the plan ──
+        n_risk = len(at_risk)
+        chromosome = [-1] * n_risk   # -1 = unassigned
+        for move in decoded_plan:
+            origin_id = move.get("from_node")
+            # find index of origin node in at_risk list
+            for idx, node in enumerate(at_risk):
+                if node["id"] == origin_id:
+                    # find shelter index in safe_shelters list
+                    shelter_id = move.get("to_shelter")
+                    for j, sh in enumerate(safe_shelters):
+                        if sh["id"] == shelter_id:
+                            chromosome[idx] = j
+                            break
+                    break
+
+        # Now compute breakdown using the reconstructed chromosome
         try:
-            # GA uses best_chromosome, check if set
-            best_chrom = getattr(planner, 'best_chromosome', None)
-            if best_chrom is not None:
-                # Ensure it's a list if it's a numpy array
-                if hasattr(best_chrom, 'tolist'):
-                    best_chrom = best_chrom.tolist()
-                breakdown = planner._fitness_breakdown(best_chrom)
-            else:
-                breakdown = {
-                    "distance_score": 0, "time_score": 0, 
-                    "capacity_penalty": 0, "terrain_penalty": 0,
-                    "total_fitness": planner.best_fitness
-                }
+            breakdown = planner._fitness_breakdown(chromosome)
         except Exception as e:
             print(f"  [Analysis] Breakdown failed for {algo_key}: {e}")
             breakdown = {
-                "distance_score": 0, "time_score": 0, 
+                "distance_score": 0, "time_score": 0,
                 "capacity_penalty": 0, "terrain_penalty": 0,
                 "total_fitness": planner.best_fitness
             }
-             
+
         return algo_key, planner.best_fitness, planner.fitness_history, decoded_plan, breakdown
 
     print(f"{_ts()} [Analysis] Starting stability test (5 runs per algorithm)...")
@@ -1634,4 +1643,10 @@ async def run_advanced_analysis_generator(
         "location": hobli,
         "timestamp": datetime.now().isoformat()
     }
+    
+    # [LOGGING] Print summary to backend console for debugging
+    print(f"\n{_ts()} [ANALYSIS COMPLETE] Location: {hobli}")
+    for algo, data in analysis_data.items():
+        print(f"  - {algo.upper()}: Mean Fit={data['mean_fitness']}, Stability={data['stability_score']}, Diversity={data['path_diversity']}")
+    
     yield f"data: {json.dumps(final_payload)}\n\n"
