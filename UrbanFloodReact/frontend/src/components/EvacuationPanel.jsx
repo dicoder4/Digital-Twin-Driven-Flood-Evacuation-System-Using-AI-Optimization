@@ -14,7 +14,7 @@ import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
 
 
 const ALGO_COLORS = {
-    ga:  { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', label: 'Genetic Algorithm' },
+    ga: { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', label: 'Genetic Algorithm' },
     aco: { bg: '#f0fdf4', border: '#86efac', text: '#15803d', label: 'Ant Colony Opt.' },
     pso: { bg: '#fdf4ff', border: '#d8b4fe', text: '#7e22ce', label: 'Particle Swarm' },
 };
@@ -47,9 +47,9 @@ function FillBar({ pct }) {
 
 // ── Shelter Gap Analysis ──────────────────────────────────────────────────────
 const PRIORITY_STYLE = {
-    high:   { bg: '#fff1f2', border: '#fda4af', badge: '#be123c', label: '⚠ HIGH' },
+    high: { bg: '#fff1f2', border: '#fda4af', badge: '#be123c', label: '⚠ HIGH' },
     medium: { bg: '#fffbeb', border: '#fcd34d', badge: '#b45309', label: '! MEDIUM' },
-    low:    { bg: '#f0fdf4', border: '#86efac', badge: '#15803d', label: '✓ LOW' },
+    low: { bg: '#f0fdf4', border: '#86efac', badge: '#15803d', label: '✓ LOW' },
 };
 
 function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) {
@@ -173,7 +173,7 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
 
 export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null }) {
     const [genaiOpen, setGenaiOpen] = useState(false);
-    
+
     // ── Analysis Logic ──
     const [analysisOpen, setAnalysisOpen] = useState(false);
     const [analysisMetrics, setAnalysisMetrics] = useState(null);
@@ -237,19 +237,19 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         // Active algo detail — extract summary fields from the selected algo's results
         const activeData = compareActiveAlgo ? compareResults[compareActiveAlgo] : null;
         const ad = activeData ? {
-            total_evacuated:        activeData.total_evacuated ?? 0,
+            total_evacuated: activeData.total_evacuated ?? 0,
             total_at_risk_remaining: activeData.total_at_risk_remaining ?? 0,
-            genuinely_unreachable:   activeData.genuinely_unreachable ?? 0,
-            total_at_risk_initial:  activeData.total_at_risk_initial ?? 0,
-            simulation_population:  activeData.simulation_population ?? 0,
-            success_rate_pct:       activeData.success_rate_pct ?? 0,
-            ga_execution_time:      activeData.ga_execution_time ?? 0,
-            shelter_reports:        activeData.shelter_reports ?? [],
-            traffic_segment_count:  activeData.traffic_segment_count ?? 0,
-            shelter_suggestions:    activeData.shelter_suggestions ?? [],
+            genuinely_unreachable: activeData.genuinely_unreachable ?? 0,
+            total_at_risk_initial: activeData.total_at_risk_initial ?? 0,
+            simulation_population: activeData.simulation_population ?? 0,
+            success_rate_pct: activeData.success_rate_pct ?? 0,
+            ga_execution_time: activeData.ga_execution_time ?? 0,
+            shelter_reports: activeData.shelter_reports ?? [],
+            traffic_segment_count: activeData.traffic_segment_count ?? 0,
+            genuinely_unreachable: activeData.genuinely_unreachable ?? 0,
         } : null;
         const adTotalConsidered = ad ? (ad.total_at_risk_initial || (ad.total_evacuated + ad.total_at_risk_remaining)) : 0;
-        const adSortedShelters  = ad ? [...ad.shelter_reports].sort((a, b) => b.occupancy_pct - a.occupancy_pct) : [];
+        const adSortedShelters = ad ? [...ad.shelter_reports].sort((a, b) => b.occupancy_pct - a.occupancy_pct) : [];
         const adColor = compareActiveAlgo ? ALGO_COLORS[compareActiveAlgo] : null;
 
         return (
@@ -274,9 +274,9 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                             const isWinner = algo === bestAlgo;
                             const isActive = algo === compareActiveAlgo;
                             const fitLabel = fit != null
-                                ? (fit >= 1_000_000 ? `${(fit/1_000_000).toFixed(2)}M`
-                                 : fit >= 1_000     ? `${(fit/1_000).toFixed(1)}k`
-                                 : String(fit))
+                                ? (fit >= 1_000_000 ? `${(fit / 1_000_000).toFixed(2)}M`
+                                    : fit >= 1_000 ? `${(fit / 1_000).toFixed(1)}k`
+                                        : String(fit))
                                 : '—';
                             return (
                                 <div key={algo}>
@@ -284,7 +284,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                         className={`compare-row ${isWinner ? 'compare-row--winner' : ''} ${isActive ? 'compare-row--active' : ''}`}
                                         style={{ borderLeft: `3px solid ${c.border}`, background: isActive ? c.bg : isWinner ? c.bg : undefined }}>
                                         <span className="compare-algo" style={{ color: c.text }}>
-                                            {isWinner && <Trophy size={10} style={{ verticalAlign: 'middle', marginRight: 3 }}/>}
+                                            {isWinner && <Trophy size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />}
                                             {algo.toUpperCase()}
                                             {isWinner && <span className="compare-winner-badge">BEST</span>}
                                         </span>
@@ -296,7 +296,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                                     {rate}%
                                                 </span>
                                                 <span>{t}s</span>
-                                              </>
+                                            </>
                                         }
                                     </div>
                                     {/* Route toggle button */}
@@ -318,7 +318,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
 
                     {bestAlgo && (
                         <div className="compare-verdict">
-                            <Zap size={12} style={{ color: ALGO_COLORS[bestAlgo].text }}/>
+                            <Zap size={12} style={{ color: ALGO_COLORS[bestAlgo].text }} />
                             <strong style={{ color: ALGO_COLORS[bestAlgo].text }}>{bestAlgo.toUpperCase()}</strong> found the lowest-cost evacuation plan
                             (fitness&nbsp;=&nbsp;{compareResults[bestAlgo]?.best_fitness?.toLocaleString()})
                         </div>
@@ -327,7 +327,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         Fitness = flood-weighted distance + travel time + overflow penalty (lower = better routes)
                     </div>
 
-                    <button 
+                    <button
                         className={`analyse-algos-btn ${isAnalysing ? 'analysing' : ''}`}
                         onClick={handleRunAnalysis}
                         disabled={isAnalysing}
@@ -341,8 +341,8 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </button>
                 </section>
 
-                <AlgoAnalysisPopup 
-                    isOpen={analysisOpen} 
+                <AlgoAnalysisPopup
+                    isOpen={analysisOpen}
                     onClose={() => setAnalysisOpen(false)}
                     metrics={analysisMetrics}
                     locationName={locationName}
@@ -366,7 +366,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                     <div className={`evac-stat-card ${(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? 'evac-stat-orange' : 'evac-stat-green'}`} style={(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? { border: '1px solid #fdba74', background: '#fff7ed' } : {}}>
                                         <Users size={16} color={(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? "#f97316" : undefined} />
                                         <div className="evac-stat-val" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#c2410c' : undefined }}>{(ad.total_at_risk_remaining - ad.genuinely_unreachable).toLocaleString()}</div>
-                                        <div className="evac-stat-lbl" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{ad.genuinely_unreachable > 0 ? 'At Risk' : 'At Risk'}</div>
+                                        <div className="evac-stat-lbl" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{ad.genuinely_unreachable > 0 ? 'At Risk (Cap)' : 'At Risk'}</div>
                                     </div>
                                 )}
                                 {ad.genuinely_unreachable > 0 && (
@@ -513,7 +513,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                     summary={ad}
                                     evacuationPlan={compareActiveAlgo ? (compareResults[compareActiveAlgo]?.evacuation_plan ?? []) : []}
                                 />
-                                <EvacuationChat context={{ 
+                                <EvacuationChat context={{
                                     mode: 'compare',
                                     active_algo: compareActiveAlgo,
                                     // Strip the heavy geojson/plan data so context doesn't explode
@@ -650,10 +650,10 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </button>
                     {genaiOpen && (
                         <div className="genai-dropdown-content">
-                            <PanelOfExperts 
+                            <PanelOfExperts
                                 locationName={locationName}
-                                summary={summary} 
-                                evacuationPlan={evacuationPlan} 
+                                summary={summary}
+                                evacuationPlan={evacuationPlan}
                             />
                             <EvacuationChat context={summary} evacuationPlan={evacuationPlan} />
                         </div>

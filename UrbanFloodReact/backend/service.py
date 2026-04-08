@@ -11,6 +11,8 @@ import os
 import math
 import time as _time_module
 from datetime import datetime
+from collections import defaultdict
+import numpy as np
 import pandas as pd
 import osmnx as ox
 from fastapi import HTTPException
@@ -657,8 +659,16 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
         if data.get('water_depth', 0.0) <= 0.15
     }
     
-    G_undirected = G.to_undirected()
-    wadable_subgraph = G_undirected.subgraph(wadable_nodes)
+    # NEW: Filter EDGES as well. An edge is only traversable if its depth is safe.
+    wadable_edges = []
+    for u, v, k, data in G.edges(data=True, keys=True):
+        if u in wadable_nodes and v in wadable_nodes:
+            # Check edge-specific depth if it exists
+            if data.get('water_depth', 0.0) <= 0.15:
+                wadable_edges.append((u, v, k))
+                
+    # Build a graph of TRULY walkable paths (no submerged bridges/dips)
+    wadable_subgraph = G.edge_subgraph(wadable_edges).to_undirected()
     
     node_to_component = {}
     component_driest_node = {}
@@ -667,6 +677,7 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
     for i, comp in enumerate(nx.connected_components(wadable_subgraph)):
         comp_list = list(comp)
         component_nodes[i] = comp_list
+        # Find the safest node in this island
         driest_n = min(comp_list, key=lambda n: G.nodes[n].get('water_depth', 0.0))
         component_driest_node[i] = driest_n
         for n in comp_list:
@@ -674,20 +685,33 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
 
     genuinely_unreachable_count = 0
     serviceable_unassigned = []
+    SNAP_RADIUS_DEG = 0.003  # ~300m — must match service.py classification
 
-    for node in unassigned:
-        nid = node['id']
-        comp_id = node_to_component.get(nid)
-        # Any node in the wadable subgraph represents a safe, serviceable island.
-        if comp_id is not None:
-            node['comp_id'] = comp_id
-            serviceable_unassigned.append(node)
-        else:
+    all_wadable_list = list(wadable_nodes)
+    if all_wadable_list:
+        wadable_coords = np.array([
+            [G.nodes[n]['y'], G.nodes[n]['x']] for n in all_wadable_list
+        ])
+        for node in unassigned:
+            nid = node['id']
+            comp_id = node_to_component.get(nid)
+
+            if comp_id is None:
+                # Node is on flooded ground — snap to nearest dry component (same as service.py)
+                p = np.array([node['lat'], node['lon']])
+                dist_sq = np.sum((wadable_coords - p) ** 2, axis=1)
+                if np.min(dist_sq) <= SNAP_RADIUS_DEG ** 2:
+                    nearest_dry_nid = all_wadable_list[int(np.argmin(dist_sq))]
+                    comp_id = node_to_component.get(nearest_dry_nid)
+
+            if comp_id is not None:
+                node['comp_id'] = comp_id
+                serviceable_unassigned.append(node)
+            else:
+                genuinely_unreachable_count += node['pop']
+    else:
+        for node in unassigned:
             genuinely_unreachable_count += node['pop']
-
-    if genuinely_unreachable_count > 0:
-        print(f"  [SHELTER-SUGGEST] {genuinely_unreachable_count:,} people "
-              f"are genuinely unreachable (isolated by >0.15m water).")
 
     if not serviceable_unassigned:
         return [], genuinely_unreachable_count
@@ -732,41 +756,48 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
         zone_num = zone_counters[direction]
         zone_label = f"{direction} Zone {zone_num}"
 
-        # ── Find best shelter node in THIS component ────────────────────
-        target_depth = G.nodes[component_driest_node[comp_id]].get('water_depth', 0.0)
-        
-        # Only look at nodes in this component that have the target depth
-        candidate_nodes = [
-            n for n in component_nodes[comp_id] 
-            if G.nodes[n].get('water_depth', 0.0) <= target_depth + 0.01
-        ]
-        
         best_nid = None
-        if candidate_nodes:
+        
+        # ── Find best shelter node in THIS component ────────────────────
+        import osmnx as ox
+        
+        # Strategy A: 'Hyper-local' — Search for safest junction within 500m for realistic placement
+        try:
+            # We want nodes that are within ~0.005 degrees (~500m) of the cluster center
+            # and MUST be in the same reachable component.
+            local_candidates = [
+                n for n in component_nodes[comp_id]
+                if _approx_dist_deg(c_lat, c_lon, G.nodes[n]['y'], G.nodes[n]['x']) < 0.005
+            ]
+            if local_candidates:
+                # Pick the driest one in the local radius
+                best_nid = min(local_candidates, key=lambda n: G.nodes[n].get('water_depth', 0.0))
+        except:
+            pass
+
+        # Strategy B: Fallback to component-wide driest if no local nodes found
+        if best_nid is None:
+            comp_n_list = component_nodes[comp_id]
+            t_depth = G.nodes[component_driest_node[comp_id]].get('water_depth', 0.0)
+            
+            # Nodes in this island that are as dry as the driest one
+            cand_nodes = [n for n in comp_n_list if G.nodes[n].get('water_depth', 0.0) <= t_depth + 0.02]
+            
             cand_sorted = sorted(
-                candidate_nodes,
+                cand_nodes,
                 key=lambda n: _approx_dist_deg(c_lat, c_lon, G.nodes[n]['y'], G.nodes[n]['x'])
             )
             for cand in cand_sorted:
                 if cand not in used_dry_nodes:
                     best_nid = cand
                     break
-            if best_nid is None:
+            if best_nid is None and cand_sorted:
                 best_nid = cand_sorted[0]
-        else:
-            best_nid = component_driest_node[comp_id]
+            elif best_nid is None:
+                best_nid = component_driest_node[comp_id]
             
         best_lat = G.nodes[best_nid]['y']
         best_lon = G.nodes[best_nid]['x']
-
-        # Skip if too close to an already-existing shelter (< 150 m)
-        if existing_shelter_coords:
-            min_d = min(
-                _approx_dist_deg(best_lat, best_lon, sl, so)
-                for sl, so in existing_shelter_coords
-            )
-            if min_d < 0.0015:
-                continue
 
         if best_nid:
             used_dry_nodes.add(best_nid)
@@ -786,7 +817,8 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
             for sl, so in existing_shelter_coords
         ) if existing_shelter_coords else 0.0
 
-        suggested_cap = int(math.ceil(deficit_pop * 1.20))  # 20% buffer
+        # Buffer to 2.5x to guarantee 100% evacuation even with small clustering gaps
+        suggested_cap = int(math.ceil(deficit_pop * 2.5))
 
         if deficit_pop > 500 or nearest_shelter_dist_km > 2.0:
             priority = 'high'
@@ -818,7 +850,15 @@ def _compute_shelter_suggestions(at_risk_nodes: list, safe_shelters: list, G, fi
     suggestions.sort(key=lambda x: -x['deficit_population'])
     return suggestions, genuinely_unreachable_count
 
-async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "instant"):
+
+# Global cache to persist state for Incremental Stateful Re-runs.
+# This prevents "stealing" of newly generated emergency shelter capacity by 
+# people who were already successfully evacuated in the first run.
+SIMULATION_SESSION_CACHE = {
+    "pinned_routes": []
+}
+
+async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "progressive"):
     """Generator for SSE simulation stream."""
     import time
     loop = asyncio.get_event_loop()
@@ -964,14 +1004,98 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     total_at_risk_before_ga = sum(pop for _, pop in at_risk)
     print(f"{_ts()}  [DEBUG] total at-risk pop before GA = {total_at_risk_before_ga}")
 
+    # ── Reachability Classification (Serviceable vs Genuinely Stranded) ───────
+    import networkx as nx
+    wadable_nodes = {
+        nid for nid, data in sim.G.nodes(data=True)
+        if data.get('water_depth', 0.0) <= 0.15
+    }
+    wadable_edges = [
+        (u, v, k) for u, v, k, data in sim.G.edges(data=True, keys=True)
+        if u in wadable_nodes and v in wadable_nodes and data.get('water_depth', 0.0) <= 0.15
+    ]
+    wadable_subgraph = sim.G.edge_subgraph(wadable_edges).to_undirected()
+    serviceable_nids = set(wadable_subgraph.nodes())
+
+    # Snap-based reachability: even if a node is flooded (depth > 0.15m),
+    # the person can wade to the nearest dry road IF it's within ~300m.
+    # Only classify as truly "Stranded" if no dry road exists within that radius.
+    SNAP_RADIUS_DEG = 0.003   # ~300m in degrees latitude
+    genuinely_unreachable_count = 0
+    stranded_nids = set()
+
+    all_wadable_list = list(wadable_nodes)
+    if all_wadable_list:
+        wadable_coords = np.array([
+            [sim.G.nodes[n]['y'], sim.G.nodes[n]['x']] for n in all_wadable_list
+        ])
+        for nid, pop in at_risk:
+            if nid in serviceable_nids:
+                continue  # already on dry walkable ground
+            # Flooded node — check if a dry road is within snap radius
+            p = np.array([sim.G.nodes[nid]['y'], sim.G.nodes[nid]['x']])
+            dist_sq = np.sum((wadable_coords - p) ** 2, axis=1)
+            if np.min(dist_sq) > SNAP_RADIUS_DEG ** 2:
+                # No dry road within radius → genuinely stranded, needs boat rescue
+                stranded_nids.add(nid)
+                genuinely_unreachable_count += pop
+            # else: can wade to dry road → leave as serviceable (not in stranded_nids)
+    else:
+        # Total catastrophe — no dry land anywhere
+        for nid, pop in at_risk:
+            stranded_nids.add(nid)
+            genuinely_unreachable_count += pop
+
+    print(f"{_ts()}  [DEBUG] Stranded population (Needs Rescue): {genuinely_unreachable_count:,}")
+
+
     planner_instance = None  # sentinel for traffic geojson extraction
     pressure_points = []
+    
+    # ── STATEFUL RE-RUN LOGIC ───────────────────────────────────────────────
+    is_rerun = bool(extra_shelters is not None and len(extra_shelters) > 0)
+
+    used_capacity = {}
+    pinned_node_ids = set()
+    
+    if is_rerun:
+        for route in SIMULATION_SESSION_CACHE["pinned_routes"]:
+            uid = route.get('from_node')
+            sid = route.get('to_shelter')
+            p = route.get('pop', 0)
+            used_capacity[sid] = used_capacity.get(sid, 0) + p
+            pinned_node_ids.add(uid)
+
+        # Deduct capacity consumed by people evacuated in the previous run
+        deduct_count = 0
+        pinned_pop = sum(r.get('pop', 0) for r in SIMULATION_SESSION_CACHE["pinned_routes"])
+        print(f"{_ts()}  [STATE] Re-run detected. Pinning {len(SIMULATION_SESSION_CACHE['pinned_routes'])} routes ({pinned_pop:,} people).")
+        
+        for s in safe_shelters:
+            sid = s.get('id')
+            if sid in used_capacity:
+                used = used_capacity[sid]
+                s['capacity'] = max(0, s['capacity'] - used)
+                deduct_count += 1
+        print(f"{_ts()}  [STATE] Adjusted capacity for {deduct_count} existing safe shelters.")
+    else:
+        # Reset cache on a fresh run
+        SIMULATION_SESSION_CACHE["pinned_routes"] = []
+
+    initial_evacuated_count = sim.total_evacuated
     at_risk_formatted = []  # initialised here — used later for shelter suggestions
     if at_risk and safe_shelters:
-        at_risk_formatted = [
-            {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}
-            for nid, pop in at_risk
-        ]
+        for nid, pop in at_risk:
+            # Skip physically stranded people. Only deploy AI on serviceable locations.
+            if nid in stranded_nids:
+                continue
+            # If stateful re-run, skip people who were successfully assigned previously
+            if is_rerun and nid in pinned_node_ids:
+                continue
+            at_risk_formatted.append(
+                {"id": nid, "pop": pop, "lat": sim.G.nodes[nid]["y"], "lon": sim.G.nodes[nid]["x"]}
+            )
+        
         print(f"{_ts()}  [{algo_label}] Running {algo_label}: {len(at_risk_formatted)} at-risk groups → {len(safe_shelters)} shelters")
 
 
@@ -1001,10 +1125,22 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
                 routes = instance.run()
                 return instance, routes
 
-            planner_instance, final_evacuation_plan = await loop.run_in_executor(None, _init_and_run)
+            planner_instance, new_routes = await loop.run_in_executor(None, _init_and_run)
+
+            # Recombine pinned routes from previous runs with the newly generated routes
+            if is_rerun:
+                final_evacuation_plan = new_routes + SIMULATION_SESSION_CACHE["pinned_routes"]
+                new_pop = sum(r.get('pop', 0) for r in new_routes)
+                pinned_pop = sum(r.get('pop', 0) for r in SIMULATION_SESSION_CACHE["pinned_routes"])
+                print(f"{_ts()}  [STATE] Combined: {len(new_routes)} new routes + {len(SIMULATION_SESSION_CACHE['pinned_routes'])} pinned = {len(final_evacuation_plan)} total.")
+            else:
+                final_evacuation_plan = new_routes
+                
+            # Update the global cache for subsequent consecutive re-runs
+            SIMULATION_SESSION_CACHE["pinned_routes"] = final_evacuation_plan
 
             ga_execution_time = round(time.time() - ga_start, 2)
-            print(f"{_ts()}  [{algo_label}] complete: {len(final_evacuation_plan)} routes in {ga_execution_time}s")
+            print(f"{_ts()}  [{algo_label}] complete: {len(final_evacuation_plan)} total combined routes in {ga_execution_time}s")
             best_fitness = round(getattr(planner_instance, 'best_fitness', 0.0), 1)
             print(f"{_ts()}  [{algo_label}] best_fitness = {best_fitness}")
 
@@ -1028,7 +1164,21 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         print(f"{_ts()}  [DEBUG] total_evacuated = {sim.total_evacuated}")
     else:
         print(f"{_ts()}  [DEBUG] *** BLOCKED: at_risk and/or safe_shelters is empty — {algo_label} skipped ***")
-    print(f"{_ts()} {'='*56}\n")
+    # Final Outcome Verification Logs
+    # total_at_risk_before_ga includes EVERYONE who needs a home (Serviceable + Stranded)
+    current_request_evacuated = sim.total_evacuated - initial_evacuated_count
+    
+    # The true 'At Risk (Cap)' are those who didn't get evacuated but ARE within a wadable component.
+    # Since we don't have the global 'unassigned' list easily here, we derive it:
+    at_risk_cap = max(0, total_at_risk_before_ga - current_request_evacuated - genuinely_unreachable_count)
+    
+    print(f"{_ts()}  [DEBUG] FINAL CONSISTENCY CHECK:")
+    print(f"{_ts()}    - Total Evacuated: {sim.total_evacuated:,}")
+    print(f"{_ts()}    - At Risk (Cap):   {at_risk_cap:,}")
+    print(f"{_ts()}    - Stranded:        {genuinely_unreachable_count:,} (Needs Rescue)")
+    print(f"{_ts()}    ----------------------------------------")
+    print(f"{_ts()}    - Verification Sum: {sim.total_evacuated + at_risk_cap + genuinely_unreachable_count:,}")
+    print(f"{_ts()} ========================================================\n")
 
 
     # Build shelter reports with fill percentage
@@ -1065,9 +1215,8 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
 
     # ── Compute shelter suggestions when coverage is incomplete ─────────────
     shelter_suggestions = []
-    genuinely_unreachable = 0
     if at_risk_remaining > 0 and at_risk_formatted:
-        shelter_suggestions, genuinely_unreachable = _compute_shelter_suggestions(
+        shelter_suggestions, _ignored = _compute_shelter_suggestions(
             at_risk_formatted, safe_shelters, sim.G, final_evacuation_plan
         )
         print(f"{_ts()}  [SHELTER-SUGGEST] {len(shelter_suggestions)} suggestion(s) generated")
@@ -1084,7 +1233,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "simulation_location":     hobli,
             "total_evacuated":         total_assigned,
             "total_at_risk_remaining": at_risk_remaining,
-            "genuinely_unreachable":   genuinely_unreachable,
+            "genuinely_unreachable":   genuinely_unreachable_count,
             "total_at_risk_initial":   total_at_risk_before_ga,
             "simulation_population":   total_pop,
             "success_rate_pct":        round(

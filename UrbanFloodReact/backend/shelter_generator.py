@@ -19,6 +19,7 @@ import random
 import uuid
 import math
 import traceback
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -39,16 +40,17 @@ SHELTER_TAGS = {
     "building": ["public"],
 }
 
-CAPACITY_RULES: dict[str, int] = {
-    "school":           500,
-    "hospital":         200,
-    "community_centre": 300,
-    "townhall":         300,
-    "police":           150,
-    "fire_station":     150,
-    "public":           250,
+# Load Factors (m^2 per person) based on NBC 2016 India
+LOAD_FACTORS_SQM_PER_PERSON: dict[str, float] = {
+    "school":           4.0,   # Educational
+    "hospital":         15.0,  # Healthcare IPD
+    "community_centre": 1.4,   # Assembly / Lobbies
+    "townhall":         1.4,   # Assembly / Lobbies
+    "police":           10.0,  # Office
+    "fire_station":     10.0,  # Office
+    "public":           10.0,  # Office
 }
-DEFAULT_CAPACITY = 250
+DEFAULT_LOAD_FACTOR = 10.0
 RANDOM_FALLBACK_COUNT = 6   # synthetic shelters if OSM is empty
 
 
@@ -72,14 +74,63 @@ def extract_shelter_candidates(G, lat: float, lon: float, hobli_key: str, dist: 
 
     # ── OSM query ─────────────────────────────────────────────────────────────
     candidates = []
+    print(f"  [DEBUG-OSM] Querrying OSM features at ({lat}, {lon}) with dist={dist}m")
+    print(f"  [DEBUG-OSM] Tags: {SHELTER_TAGS}")
     try:
+        start_t = time.time()
         gdf = ox.features_from_point((lat, lon), tags=SHELTER_TAGS, dist=dist)
-        print(f"  [shelters] OSM returned {len(gdf)} features for {hobli_key}")
+        query_time = time.time() - start_t
+        print(f"  [DEBUG-OSM] Query took {query_time:.2f}s. Returned {len(gdf)} features for {hobli_key}")
 
-        for idx, row in gdf.iterrows():
+        if not gdf.empty:
+            if 'amenity' in gdf.columns:
+                print(f"  [DEBUG-OSM] Amenities found: {gdf['amenity'].value_counts().to_dict()}")
+            if 'building' in gdf.columns:
+                print(f"  [DEBUG-OSM] Buildings found: {gdf['building'].value_counts().to_dict()}")
+
+        try:
+            # Use submodule projection for newer OSMnx versions
+            gdf_proj = ox.projection.project_gdf(gdf)
+        except Exception as e:
+            print(f"  [DEBUG-OSM] Projection failed (trying fallback): {e}")
+            try:
+                gdf_proj = ox.project_gdf(gdf)
+            except Exception:
+                print(f"  [DEBUG-OSM] All projection methods failed. Falling back to unprojected.")
+                gdf_proj = gdf
+
+        # ── Optional: Fetch building footprints to match points ────────────────
+        bldg_polys = None
+        try:
+            print(f"  [DEBUG-OSM] Fetching building footprints to match Point markers...")
+            gdf_bldgs = ox.features_from_point((lat, lon), tags={"building": True}, dist=dist)
+            
+            try:
+                gdf_bldgs_proj = ox.projection.project_gdf(gdf_bldgs)
+            except:
+                gdf_bldgs_proj = ox.project_gdf(gdf_bldgs)
+
+            bldg_polys = gdf_bldgs_proj[gdf_bldgs_proj.geometry.geom_type.isin(['Polygon', 'MultiPolygon'])]
+            print(f"  [DEBUG-OSM] Loaded {len(bldg_polys)} building footprints for accurate area matching.")
+        except Exception as e:
+            print(f"  [DEBUG-OSM] Could not load building footprints: {e}")
+
+        for (idx, row), (_, row_proj) in zip(gdf.iterrows(), gdf_proj.iterrows()):
             geom = row.geometry
             if geom is None or geom.is_empty:
                 continue
+
+            # Calculate area in square meters from the projected geometry
+            area_sqm = row_proj.geometry.area if row_proj.geometry and row_proj.geometry.geom_type != "Point" else 0.0
+
+            # If it's a point, try to find the building footprint that contains it
+            if area_sqm == 0.0 and bldg_polys is not None and row_proj.geometry.geom_type == "Point":
+                # Find the intersecting building
+                matches = bldg_polys[bldg_polys.geometry.contains(row_proj.geometry)]
+                if not matches.empty:
+                    area_sqm = matches.iloc[0].geometry.area
+                    print(f"  [DEBUG-OSM] Point matched to footprint! Extracted Area: {area_sqm:.1f} m^2")
+
 
             # Use centroid for polygons/multipolygons
             pt = geom.centroid if geom.geom_type != "Point" else geom
@@ -89,7 +140,23 @@ def extract_shelter_candidates(G, lat: float, lon: float, hobli_key: str, dist: 
             amenity = str(row.get("amenity", "")).strip().lower()
             building = str(row.get("building", "")).strip().lower()
             stype = amenity if amenity and amenity != "nan" else building
-            capacity = CAPACITY_RULES.get(stype, DEFAULT_CAPACITY)
+            
+            load_factor = LOAD_FACTORS_SQM_PER_PERSON.get(stype, DEFAULT_LOAD_FACTOR)
+            
+            # NBC 2016 Formula: Occupant Load = Usable Area / Load Factor
+            # Assume 80% of footprint is usable area, and multiply by 1 level conservatively
+            if area_sqm > 20.0:  # If it's a valid polygon with area
+                usable_area = area_sqm * 0.8
+                capacity = max(50, int(usable_area / load_factor))
+                print(f"  [DEBUG-OSM] Shelter '{row.get('name','ID:'+str(idx))}' | Type: {stype} | Area: {area_sqm:.1f}m2 | LoadFactor: {load_factor} | NBC Cap: {capacity}")
+            else:
+                # Fallbacks for points or invalid polygons
+                fallback_rules = {
+                    "school": 2500, "hospital": 600, "community_centre": 1200,
+                    "townhall": 2000, "police": 300, "fire_station": 300, "public": 1000
+                }
+                capacity = fallback_rules.get(stype, 1000)
+                print(f"  [DEBUG-OSM] Shelter '{row.get('name','ID:'+str(idx))}' | Type: {stype} | No Area (Point) | Fallback Cap: {capacity}")
 
             name_raw = row.get("name", "")
             name = str(name_raw).strip() if name_raw and str(name_raw) != "nan" else _guess_name(stype)
@@ -231,7 +298,7 @@ def _generate_synthetic_shelters(G, count: int) -> list[dict]:
             "type":     stype,
             "lat":      round(ndata["y"], 6),
             "lon":      round(ndata["x"], 6),
-            "capacity": CAPACITY_RULES.get(stype, DEFAULT_CAPACITY),
+            "capacity": 1000, # Default fallback capacity for synthetic shelters
             "node_id":  node_id,
             "synthetic": True,
         })

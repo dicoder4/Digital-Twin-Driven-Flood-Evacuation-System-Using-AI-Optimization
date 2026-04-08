@@ -102,16 +102,16 @@ class SetupMixin:
                 coords.append((mid_lat, mid_lon))
                 edge_refs.append((u, v, k))
                 
-        print(f"  [GA DEBUG] TomTom: found {len(coords)} major road segments to query (motorway/trunk/primary/secondary)")
+        print(f"  [PLANNERS] TomTom: found {len(coords)} major road segments to query (motorway/trunk/primary/secondary)")
         
         if not coords:
-            print("  [GA DEBUG] TomTom: No major roads found in graph — traffic skipped.")
+            print("  [PLANNERS] TomTom: No major roads found in graph — traffic skipped.")
             self._traffic_segment_count = 0
             return
             
         # ── MOCK MODE: inject fake congestion without hitting API ──────────────
         if MOCK_TRAFFIC:
-            print("  [GA DEBUG] *** MOCK_TRAFFIC=True — using seeded congestion data ***")
+            print("  [PLANNERS] *** MOCK_TRAFFIC=True — using seeded congestion data ***")
             import random
             random.seed(42)  # deterministic so same run = same pins
             count = 0
@@ -130,7 +130,7 @@ class SetupMixin:
                 count += 1
                 if factor >= 1.05:
                     congested_count += 1
-            print(f"  [GA DEBUG] MOCK: applied to {count} edges ({congested_count} congested, {count-congested_count} clear)")
+            print(f"  [PLANNERS] MOCK: applied to {count} edges ({congested_count} congested, {count-congested_count} clear)")
             self._traffic_segment_count = count
             return
         # ── END MOCK ────────────────────────────────────────────────────────────
@@ -138,10 +138,10 @@ class SetupMixin:
         # Fetch bulk traffic via concurrent HTTP requests (ThreadPoolExecutor, not asyncio)
         traffic_results = get_bulk_traffic_data(self.TOMTOM_API_KEY, coords)
         
-        print(f"  [GA DEBUG] TomTom: API returned {len(traffic_results)} valid results out of {len(coords)} requests")
+        print(f"  [PLANNERS] TomTom: API returned {len(traffic_results)} valid results out of {len(coords)} requests")
         
         if not traffic_results:
-            print("  [GA DEBUG] TomTom: No traffic results returned — routing will use flood-weight only.")
+            print("  [PLANNERS] TomTom: No traffic results returned — routing will use flood-weight only.")
             self._traffic_segment_count = 0
             return
         
@@ -167,7 +167,7 @@ class SetupMixin:
                 if res['current_time'] > res['free_flow_time']:
                     congested_count += 1
                 
-        print(f"  [GA DEBUG] TomTom: applied traffic to {count}/{len(edge_refs)} edges "
+        print(f"  [PLANNERS] TomTom: applied traffic to {count}/{len(edge_refs)} edges "
               f"({congested_count} congested, {count - congested_count} free-flow)")
         self._traffic_segment_count = count
 
@@ -244,6 +244,7 @@ class SetupMixin:
         """
         for j, shelter in enumerate(self.safe_shelters):
             s_node = shelter.get('node_id')
+            is_synthetic = shelter.get('type') == 'synthetic'
 
             if s_node is None or not self.G.has_node(s_node):
                 # Fallback: Euclidean in degrees → approximate metres
@@ -252,19 +253,25 @@ class SetupMixin:
                         (node['lat'] - shelter['lat']) ** 2 +
                         (node['lon'] - shelter['lon']) ** 2
                     ) * 111_000
+                    
                     self.dist_matrix[i, j] = d
                     self.time_matrix[i, j] = d / self.WALKING_SPEED_MS
                 continue
 
             try:
+                # Evacuees travel FROM their nodes TO the shelter.
+                # Because the street network has one-way roads, distance(A,B) != distance(B,A).
+                # To compute all inbound paths TO the shelter efficiently, we run single-source
+                # Dijkstra from the shelter on the REVERSED graph!
+                rev_G = self.G.reverse(copy=False)
+                
                 # flood-weighted cost (for fitness)
                 flood_lengths = nx.single_source_dijkstra_path_length(
-                    self.G, s_node, weight='flood_weight'
+                    rev_G, s_node, weight='flood_weight'
                 )
-                # raw length (for time estimate — we don't slow evacuees by depth,
-                # we just make flooded paths more costly to choose)
+                # raw length (for time estimate)
                 raw_lengths = nx.single_source_dijkstra_path_length(
-                    self.G, s_node, weight='length'
+                    rev_G, s_node, weight='length'
                 )
             except Exception:
                 continue
@@ -275,6 +282,24 @@ class SetupMixin:
                     self.dist_matrix[i, j] = flood_lengths[r_node]
                 if r_node in raw_lengths:
                     self.time_matrix[i, j] = raw_lengths[r_node] / self.WALKING_SPEED_MS
+
+        # ── Euclidean fallback for graph-isolated nodes ────────────────────
+        # If a node is in a flooded/disconnected component, Dijkstra never 
+        # reaches it → dist_matrix stays inf → greedy always skips it → 
+        # node is permanently stranded. Fix: use straight-line distance as 
+        # last-resort so the greedy CAN assign them (decode falls back to 
+        # straight-line path coords which is acceptable for display).
+        for i, node in enumerate(self.at_risk_nodes):
+            for j, shelter in enumerate(self.safe_shelters):
+                if not math.isfinite(self.dist_matrix[i, j]):
+                    d = math.sqrt(
+                        (node['lat'] - shelter['lat']) ** 2 +
+                        (node['lon'] - shelter['lon']) ** 2
+                    ) * 111_000
+                    # Use a high multiplier to make this a last resort for the GA
+                    # while still being a valid finite option for the greedy
+                    self.dist_matrix[i, j] = d * 10.0
+                    self.time_matrix[i, j] = d / self.WALKING_SPEED_MS
 
     def _compute_greedy_chromosome(self):
         """
@@ -298,6 +323,8 @@ class SetupMixin:
             chosen = -1  # default: unassigned
             for j in order:
                 j = int(j)
+                if not math.isfinite(self.dist_matrix[i, j]):
+                    continue
                 if remaining[j] >= pop:
                     chosen = j
                     remaining[j] -= pop
@@ -315,7 +342,7 @@ class SetupMixin:
                 for i, x in enumerate(chromosome) if x < 0
             )
             print(
-                f"  [GA GREEDY] {n_unassigned} node groups ({unassigned_pop} people) "
+                f"  [EVAC-GREEDY] {n_unassigned} node groups ({unassigned_pop} people) "
                 f"left unassigned — shelter capacity exhausted."
             )
 

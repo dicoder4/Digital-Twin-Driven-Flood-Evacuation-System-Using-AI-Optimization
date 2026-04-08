@@ -127,6 +127,57 @@ class EvolutionMixin:
 
         return chromosome
 
+    # ── Fitness ───────────────────────────────────────────────────────────────
+
+    def _fitness(self, chromosome):
+        """
+        Multi-factor fitness (lower = better):
+          - Weighted sum of flood-aware network distance per person
+          - Weighted sum of travel time per person
+          - HARD REJECTION (inf) if any shelter exceeds capacity
+
+        Unassigned nodes (index -1) contribute zero distance/time — they
+        are already counted as at_risk_remaining in the service layer.
+        """
+        total_dist = 0.0
+        total_time = 0.0
+        shelter_counts = defaultdict(int)
+
+        for i, j in enumerate(chromosome):
+            pop = self.at_risk_nodes[i]['pop']
+            
+            if j < 0:
+                # PENALIZE UNASSIGNED MASSIVELY
+                # If we don't penalize this, the GA (which minimizes distance)
+                # will actively try to abandon people to lower its total score!
+                total_dist += 1_000_000 * pop
+                total_time += 1_000_000 * pop
+                continue
+
+            dist = self.dist_matrix[i, j]
+            t = self.time_matrix[i, j]
+
+            if not math.isfinite(dist):
+                # Penalty for assigning to an unreachable shelter
+                # MUST be much worse than unassigned (-1) to prevent the GA
+                # from making fake assignments that fail DECODE.
+                dist = 10_000_000
+            if not math.isfinite(t):
+                t = 10_000_000
+
+            total_dist += dist * pop
+            total_time += t * pop
+            shelter_counts[j] += pop
+
+        # Hard capacity enforcement — any violation → infinite cost.
+        # This guarantees the GA never selects an over-capacity chromosome.
+        for j, count in shelter_counts.items():
+            cap = self.safe_shelters[j]['capacity']
+            if count > cap:
+                return float('inf')
+
+        return total_dist + 0.5 * total_time
+
     # ── Selection ─────────────────────────────────────────────────────────────
 
     def _selection(self, population, fitness_scores):

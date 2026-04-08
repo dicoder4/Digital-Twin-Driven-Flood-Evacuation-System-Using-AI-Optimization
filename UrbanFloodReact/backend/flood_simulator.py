@@ -103,7 +103,7 @@ class UrbanFloodSimulator:
             if node not in current_depths:
                 continue
             water_depth = current_depths[node]
-            if water_depth <= 0.05:  # Surface retention threshold
+            if water_depth <= 0.005:  # Lower surface retention threshold to 5mm to support light rains
                 continue
             node_head = elevations[node] + water_depth
             neighbors = list(self.G.neighbors(node))
@@ -193,7 +193,7 @@ class UrbanFloodSimulator:
         node_depths = nx.get_node_attributes(self.G, 'water_depth')
         
         # Buckets for levels
-        level1_geoms = [] # Shallow (0.05m - 0.5m)
+        level1_geoms = [] # Shallow (0.005m - 0.5m)
         level2_geoms = [] # Moderate (0.5m - 1.5m)
         level3_geoms = [] # Deep (> 1.5m)
         
@@ -201,7 +201,7 @@ class UrbanFloodSimulator:
         base_buffer = 0.0003 
         
         for n, depth in node_depths.items():
-            if depth < 0.05: continue
+            if depth < 0.005: continue  # Render anything above 5mm
             
             pt = Point(self.G.nodes[n]['x'], self.G.nodes[n]['y'])
             poly = pt.buffer(base_buffer + (depth * 0.00005)) # slightly larger for deep nodes
