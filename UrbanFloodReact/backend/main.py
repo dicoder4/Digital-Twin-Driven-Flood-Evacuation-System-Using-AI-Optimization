@@ -248,7 +248,7 @@ async def simulate_stream(
     use_traffic: bool = Query(False),
     algorithm:   str  = Query("ga", description="Optimisation algorithm: 'ga', 'aco', or 'pso'"),
     population:  int | None = Query(None, description="Override population count"),
-    mode:        str  = Query("instant", description="Rainfall mode: 'progressive' or 'instant'"),
+    mode:        str  = Query("progressive", description="Rainfall mode: 'progressive' or 'instant'"),
     extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """SSE stream of flood simulation steps."""
@@ -280,7 +280,7 @@ async def simulate_compare(
     evacuation_mode: bool  = Query(False),
     use_traffic:     bool  = Query(False),
     population:      int | None = Query(None),
-    mode:            str  = Query("instant", description="Rainfall mode: 'progressive' or 'instant'"),
+    mode:            str  = Query("progressive", description="Rainfall mode: 'progressive' or 'instant'"),
     extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """
