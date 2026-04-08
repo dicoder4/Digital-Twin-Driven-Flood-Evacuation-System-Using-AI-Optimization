@@ -109,11 +109,24 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
 
         for i, j in enumerate(chromosome):
             pop  = self.at_risk_nodes[i]['pop']
+            
+            if j < 0:
+                # PENALIZE UNASSIGNED MASSIVELY
+                # Prevents fitness function from rewarding abandoned groups
+                total_dist += 1_000_000 * pop
+                total_time += 1_000_000 * pop
+                continue
+
             dist = self.dist_matrix[i, j]
             t    = self.time_matrix[i, j]
 
-            if not math.isfinite(dist): dist = 1_000_000
-            if not math.isfinite(t):    t    = 1_000_000
+            if not math.isfinite(dist):
+                # Penalty for assigning to an unreachable shelter
+                # MUST be much worse than unassigned (-1) to prevent the solvers
+                # from making fake assignments that fail DECODE.
+                dist = 10_000_000
+            if not math.isfinite(t):
+                t = 10_000_000
 
             # GIS Physics Enhancement: Terrain-Aware Selection
             # We want to penalize moving "downhill" into a potential trap

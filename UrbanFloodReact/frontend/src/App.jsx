@@ -247,8 +247,14 @@ export default function App() {
     setSelectedBusId(null);
     setActiveTab('setup');
     sim.setStatusMsg(`Re-running with ${suggestions.length} suggested shelter(s)…`);
-    // Use same current params but inject extra shelters from suggestions
-    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, suggestions);
+    // Minimal payload to avoid URL length limits with many suggestions
+    const stripped = suggestions.map(s => ({
+      lat: s.lat,
+      lon: s.lon,
+      suggested_capacity: s.suggested_capacity,
+      area_name: s.area_name
+    }));
+    sim.start(loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, stripped);
   }, [regionLoaded, loadedHobli, rainfallMm, steps, decayFactor, evacuationMode, useTraffic, algorithm, populationCount, sim]);
 
 
