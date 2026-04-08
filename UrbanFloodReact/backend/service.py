@@ -1636,13 +1636,21 @@ async def fetch_metro_stations(hobli_name: str) -> dict:
 # Advanced Algorithm Analysis (Convergence, Stability, Diversity)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _calculate_convergence_speed(history: list) -> int:
-    """Find the iteration index where fitness first reaches 95% of its final improvement."""
-    if not history: return 0
+def _calculate_convergence_speed(history: list) -> float:
+    """Find the iteration index where fitness first reaches 95% of its final improvement.
+    
+    Returns:
+      - 1 if no improvement occurred (algorithm converged on initial seed)
+      - iteration index (1-based) where 95% of improvement was achieved
+      - len(history) if 95% threshold was never reached
+    """
+    if not history: return 1
     start_f = history[0]
     end_f = history[-1]
     total_gain = start_f - end_f
-    if total_gain <= 0: return len(history)
+    if total_gain <= 0:
+        # No improvement at all — the algorithm converged on its initial seed
+        return 1
     
     target = start_f - (0.95 * total_gain)
     for i, f in enumerate(history):
@@ -1671,6 +1679,10 @@ async def run_advanced_analysis_generator(
     """
     Runs GA, ACO, and PSO 5 times each to calculate Stochastic Stability (Mean/StdDev).
     Also yields convergence and diversity metrics.
+
+    Performance: Uses shared_setup pattern from compare mode so Dijkstra precompute
+    and optional TomTom traffic only happen ONCE (via the first GA init), then all
+    subsequent planner instances reuse those matrices.
     """
     import time
     import numpy as np
@@ -1679,6 +1691,13 @@ async def run_advanced_analysis_generator(
     key = norm_key(hobli)
     
     # 1. Setup Simulation (same as compare mode)
+    if key not in REGION_CACHE:
+        try:
+            await loop.run_in_executor(None, get_region, key)
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Region not loaded: {e}'})}\n\n"
+            return
+
     entry = REGION_CACHE[key]
     sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
     sim.initialize_from_drains(rainfall_mm)
@@ -1695,8 +1714,14 @@ async def run_advanced_analysis_generator(
     shelter_resp = await fetch_shelters(hobli)
     safe_shelters = [s for s in shelter_resp["shelters"]] # Assume safe for analysis
     
-    for _ in range(steps):
-        await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
+    # Use fewer steps for analysis (progressive but faster) — half user steps, min 5
+    analysis_steps = max(5, steps // 2)
+    yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Simulating flood ({analysis_steps} progressive steps)...', 'step': 0, 'total': 3})}\n\n"
+
+    def _run_flood():
+        for _ in range(analysis_steps):
+            sim.propagate_flood_step(decay_factor)
+    await loop.run_in_executor(None, _run_flood)
     
     at_risk_raw = sim.get_at_risk_nodes(depth_threshold_m=0.05)
     at_risk = [{"id": n, "pop": p, "lat": sim.G.nodes[n]["y"], "lon": sim.G.nodes[n]["x"]} for n, p in at_risk_raw]
@@ -1705,22 +1730,67 @@ async def run_advanced_analysis_generator(
         yield f"data: {json.dumps({'error': 'No at-risk population or shelters'})}\n\n"
         return
 
-    # 2. Parallel Stability Runs (5 runs per algorithm)
-    n_runs = 5
+    # ── Shared setup: initialise one GA instance for Dijkstra + optional TomTom ──
+    # All 15 subsequent runs reuse this instance's precomputed matrices.
+    n_risk = len(at_risk)
+    gens   = max(30, min(60, 3000 // max(n_risk, 1)))   # adaptive iteration count
+    pop_sz = min(60, max(30, n_risk * 2))
+    print(f"{_ts()} [Analysis] Params: pop_sz={pop_sz}, gens={gens}, at_risk={n_risk}")
+
+    yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Building road network ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
+
+    def _init_shared():
+        PClass = _get_planner_class("ga")
+        return PClass(
+            at_risk, safe_shelters, sim.G,
+            pop_size=pop_sz, generations=gens,
+            use_tomtom_traffic=use_traffic,
+            shared_setup=None,
+        )
+
+    shared_instance = await loop.run_in_executor(None, _init_shared)
+    print(f"{_ts()} [Analysis] Shared Dijkstra setup complete")
+
+    # 2. Stability Runs (3 runs per algorithm — fast but statistically sufficient)
+    n_runs = 3
     results = {"ga": [], "aco": [], "pso": []}
     
-    def _single_run(algo_key):
+    def _single_run(algo_key, shared, run_idx):
+        """
+        Run one algorithm instance with ±5% noise on the distance matrix.
+        
+        Each run_idx produces a unique perturbation of the shared Dijkstra 
+        distances, simulating real-world uncertainty in flood depth measurements.
+        This forces each run to explore a different region of the solution space,
+        producing meaningful variance across the 5 stability runs.
+        """
         PClass = _get_planner_class(algo_key)
         planner = PClass(at_risk, safe_shelters, sim.G,
-                        pop_size=40, generations=30,
-                        n_ants=40, iterations=30,
-                        n_particles=40,
-                        use_tomtom_traffic=use_traffic)
+                        pop_size=pop_sz, generations=gens,
+                        n_ants=pop_sz, iterations=gens,
+                        n_particles=pop_sz,
+                        use_tomtom_traffic=False,
+                        shared_setup=shared)
+
+        # ── Option B: Add ±5% Gaussian noise to distance matrix ──────────
+        # Each (algo, run_idx) pair gets a unique seed for reproducibility.
+        rng = np.random.RandomState(seed=hash((algo_key, run_idx)) % (2**31))
+        noise = rng.normal(loc=1.0, scale=0.05, size=planner.dist_matrix.shape)
+        noise = np.clip(noise, 0.90, 1.10)  # cap at ±10% to avoid extremes
+        planner.dist_matrix = planner.dist_matrix * noise
+        # Time matrix gets correlated but not identical noise
+        time_noise = rng.normal(loc=1.0, scale=0.03, size=planner.time_matrix.shape)
+        time_noise = np.clip(time_noise, 0.93, 1.07)
+        planner.time_matrix = planner.time_matrix * time_noise
+        # Recompute the greedy chromosome from the perturbed distances
+        planner._greedy_chromosome = planner._compute_greedy_chromosome()
+        # ─────────────────────────────────────────────────────────────────
+
         decoded_plan = planner.run()
 
         # ── Reconstruct assignment chromosome from the plan ──
-        n_risk = len(at_risk)
-        chromosome = [-1] * n_risk   # -1 = unassigned
+        n_r = len(at_risk)
+        chromosome = [-1] * n_r   # -1 = unassigned
         for move in decoded_plan:
             origin_id = move.get("from_node")
             # find index of origin node in at_risk list
@@ -1747,45 +1817,63 @@ async def run_advanced_analysis_generator(
 
         return algo_key, planner.best_fitness, planner.fitness_history, decoded_plan, breakdown
 
-    print(f"{_ts()} [Analysis] Starting stability test (5 runs per algorithm)...")
+    print(f"{_ts()} [Analysis] Starting stability test ({n_runs} runs × 3 algorithms, gens={gens}, noise=±5%)...")
     analysis_data = {}
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-        futures = []
-        for algo in ["ga", "aco", "pso"]:
-            for _ in range(n_runs):
-                futures.append(pool.submit(_single_run, algo))
-        
-        for fut in concurrent.futures.as_completed(futures):
-            algo, fitness, history, plan, breakdown = fut.result()
-            results[algo].append({"fitness": fitness, "history": history, "plan": plan, "breakdown": breakdown})
 
-    # 3. Aggregate Metrics
-    for algo, runs in results.items():
-        fitnesses = [r["fitness"] for r in runs]
-        histories = [r["history"] for r in runs]
-        plans = [r["plan"] for r in runs]
-        
+    # ── Progressive streaming: run each algorithm's runs sequentially in
+    #    a background thread, yield results as each algorithm completes ──
+    algo_order = ["ga", "aco", "pso"]
+    algo_labels = {"ga": "Genetic Algorithm", "aco": "Ant Colony Opt.", "pso": "Particle Swarm"}
+
+    for algo_idx, algo in enumerate(algo_order):
+        # Progress: starting this algorithm
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Running {algo_labels[algo]} ({algo_idx+1}/3)...', 'algo': algo, 'step': algo_idx+1, 'total': 3})}\n\n"
+
+        # Run n_runs sequentially in ONE background thread (no nested pools = no deadlock)
+        def _run_algo_batch(algo_key):
+            batch = []
+            for run_i in range(n_runs):
+                _, fitness, history, plan, breakdown = _single_run(algo_key, shared_instance, run_i)
+                batch.append({"fitness": fitness, "history": history, "plan": plan, "breakdown": breakdown})
+            return batch
+
+        algo_results = await loop.run_in_executor(None, _run_algo_batch, algo)
+        results[algo] = algo_results
+
+        # Aggregate metrics for this algorithm immediately
+        fitnesses = [r["fitness"] for r in algo_results]
+        histories = [r["history"] for r in algo_results]
+        plans = [r["plan"] for r in algo_results]
+
         mean_fit = np.mean(fitnesses)
         std_fit = np.std(fitnesses)
-        
-        # Stability Score: 1 - (StdDev / Mean) -> 1.0 is perfectly stable
         stability = max(0, 1.0 - (std_fit / mean_fit)) if mean_fit > 0 else 0
-        
-        # Average convergence speed and diversity across runs
         avg_conv = np.mean([_calculate_convergence_speed(h) for h in histories])
         avg_div = np.mean([_calculate_path_diversity(p) for p in plans])
-        
+
+        min_len = min(len(h) for h in histories) if histories else 0
+        if min_len > 0:
+            trimmed = [h[:min_len] for h in histories]
+            avg_history = np.mean(trimmed, axis=0).tolist()
+        else:
+            avg_history = histories[0] if histories else []
+
         analysis_data[algo] = {
             "mean_fitness": round(float(mean_fit), 1),
             "std_dev": round(float(std_fit), 2),
             "stability_score": round(float(stability), 3),
-            "convergence_speed": float(avg_conv),
-            "path_diversity": float(avg_div),
-            "fitness_history": histories[0],
-            "breakdown": runs[0]["breakdown"]
+            "convergence_speed": round(float(avg_conv), 1),
+            "path_diversity": round(float(avg_div), 3),
+            "fitness_history": avg_history,
+            "breakdown": algo_results[0]["breakdown"]
         }
 
+        # Stream this algorithm's result immediately so the UI can render it
+        yield f"data: {json.dumps({'algo_result': True, 'algo': algo, 'metrics': {algo: analysis_data[algo]}})}\n\n"
+        print(f"{_ts()}   [{algo.upper()}] done: Mean={analysis_data[algo]['mean_fitness']}, "
+              f"Stability={analysis_data[algo]['stability_score']}, Conv={analysis_data[algo]['convergence_speed']}")
+
+    # Final payload with all metrics
     final_payload = {
         "analysis_done": True,
         "metrics": analysis_data,
@@ -1793,9 +1881,11 @@ async def run_advanced_analysis_generator(
         "timestamp": datetime.now().isoformat()
     }
     
-    # [LOGGING] Print summary to backend console for debugging
     print(f"\n{_ts()} [ANALYSIS COMPLETE] Location: {hobli}")
     for algo, data in analysis_data.items():
-        print(f"  - {algo.upper()}: Mean Fit={data['mean_fitness']}, Stability={data['stability_score']}, Diversity={data['path_diversity']}")
+        print(f"  - {algo.upper()}: Mean Fit={data['mean_fitness']}, StdDev={data['std_dev']}, "
+              f"Stability={data['stability_score']}, Conv={data['convergence_speed']}, "
+              f"Diversity={data['path_diversity']}")
     
     yield f"data: {json.dumps(final_payload)}\n\n"
+

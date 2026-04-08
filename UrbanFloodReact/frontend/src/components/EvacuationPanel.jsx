@@ -171,36 +171,63 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
 }
 
 
-export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null }) {
+export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null, simulationParams = {} }) {
     const [genaiOpen, setGenaiOpen] = useState(false);
 
     // ── Analysis Logic ──
     const [analysisOpen, setAnalysisOpen] = useState(false);
     const [analysisMetrics, setAnalysisMetrics] = useState(null);
     const [isAnalysing, setIsAnalysing] = useState(false);
+    const [analysisProgress, setAnalysisProgress] = useState('');
 
     const handleRunAnalysis = () => {
         if (isAnalysing) return;
         setIsAnalysing(true);
         setAnalysisMetrics(null);
+        setAnalysisProgress('Preparing flood simulation…');
 
         const url = new URL('http://localhost:8000/simulate-analysis');
         url.searchParams.append('hobli', locationName);
         url.searchParams.append('use_traffic', showTraffic);
+        // Pass simulation params so analysis matches the user's current scenario
+        if (simulationParams.rainfall_mm != null) url.searchParams.append('rainfall_mm', simulationParams.rainfall_mm);
+        if (simulationParams.steps != null) url.searchParams.append('steps', simulationParams.steps);
+        if (simulationParams.decay_factor != null) url.searchParams.append('decay_factor', simulationParams.decay_factor);
+        if (simulationParams.population != null && simulationParams.population > 0) url.searchParams.append('population', simulationParams.population);
 
         const eventSource = new EventSource(url.href);
 
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
+
             if (data.error) {
                 console.error("Analysis error:", data.error);
                 setIsAnalysing(false);
+                setAnalysisProgress('');
                 eventSource.close();
                 return;
             }
+
+            // ── Progressive: progress message ──
+            if (data.analysis_progress) {
+                setAnalysisProgress(data.message || `Algorithm ${data.step}/${data.total}…`);
+                return;
+            }
+
+            // ── Progressive: one algorithm completed ──
+            if (data.algo_result && data.metrics) {
+                setAnalysisMetrics(prev => ({ ...prev, ...data.metrics }));
+                // Open the popup as soon as the first algorithm finishes
+                if (!analysisOpen) setAnalysisOpen(true);
+                setAnalysisProgress(`${data.algo.toUpperCase()} complete — ${3 - Object.keys(data.metrics).length > 0 ? 'running next…' : 'done'}`);
+                return;
+            }
+
+            // ── Final: all algorithms done ──
             if (data.analysis_done) {
                 setAnalysisMetrics(data.metrics);
                 setIsAnalysing(false);
+                setAnalysisProgress('');
                 setAnalysisOpen(true);
                 eventSource.close();
             }
@@ -209,6 +236,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         eventSource.onerror = (err) => {
             console.error("Analysis SSE error:", err);
             setIsAnalysing(false);
+            setAnalysisProgress('');
             eventSource.close();
         };
     };
@@ -333,7 +361,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         disabled={isAnalysing}
                     >
                         {isAnalysing ? (
-                            <><RefreshCw size={12} className="spin" /> Calculating Stability...</>
+                            <><RefreshCw size={12} className="spin" /> {analysisProgress || 'Calculating Stability...'}</>
                         ) : (
                             <><BrainCircuit size={12} /> Analyse Algorithm performance</>
                         )}

@@ -3,7 +3,7 @@ import {
   X, BarChart2, Activity, Zap, Shield,
   TrendingDown, TrendingUp, Info, Cpu,
   ChevronRight, BrainCircuit, MessageSquare,
-  BarChartIcon, Layers, Timer, Repeat
+  BarChartIcon, Layers, Timer, Repeat, RefreshCw
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -46,9 +46,9 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
     for (let i = 0; i < maxLen; i++) {
       data.push({
         iteration: i + 1,
-        GA: gaHistory[i] || null,
-        ACO: acoHistory[i] || null,
-        PSO: psoHistory[i] || null,
+        GA: gaHistory[i] != null ? Math.round(gaHistory[i] * 10) / 10 : null,
+        ACO: acoHistory[i] != null ? Math.round(acoHistory[i] * 10) / 10 : null,
+        PSO: psoHistory[i] != null ? Math.round(psoHistory[i] * 10) / 10 : null,
       });
     }
     return data;
@@ -195,7 +195,7 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
             </div>
             <div>
               <h2>Algorithm Deep-Dive Analysis</h2>
-              <p className="subtitle">Location: {locationName} • 5-Run Stability Test</p>
+              <p className="subtitle">Location: {locationName} • 3-Run Stability Test</p>
             </div>
           </div>
           <button className="close-btn" onClick={onClose}>
@@ -294,6 +294,29 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                 );
               })}
 
+              {/* Loading skeleton cards for algorithms still being computed */}
+              {['ga', 'aco', 'pso'].filter(k => !algoKeys.includes(k)).map(key => {
+                const C = ALGO_CONFIG[key] || { name: key.toUpperCase(), color: '#64748b', icon: Info };
+                const Icon = C.icon;
+                return (
+                  <div key={key} className="algo-card algo-card--loading" style={{ borderColor: C.color + '40', opacity: 0.6 }}>
+                    <div className="algo-card-header">
+                      <div className="icon-title">
+                        <Icon size={16} style={{ color: C.color + '80' }} />
+                        <span className="name" style={{ color: '#94a3b8' }}>{C.name}</span>
+                      </div>
+                      <div className="badge" style={{ background: C.color + '10', color: C.color + '80' }}>
+                        {key.toUpperCase()}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem 1rem', gap: '0.75rem' }}>
+                      <RefreshCw size={20} className="spin" style={{ color: C.color }} />
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>Running 3 stability tests…</span>
+                    </div>
+                  </div>
+                );
+              })}
+
               <div className="analysis-footer-note">
                 <Info size={12} />
                 <span>
@@ -308,7 +331,7 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
             <div className="chart-container">
               <div className="chart-header">
                 <h3>Fitness Convergence History</h3>
-                <p>Tracking the minimize objective across generations (Lower = Better)</p>
+                <p>Tracking the minimize objective across generations (Lower = Better). Y-axis auto-scaled to show differences.</p>
               </div>
               <div className="chart-wrapper">
                 <ResponsiveContainer width="100%" height={350}>
@@ -322,9 +345,12 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                     <YAxis
                       tick={{ fontSize: 11 }}
                       label={{ value: 'Fitness Score', angle: -90, position: 'insideLeft' }}
+                      domain={['auto', 'auto']}
+                      tickFormatter={(val) => val >= 1000000 ? `${(val / 1000000).toFixed(2)}M` : val >= 1000 ? `${(val / 1000).toFixed(0)}K` : val}
                     />
                     <Tooltip
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [value != null ? Math.round(value).toLocaleString() : 'N/A', undefined]}
                     />
                     <Legend verticalAlign="top" height={36} />
                     <Line
