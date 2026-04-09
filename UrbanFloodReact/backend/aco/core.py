@@ -137,7 +137,12 @@ class ACOEvacuationPlanner(BaseEvacuationPlanner):
                     chromosome[i]     = j
                     demand_counts[j] += pop
 
-                fit = self._fitness(chromosome.tolist())
+                # Capacity repair: fix any overflow that slipped through the mask
+                # (e.g. fallback path when all shelters were full)
+                repaired = self._capacity_repair(chromosome.tolist())
+                chromosome = np.array(repaired, dtype=np.int32)
+
+                fit = self._fitness(repaired)
                 iter_chromosomes[ant] = chromosome
                 iter_fitness[ant]     = fit
 
@@ -152,7 +157,6 @@ class ACOEvacuationPlanner(BaseEvacuationPlanner):
             # 2. Deposit by all ants — use scatter-add instead of Python loop
             #    deposits[ant] = q / fitness[ant]
             deposits = self.q / np.maximum(iter_fitness, 1e-9)   # (n_ants,)
-            row_idx  = np.repeat(np.arange(n_risk), n_shelters)   # not used
             # Efficient: for each ant, add deposit to tau[i, chrom[i]] for all i
             for ant in range(self.n_ants):
                 # np.add.at avoids Python loop over n_risk

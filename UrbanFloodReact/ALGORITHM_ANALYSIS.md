@@ -105,8 +105,10 @@ fitness = Σ (flood_weighted_distance × population)
         + 0.5 × Σ (travel_time × population)
         + 100,000 × Σ (capacity_overflow²)
         + terrain_penalty
-        + 1,000,000 × unassigned_population
+        + 1,000,000 × unassigned_population   ← applied by all three algorithms
 ```
+
+The unassigned-node penalty is enforced by all three planners — leaving a group unrouted is treated as equivalent to 1000 km of walking per person, ensuring algorithms never gain fitness by abandoning people.
 
 Fitness values in the **millions are normal** — they represent the cumulative cost across all at-risk nodes. A 1-2% difference between algorithms translates to thousands of people walking shorter/longer distances.
 
@@ -164,16 +166,17 @@ Fraction of unique (origin → shelter) assignments out of total assignments. Hi
 | **Mechanism** | Ants construct solutions using pheromone × distance heuristic |
 | **Pheromone** | Evaporation ρ=0.1, reinforcement on best solution |
 | **Warm Start** | Greedy solution as initial best (pheromone seeded) |
+| **Constraint Handling** | Capacity masking during construction + post-construction capacity repair |
 | **Parameters** | `n_ants=30-60`, `iterations=30-60`, `alpha=1`, `beta=3` |
 
 **Strengths:**
 - **Naturally suited to graph routing** — designed for shortest-path-on-graph problems (TSP, VRP)
 - Typically achieves the **lowest fitness** (best route quality) because the pheromone-distance heuristic directly optimises for shortest weighted paths
 - High stability — pheromone reinforcement is deterministic
+- Double-layer capacity enforcement: masking prevents overflow during construction; repair catches the rare fallback case
 
 **Weaknesses:**
 - **Needs 100+ iterations** to build meaningful pheromone differentiation. With only 30-60 iterations, ACO often can't improve beyond its greedy seed (convergence_speed=1)
-- Ant construction doesn't enforce capacity — solutions may have capacity overflow penalties
 - Lower diversity — pheromone reinforcement funnels all ants toward the same "best path"
 
 ### Particle Swarm Optimisation (PSO)
@@ -182,17 +185,19 @@ Fraction of unique (origin → shelter) assignments out of total assignments. Hi
 |--------|--------|
 | **Mechanism** | Discrete adaptation with sigmoid velocity, pbest/gbest attraction |
 | **Velocity** | Inertia w=0.7, cognitive c₁=1.5, social c₂=2.0 |
-| **Init** | Particles seeded from greedy with perturbation |
+| **Init** | 80% greedy-seeded (±15% perturbation), 20% fully random capacity-aware |
+| **Constraint Handling** | Post-update capacity repair on every particle each iteration |
 | **Parameters** | `n_particles=30-60`, `iterations=30-60` |
 
 **Strengths:**
 - **Fastest convergent** — finds improvements quickly (convergence_speed of 5-10 is typical)
 - The **only algorithm that consistently shows a visible convergence curve** — PSO starts high and slopes downward, demonstrating active optimisation
 - Good balance between exploration (high inertia early) and exploitation (swarm collapse later)
+- Mixed initialisation ensures genuine explorers exist from the start, reducing premature convergence
 
 **Weaknesses:**
 - **Designed for continuous spaces** — the sigmoid-based discrete adaptation is a mathematical compromise, not a native discrete operator
-- Can plateau early if the swarm collapses around gbest (all particles converge to the same solution)
+- Can plateau if gbest dominates social pull before the swarm has explored widely
 - Middle-of-the-road fitness — better than GA but usually worse than ACO on raw route quality
 
 ---
@@ -219,7 +224,9 @@ If the DRA wants to see **multiple different evacuation strategies** (e.g., "wha
 |------|-----------|----------|------------|
 | 🥇 | **ACO** | Route quality (lowest fitness) | Mean Fitness ↓ |
 | 🥈 | **PSO** | Speed of convergence + active optimisation | Convergence Speed ↓ |
-| 🥉 | **GA** | Solution diversity + capacity feasibility | Path Diversity ↑ |
+| 🥉 | **GA** | Solution diversity | Path Diversity ↑ |
+
+> All three algorithms now enforce capacity feasibility equally — GA via crossover/mutation repair, ACO via construction masking + post-repair, PSO via post-update repair. Capacity feasibility is no longer a differentiator between algorithms.
 
 ### Important Caveat
 
@@ -236,7 +243,7 @@ Conversely, **GA's ranking might improve** with higher mutation rates (currently
 | `backend/service.py` | Analysis generator (`run_advanced_analysis_generator`) — flood sim, shared setup, per-algo loop |
 | `backend/base_planner.py` | Shared fitness function, dist/time matrices, greedy chromosome |
 | `backend/genetic_algorithm/core.py` | GA planner (crossover, mutation, elitism) |
-| `backend/genetic_algorithm/evolution_mixin.py` | GA evolution logic (population init, selection) |
+| `backend/genetic_algorithm/evolution_mixin.py` | GA evolution logic (population init, selection, crossover, mutation) |
 | `backend/aco/core.py` | ACO planner (pheromone, ant construction) |
 | `backend/pso/core.py` | PSO planner (velocity, pbest/gbest) |
 | `backend/flood_simulator.py` | Flood propagation engine (progressive/instant rainfall) |
@@ -259,4 +266,4 @@ The Y-axis is **auto-scaled** to the data range (not starting from 0) so small d
 
 ---
 
-*Last updated: April 2026*
+*Last updated: April 2026 — capacity repair unified across all three planners; PSO swarm diversity improved (80/20 greedy/random init); unassigned-node penalty bug fixed in shared fitness function*

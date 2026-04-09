@@ -55,76 +55,8 @@ class EvolutionMixin:
 
         return pop
 
-    # ── Capacity Repair ───────────────────────────────────────────────────────
-
-    def _capacity_repair(self, chromosome):
-        """
-        Post-process a chromosome to guarantee no shelter exceeds its capacity.
-
-        For each over-capacity shelter:
-          1. Sort its assigned nodes worst-first (farthest from shelter).
-          2. Move excess nodes to the nearest shelter with remaining capacity.
-          3. If no shelter has remaining capacity, mark the node as -1 (unassigned).
-
-        This makes every chromosome in the population capacity-feasible,
-        so the GA never evolves or selects an illegal solution.
-        """
-        n_shelters = len(self.safe_shelters)
-        capacities = [s['capacity'] for s in self.safe_shelters]
-        assigned_load = defaultdict(int)
-
-        # Calculate shelter loads
-        for i, j in enumerate(chromosome):
-            if j < 0:
-                continue
-            assigned_load[j] += self.at_risk_nodes[i]['pop']
-
-        # Remaining capacity per shelter
-        remaining = [capacities[j] - assigned_load[j] for j in range(n_shelters)]
-
-        # Identify nodes assigned to over-capacity shelters, worst-first
-        for j in range(n_shelters):
-            if remaining[j] >= 0:
-                continue  # shelter is within capacity
-
-            # Collect nodes assigned to this over-capacity shelter
-            overflow_nodes = [
-                i for i, s in enumerate(chromosome)
-                if s == j
-            ]
-            # Sort by descending distance to shelter j (remove farthest first)
-            overflow_nodes.sort(
-                key=lambda i: self.dist_matrix[i, j],
-                reverse=True
-            )
-
-            for i in overflow_nodes:
-                if remaining[j] >= 0:
-                    break  # shelter is now within capacity
-
-                pop_i = self.at_risk_nodes[i]['pop']
-
-                # Try to find another shelter with remaining capacity,
-                # sorted by distance from node i (nearest alternative first)
-                alt_order = np.argsort(self.dist_matrix[i])
-                moved = False
-                for alt_j in alt_order:
-                    alt_j = int(alt_j)
-                    if alt_j == j:
-                        continue
-                    if remaining[alt_j] >= pop_i:
-                        chromosome[i] = alt_j
-                        remaining[alt_j] -= pop_i
-                        remaining[j] += pop_i
-                        moved = True
-                        break
-
-                if not moved:
-                    # No shelter can absorb this group — mark unassigned
-                    chromosome[i] = -1
-                    remaining[j] += pop_i
-
-        return chromosome
+    # ── _capacity_repair is inherited from BaseEvacuationPlanner ─────────────
+    # Defined there so GA, ACO, and PSO all share the same implementation.
 
     # ── _fitness is inherited from BaseEvacuationPlanner ──────────────────────
     # All three planners (GA, ACO, PSO) use the same fitness function

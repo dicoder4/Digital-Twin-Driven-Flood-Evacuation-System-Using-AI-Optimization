@@ -87,6 +87,27 @@ class PSOEvacuationPlanner(BaseEvacuationPlanner):
                 chrom[i]   = int(np.random.choice(nearest3))
         return chrom
 
+    def _init_particle_random(self, n_risk: int) -> np.ndarray:
+        """
+        Fully random capacity-aware particle — same logic as GA's random_count seed.
+        Assigns nodes in a random order, picking any shelter that still has space.
+        Ensures the particle is capacity-feasible from the start.
+        """
+        n_shelters = len(self.safe_shelters)
+        remaining  = [s['capacity'] for s in self.safe_shelters]
+        assigned   = [-1] * n_risk
+        indices    = list(range(n_risk))
+        np.random.shuffle(indices)
+        for i in indices:
+            pop_i   = self.at_risk_nodes[i]['pop']
+            order   = np.random.permutation(n_shelters)
+            for j in order:
+                if remaining[j] >= pop_i:
+                    assigned[i]  = int(j)
+                    remaining[j] -= pop_i
+                    break
+        return np.array(assigned, dtype=np.int32)
+
     @staticmethod
     def _sigmoid_arr(v: np.ndarray) -> np.ndarray:
         """Element-wise sigmoid: P(update) = 1/(1+exp(-|v|)), vectorised."""
@@ -104,9 +125,13 @@ class PSOEvacuationPlanner(BaseEvacuationPlanner):
         n_risk     = len(self.at_risk_nodes)
         n_shelters = len(self.safe_shelters)
 
-        # ── Initialise swarm ── (n_particles × n_risk NumPy arrays) ──────────
-        positions  = np.stack([self._init_particle(n_risk)
-                                for _ in range(self.n_particles)])           # (P, R)
+        # ── Initialise swarm ── 80% greedy-perturbed + 20% fully random ───────
+        greedy_count = int(self.n_particles * 0.8)
+        random_count = self.n_particles - greedy_count
+        positions = np.stack(
+            [self._init_particle(n_risk) for _ in range(greedy_count)] +
+            [self._init_particle_random(n_risk) for _ in range(random_count)]
+        )                                                                    # (P, R)
         velocities = np.random.uniform(-1.0, 1.0,
                                         size=(self.n_particles, n_risk))     # (P, R)
 
@@ -156,9 +181,11 @@ class PSOEvacuationPlanner(BaseEvacuationPlanner):
 
             positions = new_positions
 
-            # ── Fitness evaluation ────────────────────────────────────────────
+            # ── Capacity repair + fitness evaluation ──────────────────────────
             for p_idx in range(self.n_particles):
-                fit = self._fitness(positions[p_idx].tolist())
+                repaired = self._capacity_repair(positions[p_idx].tolist())
+                positions[p_idx] = np.array(repaired, dtype=np.int32)
+                fit = self._fitness(repaired)
                 if fit < pbest_fitness[p_idx]:
                     pbest[p_idx]         = positions[p_idx].copy()
                     pbest_fitness[p_idx] = fit

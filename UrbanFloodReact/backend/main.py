@@ -316,15 +316,18 @@ async def simulate_analysis(
     decay_factor:    float = Query(0.5),
     population:      int | None = Query(None),
     use_traffic:     bool  = Query(False),
+    iterations:      int | None = Query(None, description="Override iteration count for all algorithms (e.g. 100 for deep analysis)"),
 ):
     """
     SSE stream for advanced algorithm performance analysis.
-    Runs each algorithm 5 times to compute stability, convergence, and diversity.
+    Runs each algorithm 3 times to compute stability, convergence, and diversity.
+    Pass iterations=100 for deep analysis with better ACO pheromone convergence.
     """
     return StreamingResponse(
         service.run_advanced_analysis_generator(
             hobli, rainfall_mm, steps, decay_factor,
             population=population, use_traffic=use_traffic,
+            iterations_override=iterations,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

@@ -179,6 +179,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     const [analysisMetrics, setAnalysisMetrics] = useState(null);
     const [isAnalysing, setIsAnalysing] = useState(false);
     const [analysisProgress, setAnalysisProgress] = useState('');
+    const [deepAnalysis, setDeepAnalysis] = useState(false);
 
     const handleRunAnalysis = () => {
         if (isAnalysing) return;
@@ -194,6 +195,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         if (simulationParams.steps != null) url.searchParams.append('steps', simulationParams.steps);
         if (simulationParams.decay_factor != null) url.searchParams.append('decay_factor', simulationParams.decay_factor);
         if (simulationParams.population != null && simulationParams.population > 0) url.searchParams.append('population', simulationParams.population);
+        if (deepAnalysis) url.searchParams.append('iterations', 100);
 
         const eventSource = new EventSource(url.href);
 
@@ -363,10 +365,30 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         {isAnalysing ? (
                             <><RefreshCw size={12} className="spin" /> {analysisProgress || 'Calculating Stability...'}</>
                         ) : (
-                            <><BrainCircuit size={12} /> Analyse Algorithm performance</>
+                            <><BrainCircuit size={12} /> Analyse Algorithm performance{deepAnalysis ? ' (100 iter)' : ''}</>
                         )}
                         <ChevronRight size={12} />
                     </button>
+                    <label
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            fontSize: 9.5, color: '#64748b', marginTop: 5,
+                            cursor: isAnalysing ? 'not-allowed' : 'pointer',
+                            opacity: isAnalysing ? 0.5 : 1,
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={deepAnalysis}
+                            onChange={e => setDeepAnalysis(e.target.checked)}
+                            disabled={isAnalysing}
+                            style={{ accentColor: '#7c3aed', width: 13, height: 13, cursor: 'inherit' }}
+                        />
+                        <span>
+                            <strong style={{ color: '#7c3aed' }}>Deep Analysis</strong> — 100 iterations per algorithm
+                            <span style={{ color: '#94a3b8' }}> (slower, better for ACO pheromone convergence)</span>
+                        </span>
+                    </label>
                 </section>
 
                 <AlgoAnalysisPopup

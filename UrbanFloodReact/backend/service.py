@@ -1674,7 +1674,8 @@ def _calculate_path_diversity(plan: list) -> float:
 
 async def run_advanced_analysis_generator(
     hobli: str, rainfall_mm: float, steps: int, decay_factor: float,
-    population: int | None = None, use_traffic: bool = False
+    population: int | None = None, use_traffic: bool = False,
+    iterations_override: int | None = None,
 ):
     """
     Runs GA, ACO, and PSO 5 times each to calculate Stochastic Stability (Mean/StdDev).
@@ -1733,9 +1734,12 @@ async def run_advanced_analysis_generator(
     # ── Shared setup: initialise one GA instance for Dijkstra + optional TomTom ──
     # All 15 subsequent runs reuse this instance's precomputed matrices.
     n_risk = len(at_risk)
-    gens   = max(30, min(60, 3000 // max(n_risk, 1)))   # adaptive iteration count
+    if iterations_override and iterations_override > 0:
+        gens = iterations_override  # Deep analysis: user-requested iteration count
+    else:
+        gens = max(30, min(60, 3000 // max(n_risk, 1)))   # adaptive iteration count
     pop_sz = min(60, max(30, n_risk * 2))
-    print(f"{_ts()} [Analysis] Params: pop_sz={pop_sz}, gens={gens}, at_risk={n_risk}")
+    print(f"{_ts()} [Analysis] Params: pop_sz={pop_sz}, gens={gens}, at_risk={n_risk}, override={'Yes' if iterations_override else 'No'}")
 
     yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Building road network ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
 
