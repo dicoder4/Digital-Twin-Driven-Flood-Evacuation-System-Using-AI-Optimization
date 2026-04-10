@@ -6,7 +6,7 @@
  *  - Clickable shelter rows → reveals routes on map for that shelter
  *  - Unreachable population alert
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
@@ -180,11 +180,26 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     const [isAnalysing, setIsAnalysing] = useState(false);
     const [analysisProgress, setAnalysisProgress] = useState('');
     const [deepAnalysis, setDeepAnalysis] = useState(false);
+    const [lastAnalysisWasDeep, setLastAnalysisWasDeep] = useState(null);
+
+    // Clear analysis cache if the comparison results change (new simulation)
+    useEffect(() => {
+        setAnalysisMetrics(null);
+        setLastAnalysisWasDeep(null);
+    }, [compareResults]);
 
     const handleRunAnalysis = () => {
         if (isAnalysing) return;
+
+        // Instant return if we already ran it with the exact same deep analysis setting
+        if (analysisMetrics && Object.keys(analysisMetrics).length === 3 && deepAnalysis === lastAnalysisWasDeep) {
+            setAnalysisOpen(true);
+            return;
+        }
+
         setIsAnalysing(true);
         setAnalysisMetrics(null);
+        setLastAnalysisWasDeep(deepAnalysis);
         setAnalysisProgress('Preparing flood simulation…');
 
         const url = new URL('http://localhost:8000/simulate-analysis');
@@ -276,7 +291,6 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
             ga_execution_time: activeData.ga_execution_time ?? 0,
             shelter_reports: activeData.shelter_reports ?? [],
             traffic_segment_count: activeData.traffic_segment_count ?? 0,
-            genuinely_unreachable: activeData.genuinely_unreachable ?? 0,
         } : null;
         const adTotalConsidered = ad ? (ad.total_at_risk_initial || (ad.total_evacuated + ad.total_at_risk_remaining)) : 0;
         const adSortedShelters = ad ? [...ad.shelter_reports].sort((a, b) => b.occupancy_pct - a.occupancy_pct) : [];

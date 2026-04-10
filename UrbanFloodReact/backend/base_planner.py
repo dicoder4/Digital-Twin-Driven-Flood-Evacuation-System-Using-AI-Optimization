@@ -158,17 +158,24 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
     def _fitness_breakdown(self, chromosome: list) -> dict:
         """
         Calculates separate fitness components for analysis.
+        Must mirror _fitness() exactly so the breakdown sums to total_fitness.
         """
         total_dist      = 0.0
         total_time      = 0.0
         terrain_penalty = 0.0
+        unassigned_penalty = 0.0
         shelter_counts  = defaultdict(int)
 
         for i, j in enumerate(chromosome):
+            pop = self.at_risk_nodes[i]['pop']
+
             if j < 0:
+                # Must match _fitness(): unassigned nodes get 1_000_000 * pop
+                # added to both total_dist and total_time
+                unassigned_penalty += 1_000_000 * pop        # distance portion
+                unassigned_penalty += 1_000_000 * pop  # time portion (0.5× weight)
                 continue
 
-            pop  = self.at_risk_nodes[i]['pop']
             dist = self.dist_matrix[i, j]
             t    = self.time_matrix[i, j]
 
@@ -198,7 +205,8 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
             "time_score": round(0.5 * total_time, 1),
             "capacity_penalty": round(penalty, 1),
             "terrain_penalty": round(terrain_penalty, 1),
-            "total_fitness": round(total_dist + 0.5 * total_time + penalty + terrain_penalty, 1)
+            "unassigned_penalty": round(unassigned_penalty, 1),
+            "total_fitness": round(total_dist + 0.5 * total_time + penalty + terrain_penalty + unassigned_penalty, 1)
         }
 
     # ─────────────────────────────────────────────────────────────────────────

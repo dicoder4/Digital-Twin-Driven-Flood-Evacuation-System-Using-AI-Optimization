@@ -1640,7 +1640,7 @@ def _calculate_convergence_speed(history: list) -> float:
     """Find the iteration index where fitness first reaches 95% of its final improvement.
     
     Returns:
-      - 1 if no improvement occurred (algorithm converged on initial seed)
+      - len(history) if no improvement occurred (algorithm never converged beyond seed)
       - iteration index (1-based) where 95% of improvement was achieved
       - len(history) if 95% threshold was never reached
     """
@@ -1649,8 +1649,11 @@ def _calculate_convergence_speed(history: list) -> float:
     end_f = history[-1]
     total_gain = start_f - end_f
     if total_gain <= 0:
-        # No improvement at all — the algorithm converged on its initial seed
-        return 1
+        # No improvement at all — the algorithm never converged beyond its
+        # initial seed.  Return full iteration count (= "used all iterations
+        # without improving"), NOT 1 which would misleadingly suggest
+        # instant convergence.
+        return len(history)
     
     target = start_f - (0.95 * total_gain)
     for i, f in enumerate(history):
@@ -1767,6 +1770,10 @@ async def run_advanced_analysis_generator(
         distances, simulating real-world uncertainty in flood depth measurements.
         This forces each run to explore a different region of the solution space,
         producing meaningful variance across the 5 stability runs.
+        
+        IMPORTANT: After the run, fitness and breakdown are re-evaluated on the
+        ORIGINAL (un-perturbed) matrices so that reported values are comparable
+        across runs and don't inflate with higher iteration counts.
         """
         PClass = _get_planner_class(algo_key)
         planner = PClass(at_risk, safe_shelters, sim.G,
@@ -1776,7 +1783,11 @@ async def run_advanced_analysis_generator(
                         use_tomtom_traffic=False,
                         shared_setup=shared)
 
-        # ── Option B: Add ±5% Gaussian noise to distance matrix ──────────
+        # ── Save original matrices BEFORE perturbation ────────────────────
+        original_dist = planner.dist_matrix.copy()
+        original_time = planner.time_matrix.copy()
+
+        # ── Add ±5% Gaussian noise to distance matrix ────────────────────
         # Each (algo, run_idx) pair gets a unique seed for reproducibility.
         rng = np.random.RandomState(seed=hash((algo_key, run_idx)) % (2**31))
         noise = rng.normal(loc=1.0, scale=0.05, size=planner.dist_matrix.shape)
@@ -1808,7 +1819,15 @@ async def run_advanced_analysis_generator(
                             break
                     break
 
-        # Now compute breakdown using the reconstructed chromosome
+        # ── Re-evaluate fitness & breakdown on ORIGINAL matrices ─────────
+        # The planner's best_fitness was computed against perturbed distances,
+        # which inflates the reported value (especially with many iterations).
+        # Restore original matrices so the score is fair and comparable.
+        planner.dist_matrix = original_dist
+        planner.time_matrix = original_time
+
+        fair_fitness = planner._fitness(chromosome)
+
         try:
             breakdown = planner._fitness_breakdown(chromosome)
         except Exception as e:
@@ -1816,10 +1835,11 @@ async def run_advanced_analysis_generator(
             breakdown = {
                 "distance_score": 0, "time_score": 0,
                 "capacity_penalty": 0, "terrain_penalty": 0,
-                "total_fitness": planner.best_fitness
+                "unassigned_penalty": 0,
+                "total_fitness": fair_fitness
             }
 
-        return algo_key, planner.best_fitness, planner.fitness_history, decoded_plan, breakdown
+        return algo_key, fair_fitness, planner.fitness_history, decoded_plan, breakdown
 
     print(f"{_ts()} [Analysis] Starting stability test ({n_runs} runs × 3 algorithms, gens={gens}, noise=±5%)...")
     analysis_data = {}
