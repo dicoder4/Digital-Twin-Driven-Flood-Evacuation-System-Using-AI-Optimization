@@ -858,6 +858,27 @@ SIMULATION_SESSION_CACHE = {
     "pinned_routes": []
 }
 
+# Global cache to share state between Compare mode and Analyze mode
+# to prevent re-running flood simulations and to reuse the first execution.
+COMPARE_ANALYSIS_CACHE = {}
+
+def _reconstruct_chromosome(decoded_plan, at_risk, safe_shelters) -> list[int]:
+    """Reconstruct an assignment chromosome array from a decoded evacuation plan."""
+    n_r = len(at_risk)
+    chromosome = [-1] * n_r   # -1 = unassigned
+    for move in decoded_plan:
+        origin_id = move.get("from_node")
+        for idx, node in enumerate(at_risk):
+            if node["id"] == origin_id:
+                shelter_id = move.get("to_shelter")
+                for j, sh in enumerate(safe_shelters):
+                    if sh["id"] == shelter_id:
+                        chromosome[idx] = j
+                        break
+                break
+    return chromosome
+
+
 async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "progressive"):
     """Generator for SSE simulation stream."""
     import time
@@ -1596,6 +1617,44 @@ async def run_compare_generator(
                 },
             }
 
+    # ── Populate Cache for Analysis Mode ─────────────
+    # Cache the complete flood setup: flooded graph, at_risk, safe_shelters,
+    # shared Dijkstra instance, and the first-run results per algorithm.
+    # Analysis mode reuses all of this so it never re-runs the flood simulation
+    # or the expensive Dijkstra/traffic precompute.
+    if at_risk and safe_shelters:
+        COMPARE_ANALYSIS_CACHE.clear()
+        COMPARE_ANALYSIS_CACHE["hobli"] = hobli
+        COMPARE_ANALYSIS_CACHE["at_risk"] = at_risk_formatted
+        COMPARE_ANALYSIS_CACHE["safe_shelters"] = safe_shelters
+        COMPARE_ANALYSIS_CACHE["shared_instance"] = ga_instance
+        # Snapshot the flooded graph (node water depths already propagated onto sim.G)
+        COMPARE_ANALYSIS_CACHE["sim_G"] = sim.G
+        COMPARE_ANALYSIS_CACHE["results"] = {}
+        
+        for algo_key, (plan, fitness, elapsed, instance) in planner_results.items():
+            if instance:
+                chromosome = _reconstruct_chromosome(plan, at_risk_formatted, safe_shelters)
+                try:
+                    breakdown = instance._fitness_breakdown(chromosome)
+                except Exception as e:
+                    print(f"{_ts()}  [compare] Breakdown failed for {algo_key}: {e}")
+                    breakdown = {
+                        "distance_score": 0, "time_score": 0,
+                        "capacity_penalty": 0, "terrain_penalty": 0,
+                        "unassigned_penalty": 0,
+                        "total_fitness": fitness
+                    }
+                COMPARE_ANALYSIS_CACHE["results"][algo_key] = {
+                    "fitness": fitness,
+                    "history": getattr(instance, 'fitness_history', []),
+                    "plan": plan,
+                    "breakdown": breakdown
+                }
+        print(f"{_ts()}  [compare] COMPARE_ANALYSIS_CACHE populated: "
+              f"hobli={hobli}, at_risk={len(at_risk_formatted)}, "
+              f"safe_shelters={len(safe_shelters)}, algos={list(COMPARE_ANALYSIS_CACHE['results'].keys())}")
+
     # ── Phase 4: emit the single compare_done frame ──────────────────────────
     final_frame = {
         "compare_done": True,
@@ -1694,69 +1753,92 @@ async def run_advanced_analysis_generator(
     loop = asyncio.get_event_loop()
     key = norm_key(hobli)
     
-    # 1. Setup Simulation (same as compare mode)
-    if key not in REGION_CACHE:
-        try:
-            await loop.run_in_executor(None, get_region, key)
-        except Exception as e:
-            yield f"data: {json.dumps({'error': f'Region not loaded: {e}'})}\n\n"
+    # ── Hook into the global COMPARE_ANALYSIS_CACHE ──
+    use_cache = False
+    if COMPARE_ANALYSIS_CACHE.get("hobli") == hobli and COMPARE_ANALYSIS_CACHE.get("shared_instance") is not None:
+        use_cache = True
+
+    if use_cache:
+        at_risk = COMPARE_ANALYSIS_CACHE["at_risk"]
+        safe_shelters = COMPARE_ANALYSIS_CACHE["safe_shelters"]
+        shared_instance = COMPARE_ANALYSIS_CACHE["shared_instance"]
+        # Use the cached flooded graph (water depths already propagated by compare mode)
+        sim_G = COMPARE_ANALYSIS_CACHE.get("sim_G", shared_instance.G)
+        n_risk = len(at_risk)
+        pop_sz = shared_instance.pop_size
+
+        if iterations_override and iterations_override > 0:
+            gens = iterations_override
+        else:
+            gens = shared_instance.generations
+
+        print(f"{_ts()} [Analysis] Using cached flood state and Dijkstra setup from Compare mode.")
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Using cached flood setup ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
+    else:
+        # 1. Setup Simulation (same as compare mode)
+        if key not in REGION_CACHE:
+            try:
+                await loop.run_in_executor(None, get_region, key)
+            except Exception as e:
+                yield f"data: {json.dumps({'error': f'Region not loaded: {e}'})}\n\n"
+                return
+
+        entry = REGION_CACHE[key]
+        sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
+        sim.initialize_from_drains(rainfall_mm)
+        sim_G = sim.G
+        
+        if population is not None: 
+            total_pop = population
+        else: 
+            pop_data = await get_hobli_population(hobli)
+            total_pop = pop_data.get("total_population", 0)
+        
+        # Use full population to introduce realistic capacity stress
+        sim.distribute_population(total_pop)
+        
+        shelter_resp = await fetch_shelters(hobli)
+        safe_shelters = [s for s in shelter_resp["shelters"]] # Assume safe for analysis
+        
+        # Use fewer steps for analysis (progressive but faster) — half user steps, min 5
+        analysis_steps = max(5, steps // 2)
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Simulating flood ({analysis_steps} progressive steps)...', 'step': 0, 'total': 3})}\n\n"
+
+        def _run_flood():
+            for _ in range(analysis_steps):
+                sim.propagate_flood_step(decay_factor)
+        await loop.run_in_executor(None, _run_flood)
+        
+        at_risk_raw = sim.get_at_risk_nodes(depth_threshold_m=0.05)
+        at_risk = [{"id": n, "pop": p, "lat": sim.G.nodes[n]["y"], "lon": sim.G.nodes[n]["x"]} for n, p in at_risk_raw]
+
+        if not at_risk or not safe_shelters:
+            yield f"data: {json.dumps({'error': 'No at-risk population or shelters'})}\n\n"
             return
 
-    entry = REGION_CACHE[key]
-    sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
-    sim.initialize_from_drains(rainfall_mm)
-    
-    if population is not None: 
-        total_pop = population
-    else: 
-        pop_data = await get_hobli_population(hobli)
-        total_pop = pop_data.get("total_population", 0)
-    
-    # Use full population to introduce realistic capacity stress
-    sim.distribute_population(total_pop)
-    
-    shelter_resp = await fetch_shelters(hobli)
-    safe_shelters = [s for s in shelter_resp["shelters"]] # Assume safe for analysis
-    
-    # Use fewer steps for analysis (progressive but faster) — half user steps, min 5
-    analysis_steps = max(5, steps // 2)
-    yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Simulating flood ({analysis_steps} progressive steps)...', 'step': 0, 'total': 3})}\n\n"
+        # ── Shared setup: initialise one GA instance for Dijkstra + optional TomTom ──
+        # All 15 subsequent runs reuse this instance's precomputed matrices.
+        n_risk = len(at_risk)
+        if iterations_override and iterations_override > 0:
+            gens = iterations_override  # Deep analysis: user-requested iteration count
+        else:
+            gens = max(30, min(60, 3000 // max(n_risk, 1)))   # adaptive iteration count
+        pop_sz = min(60, max(30, n_risk * 2))
+        print(f"{_ts()} [Analysis] Params: pop_sz={pop_sz}, gens={gens}, at_risk={n_risk}, override={'Yes' if iterations_override else 'No'}")
 
-    def _run_flood():
-        for _ in range(analysis_steps):
-            sim.propagate_flood_step(decay_factor)
-    await loop.run_in_executor(None, _run_flood)
-    
-    at_risk_raw = sim.get_at_risk_nodes(depth_threshold_m=0.05)
-    at_risk = [{"id": n, "pop": p, "lat": sim.G.nodes[n]["y"], "lon": sim.G.nodes[n]["x"]} for n, p in at_risk_raw]
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Building road network ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
 
-    if not at_risk or not safe_shelters:
-        yield f"data: {json.dumps({'error': 'No at-risk population or shelters'})}\n\n"
-        return
+        def _init_shared():
+            PClass = _get_planner_class("ga")
+            return PClass(
+                at_risk, safe_shelters, sim.G,
+                pop_size=pop_sz, generations=gens,
+                use_tomtom_traffic=use_traffic,
+                shared_setup=None,
+            )
 
-    # ── Shared setup: initialise one GA instance for Dijkstra + optional TomTom ──
-    # All 15 subsequent runs reuse this instance's precomputed matrices.
-    n_risk = len(at_risk)
-    if iterations_override and iterations_override > 0:
-        gens = iterations_override  # Deep analysis: user-requested iteration count
-    else:
-        gens = max(30, min(60, 3000 // max(n_risk, 1)))   # adaptive iteration count
-    pop_sz = min(60, max(30, n_risk * 2))
-    print(f"{_ts()} [Analysis] Params: pop_sz={pop_sz}, gens={gens}, at_risk={n_risk}, override={'Yes' if iterations_override else 'No'}")
-
-    yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Building road network ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
-
-    def _init_shared():
-        PClass = _get_planner_class("ga")
-        return PClass(
-            at_risk, safe_shelters, sim.G,
-            pop_size=pop_sz, generations=gens,
-            use_tomtom_traffic=use_traffic,
-            shared_setup=None,
-        )
-
-    shared_instance = await loop.run_in_executor(None, _init_shared)
-    print(f"{_ts()} [Analysis] Shared Dijkstra setup complete")
+        shared_instance = await loop.run_in_executor(None, _init_shared)
+        print(f"{_ts()} [Analysis] Shared Dijkstra setup complete")
 
     # 2. Stability Runs (3 runs per algorithm — fast but statistically sufficient)
     n_runs = 3
@@ -1776,7 +1858,7 @@ async def run_advanced_analysis_generator(
         across runs and don't inflate with higher iteration counts.
         """
         PClass = _get_planner_class(algo_key)
-        planner = PClass(at_risk, safe_shelters, sim.G,
+        planner = PClass(at_risk, safe_shelters, sim_G,
                         pop_size=pop_sz, generations=gens,
                         n_ants=pop_sz, iterations=gens,
                         n_particles=pop_sz,
@@ -1853,12 +1935,25 @@ async def run_advanced_analysis_generator(
         # Progress: starting this algorithm
         yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Running {algo_labels[algo]} ({algo_idx+1}/3)...', 'algo': algo, 'step': algo_idx+1, 'total': 3})}\n\n"
 
-        # Run n_runs sequentially in ONE background thread (no nested pools = no deadlock)
+        # Run remaining iterations concurrently to save massive time
         def _run_algo_batch(algo_key):
             batch = []
-            for run_i in range(n_runs):
-                _, fitness, history, plan, breakdown = _single_run(algo_key, shared_instance, run_i)
-                batch.append({"fitness": fitness, "history": history, "plan": plan, "breakdown": breakdown})
+            runs_to_do = []
+            if use_cache and algo_key in COMPARE_ANALYSIS_CACHE.get("results", {}):
+                cached = COMPARE_ANALYSIS_CACHE["results"][algo_key]
+                batch.append(cached)
+                runs_to_do = list(range(1, n_runs))
+            else:
+                runs_to_do = list(range(n_runs))
+                
+            if not runs_to_do:
+                return batch
+                
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(runs_to_do)) as pool:
+                futs = [pool.submit(_single_run, algo_key, shared_instance, ri) for ri in runs_to_do]
+                for fut in concurrent.futures.as_completed(futs):
+                    _, fitness, history, plan, breakdown = fut.result()
+                    batch.append({"fitness": fitness, "history": history, "plan": plan, "breakdown": breakdown})
             return batch
 
         algo_results = await loop.run_in_executor(None, _run_algo_batch, algo)
@@ -1912,4 +2007,3 @@ async def run_advanced_analysis_generator(
               f"Diversity={data['path_diversity']}")
     
     yield f"data: {json.dumps(final_payload)}\n\n"
-
