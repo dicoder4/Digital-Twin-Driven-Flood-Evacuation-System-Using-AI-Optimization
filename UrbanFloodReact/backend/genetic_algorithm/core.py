@@ -5,11 +5,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-from .setup_mixin import SetupMixin
+from base_planner import BaseEvacuationPlanner
 from .evolution_mixin import EvolutionMixin
-from .geometry_mixin import GeometryMixin
 
-class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
+class GeneticEvacuationPlanner(BaseEvacuationPlanner, EvolutionMixin):
     # Average walking speed in m/s (roughly 4.3 km/h evacuee pace)
     WALKING_SPEED_MS = 1.2
     
@@ -27,9 +26,7 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
 
     def __init__(self, at_risk_nodes, safe_shelters, G,
                  pop_size=60, generations=40, mutation_rate=0.15,
-                 use_tomtom_traffic=False, **kwargs):
-        # **kwargs absorbs ACO/PSO-specific params (n_ants, n_particles, iterations)
-        # when the algorithm factory passes a unified param set — safe to ignore.
+                 use_tomtom_traffic=False, shared_setup=None, **kwargs):
         """
         at_risk_nodes : list of {'id': node_id, 'pop': count, 'lat': y, 'lon': x}
         safe_shelters : list of {'id': str, 'node_id': int, 'capacity': int,
@@ -38,36 +35,19 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
                         'water_depth' node attr
         use_tomtom_traffic: bool - if True, fetches real-time traffic for major roads
         """
-        self.at_risk_nodes = at_risk_nodes
-        self.safe_shelters = safe_shelters
-        self.G = G
+        super().__init__(at_risk_nodes, safe_shelters, G,
+                         use_tomtom_traffic=use_tomtom_traffic,
+                         shared_setup=shared_setup)
+
         self.pop_size = pop_size
         self.generations = generations
         self.mutation_rate = mutation_rate
-        self.use_tomtom_traffic = use_tomtom_traffic
-
-        n_risk = len(at_risk_nodes)
-        n_shelters = len(safe_shelters)
-        
-        print(f"  [GA DEBUG] Traffic Awareness Mode: {'ON' if self.use_tomtom_traffic else 'OFF'}")
-
-        # ── Step 0: Traffic Integration ───────────────────────────────────────
-        if self.use_tomtom_traffic:
-            self._update_graph_with_tomtom_traffic()
-
-        # ── Step 1: build flood-aware edge weights ────────────────────────────
-        self._add_flood_edge_weights()
-        self.pop_size = pop_size
-        self.generations = generations
-        self.mutation_rate = mutation_rate
-
-        # ── Step 2: precompute cost matrices (network distance + travel time) ─
-        self.dist_matrix = np.full((n_risk, n_shelters), np.inf)
-        self.time_matrix = np.full((n_risk, n_shelters), np.inf)
-        self._compute_matrices()
+        self.fitness_history = []  # Track convergence speed
 
         # ── Step 3: greedy nearest-shelter assignment (used to seed population) ─
-        self._greedy_chromosome = self._compute_greedy_chromosome()
+        # This was already computed by BaseEvacuationPlanner.__init__ 
+        # but we ensure it's on this instance.
+        print(f"  [GA DEBUG] Traffic Awareness Mode: {'ON' if self.use_tomtom_traffic else 'OFF'}")
 
     def run(self):
         if not self.at_risk_nodes or not self.safe_shelters:
@@ -95,11 +75,14 @@ class GeneticEvacuationPlanner(SetupMixin, EvolutionMixin, GeometryMixin):
                     new_pop.append(self._mutate(c2))
 
             population = new_pop
+            best_in_gen = float(np.min(fitness_scores))
+            self.fitness_history.append(best_in_gen)
 
         fitness_scores = np.array([self._fitness(c) for c in population])
         best_idx = int(np.argmin(fitness_scores))
         self.best_fitness = float(fitness_scores[best_idx])
-        best = population[best_idx]
+        self.best_chromosome = population[best_idx]
+        best = self.best_chromosome
         print(f"  [GA] Best fitness = {self.best_fitness:.1f}")
         return self._decode(best)
 

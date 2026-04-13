@@ -136,9 +136,23 @@ async def evacuation_chat(req: ChatRequest):
     except ImportError:
         from context_builder import build_expert_context
     
-    # If it is a compare mode context, it's already structured for the LLM.
+    # Direct handling for Compare and Analysis modes
+    import json as _json
+    # Debug log incoming chat request context for troubleshooting AlgoAnalysis
+    try:
+        print(f"[DEBUG] /evacuation-chat hit. mode={req.context.get('mode')}", flush=True)
+        print(f"[DEBUG] /evacuation-chat context keys: {list(req.context.keys())}", flush=True)
+        if 'algorithm_analysis' in req.context:
+            print("[DEBUG] /evacuation-chat algorithm_analysis payload:", _json.dumps(req.context.get('algorithm_analysis'), default=str)[:2000], flush=True)
+    except Exception as _e:
+        print(f"[DEBUG] Failed to print evac-chat debug payload: {_e}", flush=True)
+
     if req.context.get("mode") == "compare":
         enriched_context = req.context
+    elif req.context.get("mode") == "analysis":
+        # Pass the metrics through as the algorithm analysis part of the context
+        mock_summary = {"simulation_location": req.context.get("location", "Unknown"), "algorithm": "Multi-Algo Analysis"}
+        enriched_context = await build_expert_context(mock_summary, algorithm_analysis=req.context.get("metrics"))
     else:
         # Build the full enriched context (with route details) for standard queries.
         enriched_context = await build_expert_context(req.context, req.evacuation_plan)
@@ -294,6 +308,33 @@ async def simulate_compare(
 
 
 
+@app.get("/simulate-analysis")
+async def simulate_analysis(
+    hobli:           str   = Query(...),
+    rainfall_mm:     float = Query(150.0),
+    steps:           int   = Query(20),
+    decay_factor:    float = Query(0.5),
+    population:      int | None = Query(None),
+    use_traffic:     bool  = Query(False),
+    iterations:      int | None = Query(None, description="Override iteration count for all algorithms (e.g. 100 for deep analysis)"),
+):
+    """
+    SSE stream for advanced algorithm performance analysis.
+    Runs each algorithm 3 times to compute stability, convergence, and diversity.
+    Pass iterations=100 for deep analysis with better ACO pheromone convergence.
+    """
+    return StreamingResponse(
+        service.run_advanced_analysis_generator(
+            hobli, rainfall_mm, steps, decay_factor,
+            population=population, use_traffic=use_traffic,
+            iterations_override=iterations,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 @app.get("/shelters/{hobli_name}")
 async def get_shelters(hobli_name: str):
     """
@@ -334,3 +375,16 @@ async def get_metro_stations(hobli_name: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+class AlgorithmAnalysisRequest(BaseModel):
+    metrics: dict   # the output from run_advanced_analysis_generator
+    location: str
+
+@app.post("/algorithm-analysis-stream")
+async def algorithm_analysis_stream(req: AlgorithmAnalysisRequest):
+    from genai.expert_panel import stream_algorithm_analysis
+    return StreamingResponse(
+        stream_algorithm_analysis(req.metrics, req.location),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )

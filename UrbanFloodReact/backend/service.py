@@ -858,6 +858,27 @@ SIMULATION_SESSION_CACHE = {
     "pinned_routes": []
 }
 
+# Global cache to share state between Compare mode and Analyze mode
+# to prevent re-running flood simulations and to reuse the first execution.
+COMPARE_ANALYSIS_CACHE = {}
+
+def _reconstruct_chromosome(decoded_plan, at_risk, safe_shelters) -> list[int]:
+    """Reconstruct an assignment chromosome array from a decoded evacuation plan."""
+    n_r = len(at_risk)
+    chromosome = [-1] * n_r   # -1 = unassigned
+    for move in decoded_plan:
+        origin_id = move.get("from_node")
+        for idx, node in enumerate(at_risk):
+            if node["id"] == origin_id:
+                shelter_id = move.get("to_shelter")
+                for j, sh in enumerate(safe_shelters):
+                    if sh["id"] == shelter_id:
+                        chromosome[idx] = j
+                        break
+                break
+    return chromosome
+
+
 async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "progressive"):
     """Generator for SSE simulation stream."""
     import time
@@ -1303,7 +1324,7 @@ async def run_compare_generator(
     use_traffic: bool = False,
     population: int | None = None,
     extra_shelters: list | None = None,
-    mode: str = "progressive",
+    mode: str = "instant",
 ):
     """
     SSE generator for compare mode:
@@ -1596,6 +1617,44 @@ async def run_compare_generator(
                 },
             }
 
+    # ── Populate Cache for Analysis Mode ─────────────
+    # Cache the complete flood setup: flooded graph, at_risk, safe_shelters,
+    # shared Dijkstra instance, and the first-run results per algorithm.
+    # Analysis mode reuses all of this so it never re-runs the flood simulation
+    # or the expensive Dijkstra/traffic precompute.
+    if at_risk and safe_shelters:
+        COMPARE_ANALYSIS_CACHE.clear()
+        COMPARE_ANALYSIS_CACHE["hobli"] = hobli
+        COMPARE_ANALYSIS_CACHE["at_risk"] = at_risk_formatted
+        COMPARE_ANALYSIS_CACHE["safe_shelters"] = safe_shelters
+        COMPARE_ANALYSIS_CACHE["shared_instance"] = ga_instance
+        # Snapshot the flooded graph (node water depths already propagated onto sim.G)
+        COMPARE_ANALYSIS_CACHE["sim_G"] = sim.G
+        COMPARE_ANALYSIS_CACHE["results"] = {}
+        
+        for algo_key, (plan, fitness, elapsed, instance) in planner_results.items():
+            if instance:
+                chromosome = _reconstruct_chromosome(plan, at_risk_formatted, safe_shelters)
+                try:
+                    breakdown = instance._fitness_breakdown(chromosome)
+                except Exception as e:
+                    print(f"{_ts()}  [compare] Breakdown failed for {algo_key}: {e}")
+                    breakdown = {
+                        "distance_score": 0, "time_score": 0,
+                        "capacity_penalty": 0, "terrain_penalty": 0,
+                        "unassigned_penalty": 0,
+                        "total_fitness": fitness
+                    }
+                COMPARE_ANALYSIS_CACHE["results"][algo_key] = {
+                    "fitness": fitness,
+                    "history": getattr(instance, 'fitness_history', []),
+                    "plan": plan,
+                    "breakdown": breakdown
+                }
+        print(f"{_ts()}  [compare] COMPARE_ANALYSIS_CACHE populated: "
+              f"hobli={hobli}, at_risk={len(at_risk_formatted)}, "
+              f"safe_shelters={len(safe_shelters)}, algos={list(COMPARE_ANALYSIS_CACHE['results'].keys())}")
+
     # ── Phase 4: emit the single compare_done frame ──────────────────────────
     final_frame = {
         "compare_done": True,
@@ -1631,3 +1690,320 @@ async def fetch_metro_stations(hobli_name: str) -> dict:
         "stations": stations,
         "lines": lines
     }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Advanced Algorithm Analysis (Convergence, Stability, Diversity)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _calculate_convergence_speed(history: list) -> float:
+    """Find the iteration index where fitness first reaches 95% of its final improvement.
+    
+    Returns:
+      - len(history) if no improvement occurred (algorithm never converged beyond seed)
+      - iteration index (1-based) where 95% of improvement was achieved
+      - len(history) if 95% threshold was never reached
+    """
+    if not history: return 1
+    start_f = history[0]
+    end_f = history[-1]
+    total_gain = start_f - end_f
+    if total_gain <= 0:
+        # No improvement at all — the algorithm never converged beyond its
+        # initial seed.  Return full iteration count (= "used all iterations
+        # without improving"), NOT 1 which would misleadingly suggest
+        # instant convergence.
+        return len(history)
+    
+    target = start_f - (0.95 * total_gain)
+    for i, f in enumerate(history):
+        if f <= target:
+            return i + 1
+    return len(history)
+
+def _calculate_path_diversity(plan: list) -> float:
+    """Calculate the diversity of routes based on unique edge usage."""
+    all_edges = []
+    for route in plan:
+        path = route.get("path_nodes", [])
+        # Create a list of edges (pairs of adjacent nodes)
+        edges = [(path[i], path[i+1]) for i in range(len(path)-1)]
+        all_edges.extend(edges)
+    
+    if not all_edges: return 1.0
+    unique_edges = set(all_edges)
+    # Diversity = Unique Edges / Total Edge Instances
+    return round(len(unique_edges) / len(all_edges), 3)
+
+async def run_advanced_analysis_generator(
+    hobli: str, rainfall_mm: float, steps: int, decay_factor: float,
+    population: int | None = None, use_traffic: bool = False,
+    iterations_override: int | None = None,
+):
+    """
+    Runs GA, ACO, and PSO 5 times each to calculate Stochastic Stability (Mean/StdDev).
+    Also yields convergence and diversity metrics.
+
+    Performance: Uses shared_setup pattern from compare mode so Dijkstra precompute
+    and optional TomTom traffic only happen ONCE (via the first GA init), then all
+    subsequent planner instances reuse those matrices.
+    """
+    import time
+    import numpy as np
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    key = norm_key(hobli)
+    
+    # ── Hook into the global COMPARE_ANALYSIS_CACHE ──
+    use_cache = False
+    if COMPARE_ANALYSIS_CACHE.get("hobli") == hobli and COMPARE_ANALYSIS_CACHE.get("shared_instance") is not None:
+        use_cache = True
+
+    if use_cache:
+        at_risk = COMPARE_ANALYSIS_CACHE["at_risk"]
+        safe_shelters = COMPARE_ANALYSIS_CACHE["safe_shelters"]
+        shared_instance = COMPARE_ANALYSIS_CACHE["shared_instance"]
+        # Use the cached flooded graph (water depths already propagated by compare mode)
+        sim_G = COMPARE_ANALYSIS_CACHE.get("sim_G", shared_instance.G)
+        n_risk = len(at_risk)
+        pop_sz = shared_instance.pop_size
+
+        if iterations_override and iterations_override > 0:
+            gens = iterations_override
+        else:
+            gens = shared_instance.generations
+
+        print(f"{_ts()} [Analysis] Using cached flood state and Dijkstra setup from Compare mode.")
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Using cached flood setup ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
+    else:
+        # 1. Setup Simulation (same as compare mode)
+        if key not in REGION_CACHE:
+            try:
+                await loop.run_in_executor(None, get_region, key)
+            except Exception as e:
+                yield f"data: {json.dumps({'error': f'Region not loaded: {e}'})}\n\n"
+                return
+
+        entry = REGION_CACHE[key]
+        sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
+        sim.initialize_from_drains(rainfall_mm)
+        sim_G = sim.G
+        
+        if population is not None: 
+            total_pop = population
+        else: 
+            pop_data = await get_hobli_population(hobli)
+            total_pop = pop_data.get("total_population", 0)
+        
+        # Use full population to introduce realistic capacity stress
+        sim.distribute_population(total_pop)
+        
+        shelter_resp = await fetch_shelters(hobli)
+        safe_shelters = [s for s in shelter_resp["shelters"]] # Assume safe for analysis
+        
+        # Use fewer steps for analysis (progressive but faster) — half user steps, min 5
+        analysis_steps = max(5, steps // 2)
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Simulating flood ({analysis_steps} progressive steps)...', 'step': 0, 'total': 3})}\n\n"
+
+        def _run_flood():
+            for _ in range(analysis_steps):
+                sim.propagate_flood_step(decay_factor)
+        await loop.run_in_executor(None, _run_flood)
+        
+        at_risk_raw = sim.get_at_risk_nodes(depth_threshold_m=0.05)
+        at_risk = [{"id": n, "pop": p, "lat": sim.G.nodes[n]["y"], "lon": sim.G.nodes[n]["x"]} for n, p in at_risk_raw]
+
+        if not at_risk or not safe_shelters:
+            yield f"data: {json.dumps({'error': 'No at-risk population or shelters'})}\n\n"
+            return
+
+        # ── Shared setup: initialise one GA instance for Dijkstra + optional TomTom ──
+        # All 15 subsequent runs reuse this instance's precomputed matrices.
+        n_risk = len(at_risk)
+        if iterations_override and iterations_override > 0:
+            gens = iterations_override  # Deep analysis: user-requested iteration count
+        else:
+            gens = max(30, min(60, 3000 // max(n_risk, 1)))   # adaptive iteration count
+        pop_sz = min(60, max(30, n_risk * 2))
+        print(f"{_ts()} [Analysis] Params: pop_sz={pop_sz}, gens={gens}, at_risk={n_risk}, override={'Yes' if iterations_override else 'No'}")
+
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Building road network ({n_risk} at-risk nodes)...', 'step': 0, 'total': 3})}\n\n"
+
+        def _init_shared():
+            PClass = _get_planner_class("ga")
+            return PClass(
+                at_risk, safe_shelters, sim.G,
+                pop_size=pop_sz, generations=gens,
+                use_tomtom_traffic=use_traffic,
+                shared_setup=None,
+            )
+
+        shared_instance = await loop.run_in_executor(None, _init_shared)
+        print(f"{_ts()} [Analysis] Shared Dijkstra setup complete")
+
+    # 2. Stability Runs (3 runs per algorithm — fast but statistically sufficient)
+    n_runs = 3
+    results = {"ga": [], "aco": [], "pso": []}
+    
+    def _single_run(algo_key, shared, run_idx):
+        """
+        Run one algorithm instance with ±5% noise on the distance matrix.
+        
+        Each run_idx produces a unique perturbation of the shared Dijkstra 
+        distances, simulating real-world uncertainty in flood depth measurements.
+        This forces each run to explore a different region of the solution space,
+        producing meaningful variance across the 5 stability runs.
+        
+        IMPORTANT: After the run, fitness and breakdown are re-evaluated on the
+        ORIGINAL (un-perturbed) matrices so that reported values are comparable
+        across runs and don't inflate with higher iteration counts.
+        """
+        PClass = _get_planner_class(algo_key)
+        planner = PClass(at_risk, safe_shelters, sim_G,
+                        pop_size=pop_sz, generations=gens,
+                        n_ants=pop_sz, iterations=gens,
+                        n_particles=pop_sz,
+                        use_tomtom_traffic=False,
+                        shared_setup=shared)
+
+        # ── Save original matrices BEFORE perturbation ────────────────────
+        original_dist = planner.dist_matrix.copy()
+        original_time = planner.time_matrix.copy()
+
+        # ── Add ±5% Gaussian noise to distance matrix ────────────────────
+        # Each (algo, run_idx) pair gets a unique seed for reproducibility.
+        rng = np.random.RandomState(seed=hash((algo_key, run_idx)) % (2**31))
+        noise = rng.normal(loc=1.0, scale=0.05, size=planner.dist_matrix.shape)
+        noise = np.clip(noise, 0.90, 1.10)  # cap at ±10% to avoid extremes
+        planner.dist_matrix = planner.dist_matrix * noise
+        # Time matrix gets correlated but not identical noise
+        time_noise = rng.normal(loc=1.0, scale=0.03, size=planner.time_matrix.shape)
+        time_noise = np.clip(time_noise, 0.93, 1.07)
+        planner.time_matrix = planner.time_matrix * time_noise
+        # Recompute the greedy chromosome from the perturbed distances
+        planner._greedy_chromosome = planner._compute_greedy_chromosome()
+        # ─────────────────────────────────────────────────────────────────
+
+        decoded_plan = planner.run()
+
+        # ── Reconstruct assignment chromosome from the plan ──
+        n_r = len(at_risk)
+        chromosome = [-1] * n_r   # -1 = unassigned
+        for move in decoded_plan:
+            origin_id = move.get("from_node")
+            # find index of origin node in at_risk list
+            for idx, node in enumerate(at_risk):
+                if node["id"] == origin_id:
+                    # find shelter index in safe_shelters list
+                    shelter_id = move.get("to_shelter")
+                    for j, sh in enumerate(safe_shelters):
+                        if sh["id"] == shelter_id:
+                            chromosome[idx] = j
+                            break
+                    break
+
+        # ── Re-evaluate fitness & breakdown on ORIGINAL matrices ─────────
+        # The planner's best_fitness was computed against perturbed distances,
+        # which inflates the reported value (especially with many iterations).
+        # Restore original matrices so the score is fair and comparable.
+        planner.dist_matrix = original_dist
+        planner.time_matrix = original_time
+
+        fair_fitness = planner._fitness(chromosome)
+
+        try:
+            breakdown = planner._fitness_breakdown(chromosome)
+        except Exception as e:
+            print(f"  [Analysis] Breakdown failed for {algo_key}: {e}")
+            breakdown = {
+                "distance_score": 0, "time_score": 0,
+                "capacity_penalty": 0, "terrain_penalty": 0,
+                "unassigned_penalty": 0,
+                "total_fitness": fair_fitness
+            }
+
+        return algo_key, fair_fitness, planner.fitness_history, decoded_plan, breakdown
+
+    print(f"{_ts()} [Analysis] Starting stability test ({n_runs} runs × 3 algorithms, gens={gens}, noise=±5%)...")
+    analysis_data = {}
+
+    # ── Progressive streaming: run each algorithm's runs sequentially in
+    #    a background thread, yield results as each algorithm completes ──
+    algo_order = ["ga", "aco", "pso"]
+    algo_labels = {"ga": "Genetic Algorithm", "aco": "Ant Colony Opt.", "pso": "Particle Swarm"}
+
+    for algo_idx, algo in enumerate(algo_order):
+        # Progress: starting this algorithm
+        yield f"data: {json.dumps({'analysis_progress': True, 'message': f'Running {algo_labels[algo]} ({algo_idx+1}/3)...', 'algo': algo, 'step': algo_idx+1, 'total': 3})}\n\n"
+
+        # Run remaining iterations concurrently to save massive time
+        def _run_algo_batch(algo_key):
+            batch = []
+            runs_to_do = []
+            if use_cache and algo_key in COMPARE_ANALYSIS_CACHE.get("results", {}):
+                cached = COMPARE_ANALYSIS_CACHE["results"][algo_key]
+                batch.append(cached)
+                runs_to_do = list(range(1, n_runs))
+            else:
+                runs_to_do = list(range(n_runs))
+                
+            if not runs_to_do:
+                return batch
+                
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(runs_to_do)) as pool:
+                futs = [pool.submit(_single_run, algo_key, shared_instance, ri) for ri in runs_to_do]
+                for fut in concurrent.futures.as_completed(futs):
+                    _, fitness, history, plan, breakdown = fut.result()
+                    batch.append({"fitness": fitness, "history": history, "plan": plan, "breakdown": breakdown})
+            return batch
+
+        algo_results = await loop.run_in_executor(None, _run_algo_batch, algo)
+        results[algo] = algo_results
+
+        # Aggregate metrics for this algorithm immediately
+        fitnesses = [r["fitness"] for r in algo_results]
+        histories = [r["history"] for r in algo_results]
+        plans = [r["plan"] for r in algo_results]
+
+        mean_fit = np.mean(fitnesses)
+        std_fit = np.std(fitnesses)
+        stability = max(0, 1.0 - (std_fit / mean_fit)) if mean_fit > 0 else 0
+        avg_conv = np.mean([_calculate_convergence_speed(h) for h in histories])
+        avg_div = np.mean([_calculate_path_diversity(p) for p in plans])
+
+        min_len = min(len(h) for h in histories) if histories else 0
+        if min_len > 0:
+            trimmed = [h[:min_len] for h in histories]
+            avg_history = np.mean(trimmed, axis=0).tolist()
+        else:
+            avg_history = histories[0] if histories else []
+
+        analysis_data[algo] = {
+            "mean_fitness": round(float(mean_fit), 1),
+            "std_dev": round(float(std_fit), 2),
+            "stability_score": round(float(stability), 3),
+            "convergence_speed": round(float(avg_conv), 1),
+            "path_diversity": round(float(avg_div), 3),
+            "fitness_history": avg_history,
+            "breakdown": algo_results[0]["breakdown"]
+        }
+
+        # Stream this algorithm's result immediately so the UI can render it
+        yield f"data: {json.dumps({'algo_result': True, 'algo': algo, 'metrics': {algo: analysis_data[algo]}})}\n\n"
+        print(f"{_ts()}   [{algo.upper()}] done: Mean={analysis_data[algo]['mean_fitness']}, "
+              f"Stability={analysis_data[algo]['stability_score']}, Conv={analysis_data[algo]['convergence_speed']}")
+
+    # Final payload with all metrics
+    final_payload = {
+        "analysis_done": True,
+        "metrics": analysis_data,
+        "location": hobli,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    print(f"\n{_ts()} [ANALYSIS COMPLETE] Location: {hobli}")
+    for algo, data in analysis_data.items():
+        print(f"  - {algo.upper()}: Mean Fit={data['mean_fitness']}, StdDev={data['std_dev']}, "
+              f"Stability={data['stability_score']}, Conv={data['convergence_speed']}, "
+              f"Diversity={data['path_diversity']}")
+    
+    yield f"data: {json.dumps(final_payload)}\n\n"

@@ -20,7 +20,7 @@ import math
 from service import fetch_resources
 
 
-async def build_expert_context(summary_data: dict, evacuation_plan: list = None) -> dict:
+async def build_expert_context(summary_data: dict, evacuation_plan: list = None, algorithm_analysis: dict = None) -> dict:
     """
     Build an enriched context dict from the raw simulation summary.
 
@@ -180,6 +180,7 @@ async def build_expert_context(summary_data: dict, evacuation_plan: list = None)
             "total_remaining_capacity": sum(s["remaining_capacity"] for s in enriched_shelters),
         },
         "pressure_junctures": summary_data.get("pressure_points", []),
+        "algorithm_analysis": algorithm_analysis,
     }
 
     # ── Add Metro Context if available ─────────────────────────────────────

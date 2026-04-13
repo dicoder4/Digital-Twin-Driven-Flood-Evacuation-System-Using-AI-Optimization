@@ -728,6 +728,7 @@ export default function App() {
               isDraMode={isDraMode}
               evacuationPlan={sim.evacuationPlan || []}
               onRerunWithSuggestions={handleRerunWithSuggestions}
+              simulationParams={{ rainfall_mm: rainfallMm, steps, decay_factor: decayFactor, population: populationCount }}
             />
 
           </div>

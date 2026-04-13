@@ -108,11 +108,10 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
         shelter_counts  = defaultdict(int)
 
         for i, j in enumerate(chromosome):
-            pop  = self.at_risk_nodes[i]['pop']
-            
+            pop = self.at_risk_nodes[i]['pop']
+
             if j < 0:
-                # PENALIZE UNASSIGNED MASSIVELY
-                # Prevents fitness function from rewarding abandoned groups
+                # Penalise unassigned nodes — equivalent to 1000 km of walking per person
                 total_dist += 1_000_000 * pop
                 total_time += 1_000_000 * pop
                 continue
@@ -155,6 +154,117 @@ class BaseEvacuationPlanner(SetupMixin, GeometryMixin):
                 penalty += ((count - cap) ** 2) * self.CAPACITY_PENALTY
 
         return total_dist + 0.5 * total_time + penalty + terrain_penalty
+
+    def _fitness_breakdown(self, chromosome: list) -> dict:
+        """
+        Calculates separate fitness components for analysis.
+        Must mirror _fitness() exactly so the breakdown sums to total_fitness.
+        """
+        total_dist      = 0.0
+        total_time      = 0.0
+        terrain_penalty = 0.0
+        unassigned_penalty = 0.0
+        shelter_counts  = defaultdict(int)
+
+        for i, j in enumerate(chromosome):
+            pop = self.at_risk_nodes[i]['pop']
+
+            if j < 0:
+                # Must match _fitness(): unassigned nodes get 1_000_000 * pop
+                # added to both total_dist and total_time
+                unassigned_penalty += 1_000_000 * pop        # distance portion
+                unassigned_penalty += 1_000_000 * pop  # time portion (0.5× weight)
+                continue
+
+            dist = self.dist_matrix[i, j]
+            t    = self.time_matrix[i, j]
+
+            if not math.isfinite(dist): dist = 1_000_000
+            if not math.isfinite(t):    t    = 1_000_000
+
+            source_elev = self.at_risk_nodes[i].get('elevation', 900.0)
+            dest_elev   = self.safe_shelters[j].get('elevation', 900.0)
+            
+            if dest_elev < source_elev:
+                terrain_penalty += (source_elev - dest_elev) * 50.0 * pop
+            if dest_elev < 880.0:
+                terrain_penalty += 500.0 * pop
+
+            total_dist        += dist * pop
+            total_time        += t    * pop
+            shelter_counts[j] += pop
+
+        penalty = 0.0
+        for j, count in shelter_counts.items():
+            cap = self.safe_shelters[j]['capacity']
+            if count > cap:
+                penalty += ((count - cap) ** 2) * self.CAPACITY_PENALTY
+
+        return {
+            "distance_score": round(total_dist, 1),
+            "time_score": round(0.5 * total_time, 1),
+            "capacity_penalty": round(penalty, 1),
+            "terrain_penalty": round(terrain_penalty, 1),
+            "unassigned_penalty": round(unassigned_penalty, 1),
+            "total_fitness": round(total_dist + 0.5 * total_time + penalty + terrain_penalty + unassigned_penalty, 1)
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Capacity repair — shared by GA, ACO, and PSO
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _capacity_repair(self, chromosome: list) -> list:
+        """
+        Post-process a chromosome (list of ints) to guarantee no shelter exceeds
+        its capacity.
+
+        For each over-capacity shelter:
+          1. Sort its assigned nodes worst-first (farthest from shelter).
+          2. Move excess nodes to the nearest shelter with remaining capacity.
+          3. If no shelter has remaining capacity, mark the node as -1 (unassigned).
+
+        Returns the (modified-in-place) chromosome.
+        """
+        n_shelters    = len(self.safe_shelters)
+        capacities    = [s['capacity'] for s in self.safe_shelters]
+        assigned_load = defaultdict(int)
+
+        for i, j in enumerate(chromosome):
+            if j >= 0:
+                assigned_load[j] += self.at_risk_nodes[i]['pop']
+
+        remaining = [capacities[j] - assigned_load[j] for j in range(n_shelters)]
+
+        for j in range(n_shelters):
+            if remaining[j] >= 0:
+                continue
+
+            overflow_nodes = [i for i, s in enumerate(chromosome) if s == j]
+            overflow_nodes.sort(key=lambda i, _j=j: self.dist_matrix[i, _j], reverse=True)
+
+            for i in overflow_nodes:
+                if remaining[j] >= 0:
+                    break
+
+                pop_i     = self.at_risk_nodes[i]['pop']
+                alt_order = np.argsort(self.dist_matrix[i])
+                moved     = False
+                for alt_j in alt_order:
+                    alt_j = int(alt_j)
+                    if alt_j == j:
+                        continue
+                    if remaining[alt_j] >= pop_i:
+                        chromosome[i]    = alt_j
+                        remaining[alt_j] -= pop_i
+                        remaining[j]     += pop_i
+                        moved = True
+                        break
+
+                if not moved:
+                    chromosome[i]  = -1
+                    remaining[j]  += pop_i
+
+        return chromosome
 
     # ─────────────────────────────────────────────────────────────────────────
     # run() must be implemented by each concrete planner
