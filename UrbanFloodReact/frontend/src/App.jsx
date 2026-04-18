@@ -31,9 +31,12 @@ import { API_URL } from './config';
 import { AppCopilot } from './components/AppCopilot';
 import { AutomationPanel } from './components/AutomationPanel';
 import { PublicTransportAgent } from './components/PublicTransportAgent';
+import { useAuth } from './context/AuthContext';
 import './App.css';
 
 export default function App() {
+  const { user, logout } = useAuth();
+
   // ── Map viewport ─────────────────────────────────────────────
   const [viewState, setViewState] = useState({
     longitude: 77.5946, latitude: 12.9716, zoom: 10,
@@ -80,7 +83,7 @@ export default function App() {
   const [selectedShelterId, setSelectedShelterId] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
-  const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
+  const isDraMode = user?.role === 'authority'; // DRA mode toggle enforced by user role
   const [mapPinBox, setMapPinBox] = useState(null);
   const [selectedMetro, setSelectedMetro] = useState(null);
   const [metroStations, setMetroStations] = useState([]);
@@ -464,21 +467,19 @@ export default function App() {
               <div className="sidebar-sub">Digital Twin · Flood Simulation · Evacuation</div>
             </div>
           </div>
-
-          {/* DRA Mode Toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', padding: '0.5rem 0.75rem', borderRadius: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'white' }}>
-              {isDraMode ? 'Disaster Response Authority Mode Active' : 'Switch to Disaster Response Authority Mode'}
-            </span>
-            <button
-              className={`evac-toggle-btn ${isDraMode ? 'evac-toggle-on' : ''}`}
-              onClick={() => setIsDraMode(!isDraMode)}
-              style={{ padding: 0, margin: 0, transform: 'scale(0.8)' }}
-              title="Toggle Disaster Response Authority Mode"
-            >
-              <span className="evac-toggle-thumb" />
-            </button>
-          </div>
+            {/* User Profile & Logout */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 backdrop-blur-sm">
+              <div className="flex flex-col text-left">
+                <span className="text-slate-800 text-sm font-bold">{user?.username || 'Guest'}</span>
+                <span className="text-slate-500 font-medium text-xs capitalize tracking-wide">{user?.role || 'Viewer'}</span>
+              </div>
+              <button 
+                onClick={logout}
+                className="bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 text-red-600 hover:text-red-700 px-3 py-1.5 rounded transition-all duration-200 text-xs font-bold"
+              >
+                Logout
+              </button>
+            </div>
         </div>
 
         {/* ── Drag-resize handle ─────────────────────────────── */}

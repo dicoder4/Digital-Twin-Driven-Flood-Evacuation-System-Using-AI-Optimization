@@ -91,7 +91,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from auth_routes import router as auth_router
+
 app.include_router(automation_router)
+app.include_router(auth_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
