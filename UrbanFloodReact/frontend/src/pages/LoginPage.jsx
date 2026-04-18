@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Droplets, ShieldAlert, Navigation, Activity, Users, Map } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -8,8 +8,17 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isFirstVisit, setIsFirstVisit] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const visited = localStorage.getItem('hasVisitedBefore');
+    if (!visited) {
+      setIsFirstVisit(true);
+      localStorage.setItem('hasVisitedBefore', 'true');
+    }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -78,48 +87,48 @@ const LoginPage = () => {
             </div>
             <h1 className="text-5xl font-extrabold tracking-tight">Flood Evac AI</h1>
           </div>
-          <h2 className="text-3xl font-semibold mb-6 text-blue-50 leading-snug">Digital Twin Platform</h2>
+          <h2 className="text-3xl font-semibold mb-6 text-blue-50 leading-snug">Digital Twin–Driven Evacuation System</h2>
           <p className="text-blue-200 text-xl mb-12 leading-relaxed">
-            A comprehensive digital twin system leveraging AI optimization to simulate urban flooding, assess population vulnerabilities, and generate dynamic, life-saving evacuation routes.
+            A dynamic simulation platform for urban planners and disaster authorities. Integrating real-time environmental data, physics-based flood modeling, and advanced AI optimization to generate dynamic, life-saving evacuation strategies.
           </p>
           <div className="space-y-6">
             <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Activity size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">Physics-Based Flood & Traffic Engine</h3>
-                <p className="text-blue-200/90 mt-1">High-performance MapLibre rendering of real-time flood propagation synchronized with live traffic density.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Users size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">Multi-Persona AI Expert Panel</h3>
-                <p className="text-blue-200/90 mt-1">LLM-driven analytical agents (Logistics Chief, Tactical Commander) communicating via MCP servers to provide live disaster directives.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
               <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Map size={24} className="text-blue-300" /></div>
               <div>
-                <h3 className="font-semibold text-lg text-blue-50">Multimodal Public Transport Evacuation</h3>
-                <p className="text-blue-200/90 mt-1">Real-time integration of OSMnx road networks and public transit APIs to calculate live bus evacuation manifests.</p>
+                <h3 className="font-semibold text-lg text-blue-50">High-Fidelity Digital Twin</h3>
+                <p className="text-blue-200/90 mt-1">Automatic generation of urban road networks and elevation models via OSM and SRTM data, rendered interactively with MapLibre.</p>
               </div>
             </div>
 
             <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><ShieldAlert size={24} className="text-blue-300" /></div>
+              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Activity size={24} className="text-blue-300" /></div>
               <div>
-                <h3 className="font-semibold text-lg text-blue-50">Autonomous Weather Sentinel</h3>
-                <p className="text-blue-200/90 mt-1">Background daemon monitoring Open-Meteo rainfall telemetry to preemptively trigger threshold-based simulation alerts.</p>
+                <h3 className="font-semibold text-lg text-blue-50">Physics-Based Flood Simulation</h3>
+                <p className="text-blue-200/90 mt-1">Dynamic SWM-style modeling of flood propagation driven by historic or manual variable rainfall intensity and terrain topology.</p>
               </div>
             </div>
 
             <div className="flex items-start gap-4">
               <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Navigation size={24} className="text-blue-300" /></div>
               <div>
-                <h3 className="font-semibold text-lg text-blue-50">Meta-Heuristic Risk Optimization</h3>
-                <p className="text-blue-200/90 mt-1">Deploying Genetic Algorithms (GA) and Ant Colony Optimization (ACO) to dynamically calculate the safest routes, dodging expanding flood polygons.</p>
+                <h3 className="font-semibold text-lg text-blue-50">Metaheuristic AI Routing</h3>
+                <p className="text-blue-200/90 mt-1">Deploying Genetic Algorithms (GA), Ant Colony Optimization (ACO), and PSO synchronized with live TomTom traffic feeds.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4">
+              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Users size={24} className="text-blue-300" /></div>
+              <div>
+                <h3 className="font-semibold text-lg text-blue-50">Agentic GenAI Co-Pilot</h3>
+                <p className="text-blue-200/90 mt-1">Dual FastMCP architecture powering an autonomous Expert Panel to synthesize the physics simulation into actionable NDRF directives.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4">
+              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><ShieldAlert size={24} className="text-blue-300" /></div>
+              <div>
+                <h3 className="font-semibold text-lg text-blue-50">Multimodal Resource Management</h3>
+                <p className="text-blue-200/90 mt-1">Real-time monitoring of safe shelters, city bus fleet manifests, IDRN tactical supplies, and Metro mass-transit integrity.</p>
               </div>
             </div>
           </div>
@@ -138,7 +147,9 @@ const LoginPage = () => {
           </div>
 
           <div className="mb-12 text-center lg:text-left">
-            <h2 className="text-4xl xl:text-5xl font-bold text-slate-800 mb-4 tracking-tight">Welcome Back</h2>
+            <h2 className="text-4xl xl:text-5xl font-bold text-slate-800 mb-4 tracking-tight">
+              {isFirstVisit ? 'Welcome' : 'Welcome Back'}
+            </h2>
             <p className="text-slate-500 text-xl xl:text-2xl">Sign in to access the command center.</p>
           </div>
 
