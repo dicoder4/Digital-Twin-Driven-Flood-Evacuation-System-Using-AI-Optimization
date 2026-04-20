@@ -372,10 +372,6 @@ async def get_metro_stations(hobli_name: str):
     return await service.fetch_metro_stations(hobli_name)
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
 class AlgorithmAnalysisRequest(BaseModel):
     metrics: dict   # the output from run_advanced_analysis_generator
     location: str
@@ -388,3 +384,89 @@ async def algorithm_analysis_stream(req: AlgorithmAnalysisRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
+
+
+# ── Pin-Drop Simulation ─────────────────────────────────────────────────────
+class PinSimulationRequest(BaseModel):
+    lat: float
+    lon: float
+    rainfall_mm: float = 150.0
+    steps: int = 5
+    decay_factor: float = 0.5
+
+@app.post("/resolve-pin")
+async def resolve_pin(req: PinSimulationRequest):
+    """
+    Resolve a map pin coordinate to the nearest hobli.
+    Returns hobli name, distance, and coordinates.
+    """
+    result = service.resolve_pin_to_hobli(req.lat, req.lon)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.get("/simulate-pin")
+async def simulate_pin(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    rainfall_mm: float = Query(150.0),
+    steps: int = Query(5),
+    decay_factor: float = Query(0.5),
+    population: Optional[int] = Query(None),
+):
+    """
+    Pin-drop simulation: resolve pin → nearest hobli → run full simulation.
+    Returns SSE stream identical to /simulate-stream.
+    """
+    resolved = service.resolve_pin_to_hobli(lat, lon)
+    if "error" in resolved:
+        raise HTTPException(status_code=400, detail=resolved["error"])
+
+    hobli = resolved["hobli_key"]
+    print(f"[PIN] Resolved ({lat}, {lon}) → {hobli} (dist={resolved['distance_km']} km)")
+
+    return StreamingResponse(
+        service.run_simulation_generator(
+            hobli=hobli,
+            rainfall_mm=rainfall_mm,
+            steps=steps,
+            decay_factor=decay_factor,
+            evacuation_mode=False,
+            use_traffic=True,
+            algorithm="aco",
+            population=population,
+            mode="progressive",
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+# ── Drain Status Endpoint ───────────────────────────────────────────────────
+@app.get("/drains/{hobli_name}")
+async def get_drain_status(hobli_name: str):
+    """Return storm-water drain data for a hobli region."""
+    from drain_data import load_drain_data, filter_drains_by_radius, get_drain_summary
+    from region_manager import norm_key
+
+    key = norm_key(hobli_name)
+    coords = HOBLI_COORDS.get(key)
+    if not coords:
+        return {"drains": [], "summary": {"count": 0, "message": f"Hobli '{hobli_name}' not found."}}
+
+    all_drains = load_drain_data()
+    regional = filter_drains_by_radius(all_drains, coords["lat"], coords["lon"], radius_km=2.0)
+    summary = get_drain_summary(regional)
+
+    return {
+        "drains": [d.to_dict() for d in regional],
+        "summary": summary,
+        "hobli": hobli_name,
+        "center": {"lat": coords["lat"], "lon": coords["lon"]},
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

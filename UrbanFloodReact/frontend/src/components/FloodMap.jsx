@@ -53,7 +53,8 @@ export function FloodMap({
     shelters, evacuationPlan, simulationDone, selectedShelter,
     trafficRoadsData, showTraffic, showTrafficPins, onToggleTrafficPins,
     busManifest, selectedBusId, mapPinBox, onMapClick,
-    selectedMetro, metroLines
+    selectedMetro, metroLines,
+    pinDropPin  // {lat, lon, resolvedHobli} or null — DRA pin-drop marker
 }) {
     const hasFlood = !!(floodData?.features?.length);
     const hasRisk = !!(riskRoadsData?.features?.length);
@@ -383,6 +384,21 @@ export function FloodMap({
                                 {selectedMetro.line ? ` · ${selectedMetro.line}` : ''}
                                 {' '}
                                 {selectedMetroStatusIcon}
+                            </div>
+                        </div>
+                    </Marker>
+                )}
+
+                {/* 10. DRA Pin-Drop marker */}
+                {pinDropPin && (
+                    <Marker latitude={pinDropPin.lat} longitude={pinDropPin.lon} anchor="bottom">
+                        <div className="evac-dest-pin" style={{ filter: 'drop-shadow(0 2px 8px rgba(234, 88, 12, 0.5))' }}>
+                            <MapPin size={26} fill="#ea580c" color="white" strokeWidth={1.5} />
+                            <div className="evac-dest-label" style={{
+                                background: '#fff7ed', color: '#9a3412', border: '1px solid #ea580c',
+                                fontWeight: 600, fontSize: '11px', minWidth: '100px', textAlign: 'center'
+                            }}>
+                                📍 {pinDropPin.resolvedHobli || 'Resolving…'}
                             </div>
                         </div>
                     </Marker>

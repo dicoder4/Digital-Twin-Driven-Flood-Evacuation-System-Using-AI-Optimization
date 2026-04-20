@@ -1,0 +1,30 @@
+sensor_id,drain_id,location_name,latitude,longitude,measure_type,timestamp,water_level_cm,flow_index,rainfall_mm,battery_v,status,alert_sent
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 09:55:00,35,0.4,,3.7,normal,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:00:00,42,0.5,,3.7,normal,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:05:00,48,0.6,,3.7,normal,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:10:00,62,0.9,,3.6,warning,1
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:15:00,78,1.2,,3.5,critical,1
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:20:00,71,1.1,,3.6,warning,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:25:00,60,0.8,,3.7,warning,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:30:00,48,0.6,,3.7,normal,
+
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 09:55:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:00:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:05:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:10:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:15:00,,,,3.8,warning,1
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:20:00,,,,3.8,critical,1
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:25:00,,,,3.8,warning,
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:30:00,,,,3.8,normal,
+
+BDA_S2_S1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,water_level,2026-07-15 10:00:00,28,0.3,,3.8,normal,
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:00:00,,,,3.8,,,0
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:05:00,,,,3.8,,,0
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:10:00,,,,3.8,,,0
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:15:00,,,,3.8,warning,
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:20:00,,,,3.8,critical,
+BDA_S2_S1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,water_level,2026-07-15 10:20:00,40,0.5,,3.7,normal,
+
+BDA_S3_S1,S312,Sarjapur_Sect43,12.9524,77.671953,water_level,2026-07-15 10:00:00,32,0.4,,3.7,normal,
+BDA_S3_S1,S312,Sarjapur_Sect43,12.9524,77.671953,water_level,2026-07-15 10:15:00,38,0.5,,3.7,normal,
+BDA_S3_S1,S312,Sarjapur_Sect43,12.9524,77.671953,water_level,2026-07-15 10:30:00,35,0.4,,3.7,normal,

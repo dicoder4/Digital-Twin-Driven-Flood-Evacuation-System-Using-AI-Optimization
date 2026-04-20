@@ -564,14 +564,267 @@ def get_vulnerability_hotspots(min_flood_depth: float = 0.15) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  DRAIN INTELLIGENCE TOOLS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def get_drain_status_report(hobli_name: str = "") -> str:
+    """
+    Get the status of storm-water drains for a hobli region.
+    Returns the number of drains, their conditions, capacity factors,
+    and whether drain data is influencing the current simulation.
+
+    Use this when the user asks about drainage infrastructure, drain blockages,
+    or why certain areas are flooding more than others.
+
+    Args:
+        hobli_name: Optional hobli name. Uses currently loaded region if omitted.
+    """
+    if not hobli_name:
+        state = _load_state()
+        hobli_name = state.get("hobli", "")
+
+    if not hobli_name:
+        return "No region specified and no simulation region loaded."
+
+    try:
+        from drain_data import get_drains_for_hobli, get_drain_summary
+        drains = get_drains_for_hobli(hobli_name)
+
+        if not drains:
+            return (f"No storm-water drain data found within 2km of {hobli_name}. "
+                    "This may mean no drains are instrumented in this area, "
+                    "or the drain dataset doesn't cover this region.")
+
+        summary = get_drain_summary(drains)
+
+        lines = [
+            f"=== Storm-Water Drain Status - {hobli_name} ===",
+            f"Total Drains in Region: {summary['count']}",
+            "",
+            "## Drain Conditions",
+        ]
+
+        for condition, count in summary.get("condition_breakdown", {}).items():
+            emoji = {"good": "G", "fair": "Y", "poor": "R", "blocked": "X"}.get(condition, "?")
+            lines.append(f"  [{emoji}] {condition.capitalize()}: {count} drain(s)")
+
+        lines.extend([
+            "",
+            f"Average Water Level: {summary.get('avg_water_level_cm', 0):.1f} cm",
+            f"Average Capacity Factor: {summary.get('avg_capacity_factor', 0):.0%}",
+            "",
+            "## Drain Locations",
+        ])
+
+        for d in drains:
+            status = d.status if hasattr(d, 'status') else d.get("status", "normal")
+            name = d.location_name if hasattr(d, 'location_name') else d.get("location_name", "")
+            did = d.drain_id if hasattr(d, 'drain_id') else d.get("drain_id", "")
+            lines.append(f"  - {did}: {name} (status: {status})")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error fetching drain status: {str(e)}"
+
+
+@mcp.tool()
+def find_nearest_drains(lat: float, lon: float, count: int = 5) -> str:
+    """
+    Find the nearest storm-water drains to a specific coordinate.
+    Returns drain IDs, locations, distances, and conditions.
+
+    Use this when the user asks about drainage near a specific location,
+    or to assess flood risk at a particular point.
+
+    Args:
+        lat: Latitude of the query point
+        lon: Longitude of the query point
+        count: Number of nearest drains to return (default 5)
+    """
+    try:
+        from drain_data import load_drain_data, get_nearest_drains as _get_nearest
+
+        all_drains = load_drain_data()
+        if not all_drains:
+            return "No drain data is currently loaded."
+
+        nearest = _get_nearest(lat, lon, all_drains, n=count)
+
+        if not nearest:
+            return f"No drains found near ({lat:.4f}, {lon:.4f})."
+
+        lines = [f"=== Nearest Drains to ({lat:.4f}, {lon:.4f}) ===", ""]
+
+        for i, d in enumerate(nearest, 1):
+            dist_m = d.get("distance_m", 0)
+            condition = d.get("condition", "unknown")
+            lines.append(
+                f"{i}. {d.get('drain_id', '?')} - {d.get('location_name', 'Unknown')}\n"
+                f"   Distance: {dist_m:.0f}m | Condition: {condition} | "
+                f"Water Level: {d.get('water_level_cm', 0):.0f}cm | "
+                f"Capacity: {d.get('capacity_factor', 0):.0%}"
+            )
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error finding nearest drains: {str(e)}"
+
+
+@mcp.tool()
+def get_drain_coverage(hobli_name: str = "") -> str:
+    """
+    Analyze drain infrastructure coverage for a hobli region.
+    Returns drain density, average spacing, and coverage assessment.
+
+    Use this when the user asks about infrastructure adequacy,
+    why flooding is severe, or to compare drainage across regions.
+
+    Args:
+        hobli_name: Optional hobli name. Uses currently loaded region if omitted.
+    """
+    if not hobli_name:
+        state = _load_state()
+        hobli_name = state.get("hobli", "")
+
+    if not hobli_name:
+        return "No region specified."
+
+    try:
+        from region_manager import REGION_CACHE, norm_key
+        key = norm_key(hobli_name)
+
+        if key in REGION_CACHE and "drain_influence_summary" in REGION_CACHE[key]:
+            summary = REGION_CACHE[key]["drain_influence_summary"]
+
+            density = summary.get("drain_density_per_km2", 0)
+            spacing = summary.get("avg_drain_spacing_m", 0)
+            n_drains = summary.get("drain_count", len(summary.get("drain_ids", [])))
+            n_influenced = summary.get("nodes_influenced", 0)
+            total_nodes = summary.get("total_nodes", 0)
+            coverage_pct = (n_influenced / total_nodes * 100) if total_nodes > 0 else 0
+
+            lines = [
+                f"=== Drain Coverage Analysis - {hobli_name} ===",
+                "",
+                f"Drains in Region: {n_drains}",
+                f"Drain Density: {density:.2f} per km2",
+                f"Average Inter-Drain Spacing: {spacing:.0f} m",
+                f"Road Network Nodes Influenced: {n_influenced:,} / {total_nodes:,} ({coverage_pct:.1f}%)",
+                "",
+                "## Coverage Assessment",
+            ]
+
+            if density >= 2.0:
+                lines.append("ADEQUATE: Drain density meets urban flood management standards.")
+            elif density >= 0.5:
+                lines.append("MODERATE: Some areas lack effective drain coverage.")
+            elif density > 0:
+                lines.append("POOR: Drain coverage is sparse. Urban flooding risk is elevated.")
+            else:
+                lines.append("NO COVERAGE: No instrumented drains in this area.")
+
+            return "\n".join(lines)
+
+        from drain_data import get_drains_for_hobli
+        drains = get_drains_for_hobli(hobli_name)
+        if not drains:
+            return f"No drain data available for {hobli_name}."
+
+        return (f"Drain Coverage for {hobli_name}: {len(drains)} drains detected. "
+                "Run a simulation to get detailed influence metrics.")
+    except Exception as e:
+        return f"Error analyzing drain coverage: {str(e)}"
+
+
+@mcp.tool()
+def get_drain_influence_on_flooding() -> str:
+    """
+    Explain how storm-water drains are influencing the current flood simulation.
+    Returns which drains are active, how they affect water levels,
+    and their overall impact on flood severity.
+
+    Use this when the user asks why flooding is better/worse than expected,
+    or how drains are affecting the simulation results.
+    """
+    state = _load_state()
+    hobli_name = state.get("hobli", "Unknown")
+
+    try:
+        from region_manager import REGION_CACHE, norm_key
+        key = norm_key(hobli_name)
+
+        if key not in REGION_CACHE:
+            return "No active simulation. Run a flood simulation first."
+
+        entry = REGION_CACHE[key]
+        drains = entry.get("stormwater_drains", [])
+        influence = entry.get("drain_influence_summary", {})
+
+        if not drains:
+            return (f"No storm-water drains are active in the {hobli_name} simulation. "
+                    "Flood behavior is based purely on elevation, rainfall, and surface runoff.")
+
+        n_drains = influence.get("drain_count", len(drains))
+        n_influenced = influence.get("nodes_influenced", 0)
+        density = influence.get("drain_density_per_km2", 0)
+
+        lines = [
+            f"=== Drain Influence on Flooding - {hobli_name} ===",
+            "",
+            f"Active Drains: {n_drains}",
+            f"Nodes with Drain Influence: {n_influenced:,}",
+            f"Drain Density: {density:.2f} per km2",
+            "",
+            "## How Drains Affect This Simulation",
+            "",
+        ]
+
+        good_drains = [d for d in drains if d.get("condition", "") in ("good",)]
+        bad_drains = [d for d in drains if d.get("condition", "") in ("poor", "blocked")]
+        fair_drains = [d for d in drains if d.get("condition", "") in ("fair",)]
+
+        if good_drains:
+            lines.append(f"{len(good_drains)} functioning drain(s) are actively reducing flood water "
+                         f"near their locations. Nodes within {influence.get('influence_radius_m', 200)}m "
+                         f"experience up to 30% water depth reduction per simulation step.")
+
+        if bad_drains:
+            lines.append(f"{len(bad_drains)} blocked/critical drain(s) are contributing to localised "
+                         f"ponding and overflow. Nodes near these drains may experience HIGHER water levels "
+                         f"than expected due to back-flow from clogged channels.")
+
+        if fair_drains:
+            lines.append(f"{len(fair_drains)} degraded drain(s) are partially functional, "
+                         f"providing reduced drainage capacity.")
+
+        lines.extend(["", "## Recommendation"])
+        if bad_drains:
+            bad_names = [d.get("location_name", d.get("drain_id", "?")) for d in bad_drains]
+            lines.append(f"Priority maintenance: Clear blockages at {', '.join(bad_names)} "
+                         f"to enable drainage capacity and reduce flood severity in those zones.")
+        elif n_drains > 0:
+            lines.append("All drains in this region are functioning. Current drainage is "
+                         "operating at expected capacity.")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error analyzing drain influence: {str(e)}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  Entry Point
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     print("Starting Flood Intelligence MCP Server...")
     print("Tools:")
-    print("  - get_metro_status     : Line-wise metro disruption analysis")
-    print("  - get_flood_impact     : Population + infrastructure impact")
+    print("  - get_metro_status         : Line-wise metro disruption analysis")
+    print("  - get_flood_impact         : Population + infrastructure impact")
     print("  - get_shelter_resource_map : Safe shelters with nearby resources")
     print("  - get_vulnerability_hotspots : High-risk population clusters")
-    mcp.run()
+    print("  - get_drain_status_report  : Storm-water drain status")
+    print("  - find_nearest_drains      : Find drains near a coordinate")
+    print("  - get_drain_coverage       : Drain infrastructure analysis")
+    print("  - get_drain_influence_on_flooding : How drains affect simulation")
+    mcp.run()

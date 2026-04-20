@@ -32,6 +32,11 @@ from shelter_generator import extract_shelter_candidates, filter_safe_shelters
 from evacuation_ga import GeneticEvacuationPlanner
 from aco import ACOEvacuationPlanner
 from pso import PSOEvacuationPlanner
+from drain_data import (
+    load_drain_data, filter_drains_by_radius,
+    compute_drain_influence_metrics, get_drain_summary,
+    haversine_km,
+)
 
 # ── Algorithm factory ────────────────────────────────────────────────────────
 _PLANNER_MAP = {
@@ -879,6 +884,98 @@ def _reconstruct_chromosome(decoded_plan, at_risk, safe_shelters) -> list[int]:
     return chromosome
 
 
+# ── Storm-water Drain Pipeline Helper ────────────────────────────────────────
+def _apply_drain_pipeline(sim: UrbanFloodSimulator, hobli_key: str):
+    """
+    Load storm-water drain data, filter to the hobli region, compute
+    per-node influence metrics, and activate drain influence on the simulator.
+
+    This is called once before the simulation loop starts. The per-node
+    attributes (drainage_capacity, ponding_risk, etc.) persist on ``sim.G``
+    and are read by ``_apply_drain_influence()`` at every propagation step.
+
+    Graceful fallback: if drain data is missing or no drains are in range,
+    the simulation proceeds normally with a debug log.
+    """
+    try:
+        # Resolve hobli centre coordinates
+        coords = HOBLI_COORDS.get(hobli_key)
+        if not coords:
+            print(f"{_ts()}  [drain] No HOBLI_COORDS for '{hobli_key}' — drain pipeline skipped.")
+            return
+
+        center_lat = coords["lat"]
+        center_lon = coords["lon"]
+
+        # Load all drains from CSV
+        all_drains = load_drain_data()
+        if not all_drains:
+            print(f"{_ts()}  [drain] No drain data available — simulation proceeds without drain influence.")
+            return
+
+        # Filter drains within 2 km of hobli centre
+        regional_drains = filter_drains_by_radius(all_drains, center_lat, center_lon, radius_km=2.0)
+        if not regional_drains:
+            print(f"{_ts()}  [drain] No drains within 2 km of {hobli_key} ({center_lat:.4f}, {center_lon:.4f}) — skipping.")
+            return
+
+        # Compute per-node influence metrics (mutates sim.G node attributes)
+        influence_summary = compute_drain_influence_metrics(regional_drains, sim.G)
+
+        # Store filtered drains on the simulator for downstream inspection
+        sim.stormwater_drains = [d.to_dict() if hasattr(d, 'to_dict') else d for d in regional_drains]
+
+        # Activate drain influence in propagation loop
+        sim.set_drain_influence(influence_summary)
+
+        # Cache drain data in REGION_CACHE for MCP tool access
+        if hobli_key in REGION_CACHE:
+            REGION_CACHE[hobli_key]["stormwater_drains"] = sim.stormwater_drains
+            REGION_CACHE[hobli_key]["drain_influence_summary"] = influence_summary
+
+        # Summary log
+        summary = get_drain_summary(regional_drains)
+        print(f"{_ts()}  [drain] Pipeline complete for {hobli_key}: "
+              f"{summary['count']} drains, conditions={summary['condition_breakdown']}, "
+              f"avg_cap={summary['avg_capacity_factor']}")
+
+    except Exception as e:
+        print(f"{_ts()}  [drain] ERROR in drain pipeline: {e} — proceeding without drain influence.")
+        import traceback
+        traceback.print_exc()
+
+
+# ── Pin-to-Hobli Resolution ─────────────────────────────────────────────────
+def resolve_pin_to_hobli(lat: float, lon: float) -> dict:
+    """
+    Find the nearest hobli to a map pin coordinate by brute-force
+    Haversine search over HOBLI_COORDS.
+
+    Returns: {hobli_key, hobli_name, distance_km, lat, lon}
+    """
+    best_key = None
+    best_dist = float("inf")
+    best_coords = {}
+
+    for key, coords in HOBLI_COORDS.items():
+        dist = haversine_km(lat, lon, coords["lat"], coords["lon"])
+        if dist < best_dist:
+            best_dist = dist
+            best_key = key
+            best_coords = coords
+
+    if best_key is None:
+        return {"error": "No hobli coordinates loaded."}
+
+    return {
+        "hobli_key": best_key,
+        "hobli_name": best_coords.get("original_name", best_key),
+        "distance_km": round(best_dist, 2),
+        "lat": best_coords.get("lat"),
+        "lon": best_coords.get("lon"),
+    }
+
+
 async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, decay_factor: float, evacuation_mode: bool = False, use_traffic: bool = False, algorithm: str = "ga", population: int | None = None, extra_shelters: list | None = None, mode: str = "progressive"):
     """Generator for SSE simulation stream."""
     import time
@@ -896,6 +993,9 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     lakes = entry["lake_nodes"]
 
     sim = UrbanFloodSimulator(G_ref.copy(), drain_nodes=drains, lake_nodes=lakes)
+
+    # ── Storm-water drain pipeline ──────────────────────────────────────
+    _apply_drain_pipeline(sim, key)
 
     # Mode selection
     if mode == "progressive":
@@ -1353,6 +1453,10 @@ async def run_compare_generator(
     lakes  = entry["lake_nodes"]
 
     sim = UrbanFloodSimulator(G_ref.copy(), drain_nodes=drains, lake_nodes=lakes)
+
+    # ── Storm-water drain pipeline ──────────────────────────────────────
+    _apply_drain_pipeline(sim, key)
+
     # Mode selection
     if mode == "progressive":
         sim.set_progressive_rainfall(rainfall_mm, steps)

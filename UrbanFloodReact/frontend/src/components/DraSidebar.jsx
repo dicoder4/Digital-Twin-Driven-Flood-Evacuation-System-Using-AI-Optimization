@@ -1,4 +1,4 @@
-import { MapPin, ChevronDown, Loader, CheckCircle, CloudRain, ShieldAlert, Radio } from 'lucide-react';
+import { MapPin, ChevronDown, Loader, CheckCircle, CloudRain, ShieldAlert, Radio, Crosshair, X } from 'lucide-react';
 import axios from 'axios';
 import { useState } from 'react';
 import { API_URL } from '../config';
@@ -14,7 +14,13 @@ export function DraSidebar({
     rainfallMm,
     onRainfallChange,
     onRunEvacuation,
-    simulationRunning
+    simulationRunning,
+    // Pin-drop props
+    pinDropMode,
+    onTogglePinDrop,
+    pinDropPin,       // {lat, lon, resolvedHobli} or null
+    onClearPin,
+    onRunPinSimulation,
 }) {
     const canLoad = !!selHobli && !loading;
     const [fetchingWeather, setFetchingWeather] = useState(false);
@@ -47,6 +53,58 @@ export function DraSidebar({
                 <span style={{ fontWeight: 600 }}>Disaster Response Authority Mode</span>
             </div>
 
+            {/* ── Pin-Drop Section ──────────────────────────────── */}
+            <section className="panel" style={{ borderLeft: '3px solid #ea580c' }}>
+                <h3 className="panel-title"><Crosshair size={13} /> Pin-Drop Simulation</h3>
+                <div style={{ fontSize: '12px', color: '#475569', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                    Drop a pin on the map to simulate flooding at any location. The system will auto-resolve to the nearest hobli.
+                </div>
+
+                {!pinDropPin ? (
+                    <button
+                        className={`btn-primary ${pinDropMode ? '' : ''}`}
+                        onClick={onTogglePinDrop}
+                        style={{
+                            width: '100%',
+                            backgroundColor: pinDropMode ? '#ea580c' : undefined,
+                            borderColor: pinDropMode ? '#c2410c' : undefined,
+                        }}
+                    >
+                        {pinDropMode ? (
+                            <><Crosshair size={13} className="spin" /> Click on Map to Place Pin…</>
+                        ) : (
+                            <><Crosshair size={13} /> Drop Pin on Map</>
+                        )}
+                    </button>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            backgroundColor: '#fff7ed', border: '1px solid #fdba74',
+                            padding: '8px 12px', borderRadius: '6px', fontSize: '12px'
+                        }}>
+                            <div>
+                                <div style={{ fontWeight: 600, color: '#9a3412' }}>
+                                    📍 {pinDropPin.resolvedHobli || 'Resolving…'}
+                                </div>
+                                <div style={{ color: '#78716c', fontSize: '11px' }}>
+                                    {pinDropPin.lat.toFixed(4)}, {pinDropPin.lon.toFixed(4)}
+                                    {pinDropPin.distance_km != null && ` · ${pinDropPin.distance_km} km from centre`}
+                                </div>
+                            </div>
+                            <button
+                                onClick={onClearPin}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', padding: '2px' }}
+                                title="Clear pin"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </section>
+
+            {/* ── Hobli Selection (traditional) ─────────────────── */}
             <section className="panel">
                 <h3 className="panel-title"><MapPin size={13} /> Select Target Region</h3>
                 <label className="field-label">Hobli (Sub-district)</label>
@@ -67,7 +125,7 @@ export function DraSidebar({
                 </button>
             </section>
 
-            {loaded && loadedHobli === selHobli && (
+            {(loaded && loadedHobli === selHobli) || pinDropPin ? (
                 <>
                     <section className="panel">
                         <h3 className="panel-title"><CloudRain size={13} /> Rainfall Parameters</h3>
@@ -120,24 +178,25 @@ export function DraSidebar({
                                 <li>Algorithm: <strong>Ant Colony Optimisation (ACO)</strong></li>
                                 <li>Traffic Overlay: <strong>Enabled (TomTom Live)</strong></li>
                                 <li>Population Sourcing: <strong>Full Registry</strong></li>
+                                {pinDropPin && <li>Mode: <strong>Pin-Drop (Localised)</strong></li>}
                             </ul>
                         </div>
                         
                         <button
                             className="btn-primary"
-                            onClick={onRunEvacuation}
-                            disabled={simulationRunning}
+                            onClick={pinDropPin ? onRunPinSimulation : onRunEvacuation}
+                            disabled={simulationRunning || (!loaded && !pinDropPin)}
                             style={{ width: '100%', backgroundColor: '#dc2626', borderColor: '#b91c1c', paddingTop: '10px', paddingBottom: '10px' }}
                         >
                             {simulationRunning ? (
                                 <><Loader size={13} className="spin" /> Calculating Routes...</>
                             ) : (
-                                <><Radio size={13} /> Run Evacuation Protocol</>
+                                <><Radio size={13} /> {pinDropPin ? 'Run Pin Simulation' : 'Run Evacuation Protocol'}</>
                             )}
                         </button>
                     </section>
                 </>
-            )}
+            ) : null}
         </div>
     );
 }

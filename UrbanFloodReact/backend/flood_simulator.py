@@ -12,8 +12,10 @@ class UrbanFloodSimulator:
     """
     Physics-based Urban Flood Simulator (SWMM-simplified).
     Uses hydraulic head (Elevation + Water Depth) to propagate water flow.
+    Storm-water drain influence reduces/increases water depth per step
+    based on drain proximity, capacity, and condition.
     """
-    def __init__(self, G, drain_nodes=None, lake_nodes=None):
+    def __init__(self, G, drain_nodes=None, lake_nodes=None, stormwater_drains=None):
         self.G = G
         if drain_nodes is not None and len(drain_nodes) > 0:
             self.drain_nodes = list(drain_nodes) 
@@ -32,6 +34,12 @@ class UrbanFloodSimulator:
         self.total_evacuated = 0
         # New attribute for progressive rainfall
         self.rainfall_per_step_m = 0.0
+
+        # ── Storm-water drain integration ────────────────────────────────
+        # stormwater_drains: list of DrainSegment dicts from drain_data.py
+        self.stormwater_drains = stormwater_drains or []
+        self._drain_influence_summary = {}   # populated by set_drain_influence()
+        self._drain_influence_active = False
 
     def initialize_flood(self, rainfall_mm):
         """
@@ -83,11 +91,83 @@ class UrbanFloodSimulator:
         print(f"  [flood_sim] Progressive rainfall: {total_rainfall_mm} mm over {steps} steps, "
               f"{self.rainfall_per_step_m*1000:.2f} mm per step")
 
+    def set_drain_influence(self, influence_summary: dict):
+        """
+        Activate storm-water drain influence on flood propagation.
+
+        ``influence_summary`` is the return value of
+        ``drain_data.compute_drain_influence_metrics()`` which has already
+        set per-node attributes (drainage_capacity, ponding_risk, etc.)
+        on ``self.G``.
+        """
+        self._drain_influence_summary = influence_summary
+        self._drain_influence_active = influence_summary.get("nodes_influenced", 0) > 0
+        n_drains = influence_summary.get("drain_count", 0)
+        n_infl = influence_summary.get("nodes_influenced", 0)
+        print(f"  [flood_sim] Drain influence {'ACTIVE' if self._drain_influence_active else 'INACTIVE'}: "
+              f"{n_drains} drains, {n_infl} nodes influenced")
+
+    def _apply_drain_influence(self, current_depths: dict):
+        """
+        Modify water depths based on storm-water drain proximity and condition.
+
+        For each node with ``drainage_capacity > 0``:
+          - Functioning drains: remove water proportional to capacity factor,
+            proximity, and slope toward the drain.
+          - Blocked / overflowing drains (ponding_risk > 0.6): *add* a small
+            overflow contribution representing back-flow from clogged channels.
+
+        Physical justification:
+          A 1.5 m wide × 1 m deep open channel under gravity flow can carry
+          roughly 1.5 m³/s (Manning's eq with n=0.015, slope=0.001). Over a
+          5-second computational sub-step this drains ~7.5 m³, equivalent to
+          reducing the water column by ~0.005 m over a 50 m × 30 m cell.
+          The ``drainage_capacity`` factor (0–0.3) already encodes proximity
+          decay, condition, and elevation, so we apply it directly as a
+          fractional removal per step.
+        """
+        if not self._drain_influence_active:
+            return
+
+        drained_total = 0.0
+        overflow_total = 0.0
+
+        for node in self.G.nodes():
+            depth = current_depths.get(node, 0.0)
+            if depth <= 0.0:
+                continue
+
+            cap = self.G.nodes[node].get("drainage_capacity", 0.0)
+            ponding = self.G.nodes[node].get("ponding_risk", 0.5)
+
+            if cap > 0:
+                # ── Functioning drain nearby: remove water ───────────────
+                # Scale removal by current depth so drains are more effective
+                # in shallow water (realistic: drains struggle with deep inundation).
+                depth_factor = min(1.0, 0.3 / max(depth, 0.01))
+                removal = depth * cap * depth_factor
+                removal = min(removal, depth)  # never go negative
+                current_depths[node] = depth - removal
+                drained_total += removal
+
+            if ponding > 0.6:
+                # ── Blocked drain overflow: add water ────────────────────
+                # Small overflow contribution from clogged channels backing up.
+                overflow = self.rainfall_per_step_m * (ponding - 0.5) * 0.15
+                current_depths[node] = current_depths.get(node, 0.0) + overflow
+                overflow_total += overflow
+
     def propagate_flood_step(self, decay_factor=0.5):
         # 1. Add incremental rainfall
         if self.rainfall_per_step_m > 0:
             for node in self.G.nodes:
                 self.G.nodes[node]['water_depth'] = self.G.nodes[node].get('water_depth', 0.0) + self.rainfall_per_step_m
+
+        # 1b. Apply storm-water drain influence (removes/adds water)
+        if self._drain_influence_active:
+            pre_drain_depths = nx.get_node_attributes(self.G, 'water_depth')
+            self._apply_drain_influence(pre_drain_depths)
+            nx.set_node_attributes(self.G, pre_drain_depths, 'water_depth')
 
         # 2. Existing propagation logic (unchanged)
         current_depths = nx.get_node_attributes(self.G, 'water_depth')

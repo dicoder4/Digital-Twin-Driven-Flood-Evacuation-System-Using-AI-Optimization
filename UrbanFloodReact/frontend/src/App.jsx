@@ -82,6 +82,8 @@ export default function App() {
   const [showTrafficPins, setShowTrafficPins] = useState(false);
   const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
   const [mapPinBox, setMapPinBox] = useState(null);
+  const [pinDropMode, setPinDropMode] = useState(false);  // DRA pin-drop click mode
+  const [pinDropPin, setPinDropPin] = useState(null);     // {lat, lon, resolvedHobli, distance_km}
   const [selectedMetro, setSelectedMetro] = useState(null);
   const [metroStations, setMetroStations] = useState([]);
   const [metroLines, setMetroLines] = useState([]);
@@ -274,6 +276,48 @@ export default function App() {
 
     sim.start(loadedHobli, rainfallMm, steps, decayFactor, false, true, 'aco', populationCount);
   };
+
+  // ── DRA Pin-Drop handlers ────────────────────────────────────
+  const handleTogglePinDrop = () => setPinDropMode(v => !v);
+
+  const handlePinDropClick = useCallback(async (lat, lon) => {
+    if (!isDraMode || !pinDropMode) return false; // not handled
+    setPinDropMode(false);
+    setPinDropPin({ lat, lon, resolvedHobli: null, distance_km: null });
+    try {
+      const res = await axios.post(`${API_URL}/resolve-pin`, { lat, lon });
+      setPinDropPin({
+        lat, lon,
+        resolvedHobli: res.data.hobli_name || res.data.hobli_key,
+        hobli_key: res.data.hobli_key,
+        distance_km: res.data.distance_km,
+      });
+      setViewState(v => ({ ...v, longitude: lon, latitude: lat, zoom: 14 }));
+    } catch (err) {
+      console.error('Pin resolve failed:', err);
+      setPinDropPin(null);
+    }
+    return true; // handled
+  }, [isDraMode, pinDropMode]);
+
+  const handleClearPin = () => {
+    setPinDropPin(null);
+    setPinDropMode(false);
+  };
+
+  const handleRunPinSimulation = useCallback(() => {
+    if (!pinDropPin?.hobli_key) return;
+    setCompareResults(null);
+    setBusManifest(null);
+    setSelectedBusId(null);
+    setActiveTab('setup');
+    sim.setStatusMsg(`Pin simulation: loading ${pinDropPin.resolvedHobli}…`);
+
+    // Load the region first, then run simulation
+    handleLoadRegion(pinDropPin.hobli_key).then(() => {
+      sim.start(pinDropPin.hobli_key, rainfallMm, steps, decayFactor, false, true, 'aco', 0);
+    });
+  }, [pinDropPin, rainfallMm, steps, decayFactor, sim, handleLoadRegion]);
 
   // ── Reset everything ──────────────────────────────────────────
   const handleReset = () => {
@@ -527,10 +571,13 @@ export default function App() {
                 loadedHobli={loadedHobli}
                 rainfallMm={rainfallMm}
                 onRainfallChange={setRainfallMm}
-                steps={steps}
-                onStepsChange={setSteps}
                 onRunEvacuation={handleDraRunEvacuation}
                 simulationRunning={sim.isRunning}
+                pinDropMode={pinDropMode}
+                onTogglePinDrop={handleTogglePinDrop}
+                pinDropPin={pinDropPin}
+                onClearPin={handleClearPin}
+                onRunPinSimulation={handleRunPinSimulation}
               />
             ) : (
               <>
@@ -816,10 +863,14 @@ export default function App() {
         busManifest={busManifest}
         selectedBusId={selectedBusId}
         mapPinBox={mapPinBox}
-        onMapClick={(lat, lon) => {
+        onMapClick={async (lat, lon) => {
+          // DRA pin-drop mode takes priority
+          if (isDraMode && pinDropMode) {
+            handlePinDropClick(lat, lon);
+            return;
+          }
           setMapPinBox(prev => {
             if (!prev) return { lat, lon };
-            // Increased proximity threshold (~500m area) to ensure easy removal
             const dist = Math.abs(prev.lat - lat) + Math.abs(prev.lon - lon);
             if (dist < 0.005) return null; 
             return { lat, lon };
@@ -827,6 +878,7 @@ export default function App() {
         }}
         selectedMetro={selectedMetro}
         metroLines={metroLines}
+        pinDropPin={pinDropPin}
       />
 
       <AppCopilot
