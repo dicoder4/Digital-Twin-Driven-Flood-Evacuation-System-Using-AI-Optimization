@@ -92,9 +92,11 @@ app.add_middleware(
 )
 
 from auth_routes import router as auth_router
+from notification_routes import router as notification_router
 
 app.include_router(automation_router)
 app.include_router(auth_router)
+app.include_router(notification_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────

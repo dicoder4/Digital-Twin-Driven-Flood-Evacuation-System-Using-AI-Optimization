@@ -132,6 +132,7 @@ export function FloodMap({
                 onClick={handleClick}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+                preserveDrawingBuffer={true}
             >
                 <NavigationControl position="top-right" />
 

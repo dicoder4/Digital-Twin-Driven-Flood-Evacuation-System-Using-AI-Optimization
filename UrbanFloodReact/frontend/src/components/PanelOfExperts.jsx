@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
 import {
     Loader, Truck, Anchor, Megaphone, Cpu, CheckCircle,
     ChevronDown, Play, List, ClipboardCheck, Maximize2, X,
@@ -7,6 +7,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { API_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { createPortal } from 'react-dom';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
@@ -52,6 +53,20 @@ const TABS = [
         badge: 'COMMS',
         badgeColor: '#166534',
         description: 'Drafts official situation reports and public SMS broadcast warnings.',
+    },
+    {
+        key: 'sos_expert',
+        label: 'Mass SOS',
+        shortLabel: 'SOS',
+        icon: Megaphone,
+        color: '#dc2626',
+        accentLight: '#fef2f2',
+        accentBorder: '#fecaca',
+        headerBg: 'linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%)',
+        loadingMsg: 'Drafting SMS Alerts in EN/KA...',
+        badge: 'ALERT',
+        badgeColor: '#7f1d1d',
+        description: 'Drafts Bilingual Emergency Broadcast formats.',
     },
 ];
 
@@ -269,6 +284,9 @@ function makeMarkdownComponents(persona, compact = false) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export function PanelOfExperts({ summary, evacuationPlan, locationName: propLocationName }) {
+    const { user } = useAuth();
+    const [notifyLoading, setNotifyLoading] = useState(false);
+
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('logistics');
     const [responses, setResponses] = useState({ logistics: '', tactical: '', civic: '' });
@@ -360,6 +378,52 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
 
     // ── Download report (fully client-side — no backend route needed) ──────────
     const [downloading, setDownloading] = useState({ docx: false, pdf: false });
+
+    // Handle Notify Actions Role-based
+    const handleNotifyActions = async () => {
+        setNotifyLoading(true);
+        try {
+            const endpoint = (user?.role === 'authority') ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
+            
+            // Try to capture map image if a canvas exists on the screen
+            let mapImageBase64 = null;
+            try {
+                // maplibre uses .maplibregl-canvas
+                const mapCanvas = document.querySelector('.maplibregl-canvas') || document.querySelector('canvas.mapboxgl-canvas') || document.querySelector('canvas');
+                if (mapCanvas) {
+                    mapImageBase64 = mapCanvas.toDataURL('image/png').split(',')[1];
+                }
+            } catch (e) {
+                console.warn('Map capture failed', e);
+            }
+
+            const payload = {
+                user_data: user || {},
+                researcher_data: user || {},
+                evacuation_data: {
+                   algorithm: summary?.algorithm || 'AI Computed',
+                   evacuation_time: summary?.ga_execution_time || summary?.avg_distance_per_person || 0.0,
+                   evacuated_count: summary?.total_evacuated || 0,
+                   total_at_risk: summary?.total_at_risk_initial || summary?.simulation_population || 0
+                },
+                location_data: { location_name: locationName || 'Unknown' },
+                ai_report: (user?.role === 'authority') ? (responses['sos_expert'] || responses['civic']) : (responses['civic'] || ""),
+                map_image_base64: mapImageBase64
+            };
+            const res = await fetch(`${API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) alert('Notification dispatched successfully!');
+            else alert('Failed to send notification: ' + res.statusText);
+        } catch(e) {
+            alert('Error sending notification.');
+        } finally {
+            setNotifyLoading(false);
+        }
+    };
+
 
     // Convert markdown to styled HTML (client-side, no server needed)
     const markdownToHtml = (md, persona, location) => {
@@ -688,6 +752,17 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {activeTab === 'civic' && (
+                                <button
+                                    onClick={handleNotifyActions}
+                                    disabled={notifyLoading}
+                                    style={{
+                                        background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px',
+                                        cursor: 'pointer', padding: '6px 12px', display: 'flex', alignItems: 'center', fontSize: '13px'
+                                    }}>
+                                    {notifyLoading ? 'Sending...' : (user?.role === 'authority' ? 'Broadcast Mass SOS' : 'Notify Authorities')}
+                                </button>
+                            )}
                             <button
                                 onClick={() => handleDownload('docx')}
                                 disabled={downloading.docx}
@@ -741,6 +816,17 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                 {/* Action bar: Expand + Download buttons */}
                 <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 10,
                               display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {activeTab === 'civic' && (
+                                <button
+                                    onClick={handleNotifyActions}
+                                    disabled={notifyLoading}
+                                    style={{
+                                        background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px',
+                                        cursor: 'pointer', padding: '6px 12px', display: 'flex', alignItems: 'center', fontSize: '13px'
+                                    }}>
+                                    {notifyLoading ? 'Sending...' : (user?.role === 'authority' ? 'Broadcast Mass SOS' : 'Notify Authorities')}
+                                </button>
+                            )}
                     <button
                         onClick={() => handleDownload('docx')}
                         title="Download as Word (.docx)"
