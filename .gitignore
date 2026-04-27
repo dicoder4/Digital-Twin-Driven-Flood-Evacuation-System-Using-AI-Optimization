@@ -12,3 +12,12 @@ UrbanFloodReact/cache/
 UrbanFloodReact/frontend/package-lock.json
 UrbanFloodReact/frontend/package.json
 
+# Claude local workspace files
+.claude/skills/
+.claude/**/*.local.json
+.claude/cache/
+.claude/logs/
+.claude/projects/
+.claude/sessions/
+.claude/tmp/
+
