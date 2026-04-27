@@ -7,10 +7,11 @@
  *  - Unreachable population alert
  */
 import { useMemo, useState, useEffect } from 'react';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit, Layers } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
 import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
+import { ScenarioAnalysisPopup } from './ScenarioAnalysisPopup';
 
 
 const ALGO_COLORS = {
@@ -182,10 +183,17 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     const [deepAnalysis, setDeepAnalysis] = useState(false);
     const [lastAnalysisWasDeep, setLastAnalysisWasDeep] = useState(null);
 
+    // ── Scenario Analysis Logic ──
+    const [scenarioAnalysisOpen, setScenarioAnalysisOpen] = useState(false);
+    const [scenarioMetrics, setScenarioMetrics] = useState(null);
+    const [isScenarioAnalysing, setIsScenarioAnalysing] = useState(false);
+    const [scenarioProgress, setScenarioProgress] = useState('');
+
     // Clear analysis cache if the comparison results change (new simulation)
     useEffect(() => {
         setAnalysisMetrics(null);
         setLastAnalysisWasDeep(null);
+        setScenarioMetrics(null);
     }, [compareResults]);
 
     const handleRunAnalysis = () => {
@@ -254,6 +262,66 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
             console.error("Analysis SSE error:", err);
             setIsAnalysing(false);
             setAnalysisProgress('');
+            eventSource.close();
+        };
+    };
+
+    const handleRunScenarioAnalysis = () => {
+        if (isScenarioAnalysing) return;
+
+        setIsScenarioAnalysing(true);
+        setScenarioMetrics(null);
+        setScenarioProgress('Preparing scenario simulations…');
+
+        const url = new URL('http://localhost:8000/simulate-scenario-analysis');
+        url.searchParams.append('hobli', locationName);
+        url.searchParams.append('use_traffic', showTraffic);
+        if (simulationParams.steps != null) url.searchParams.append('steps', simulationParams.steps);
+        if (simulationParams.decay_factor != null) url.searchParams.append('decay_factor', simulationParams.decay_factor);
+        if (simulationParams.population != null && simulationParams.population > 0) url.searchParams.append('population', simulationParams.population);
+
+        const eventSource = new EventSource(url.href);
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.error) {
+                console.error("Scenario Analysis error:", data.error);
+                setIsScenarioAnalysing(false);
+                setScenarioProgress('');
+                eventSource.close();
+                return;
+            }
+
+            if (data.analysis_progress) {
+                setScenarioProgress(data.message || `Scenario ${data.step}/${data.total}…`);
+                // Open popup early
+                if (!scenarioAnalysisOpen) setScenarioAnalysisOpen(true);
+                return;
+            }
+
+            if (data.scenario_result && data.metrics) {
+                setScenarioMetrics(prev => {
+                    const next = prev ? { ...prev } : {};
+                    next[data.scenario] = data.metrics;
+                    return next;
+                });
+                return;
+            }
+
+            if (data.scenario_analysis_done) {
+                setScenarioMetrics(data.metrics);
+                setIsScenarioAnalysing(false);
+                setScenarioProgress('');
+                setScenarioAnalysisOpen(true);
+                eventSource.close();
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error("Scenario Analysis SSE error:", err);
+            setIsScenarioAnalysing(false);
+            setScenarioProgress('');
             eventSource.close();
         };
     };
@@ -374,7 +442,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     <button
                         className={`analyse-algos-btn ${isAnalysing ? 'analysing' : ''}`}
                         onClick={handleRunAnalysis}
-                        disabled={isAnalysing}
+                        disabled={isAnalysing || isScenarioAnalysing}
                     >
                         {isAnalysing ? (
                             <><RefreshCw size={12} className="spin" /> {analysisProgress || 'Calculating Stability...'}</>
@@ -383,6 +451,21 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         )}
                         <ChevronRight size={12} />
                     </button>
+                    
+                    <button
+                        className={`analyse-algos-btn ${isScenarioAnalysing ? 'analysing' : ''}`}
+                        onClick={handleRunScenarioAnalysis}
+                        disabled={isAnalysing || isScenarioAnalysing}
+                        style={{ marginTop: '8px', background: isScenarioAnalysing ? '#cbd5e1' : 'linear-gradient(135deg, #06b6d4, #0891b2)', color: isScenarioAnalysing ? '#475569' : '#fff' }}
+                    >
+                        {isScenarioAnalysing ? (
+                            <><RefreshCw size={12} className="spin" /> {scenarioProgress || 'Running Scenarios...'}</>
+                        ) : (
+                            <><Layers size={12} /> Scenario Algorithm Analysis</>
+                        )}
+                        <ChevronRight size={12} />
+                    </button>
+                    
                     <label
                         style={{
                             display: 'flex', alignItems: 'center', gap: 6,
@@ -409,6 +492,13 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     isOpen={analysisOpen}
                     onClose={() => setAnalysisOpen(false)}
                     metrics={analysisMetrics}
+                    locationName={locationName}
+                />
+                
+                <ScenarioAnalysisPopup
+                    isOpen={scenarioAnalysisOpen}
+                    onClose={() => setScenarioAnalysisOpen(false)}
+                    metrics={scenarioMetrics}
                     locationName={locationName}
                 />
 
