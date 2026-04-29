@@ -101,7 +101,7 @@ export function DraSidebar({
                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                             >
                                 {fetchingWeather ? <Loader size={13} className="spin" /> : <CloudRain size={13} />}
-                                {fetchingWeather ? 'Fetching Open-Meteo...' : 'Fetch Real-Time Weather Data'}
+                                {fetchingWeather ? 'Fetching Live Weather...' : 'Fetch Real-Time Weather Data'}
                             </button>
                             
                             {weatherCondition && (

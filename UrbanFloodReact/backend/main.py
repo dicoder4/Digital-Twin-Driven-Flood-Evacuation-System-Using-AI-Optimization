@@ -386,6 +386,9 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
         "rainfall_mm": weather_data.get("precipitation_mm", 0),
         "condition": weather_data.get("description", "Unknown"),
         "temp_c": weather_data.get("temp_c"),
+        "source": weather_data.get("source", "unknown"),
+        "humidity": weather_data.get("humidity"),
+        "cloud_cover": weather_data.get("cloud_cover"),
     }
 
 
