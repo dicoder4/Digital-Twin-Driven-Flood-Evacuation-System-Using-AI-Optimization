@@ -177,6 +177,46 @@ async def mcp_update_state(req: MCPStateUpdate):
     return {"status": "ok", "message": "MCP state updated"}
 
 
+# ── Research: MCP vs Non-MCP A/B comparison ───────────────────────────────────
+class MCPComparisonRequest(BaseModel):
+    questions: list = []        # if empty, uses DEFAULT_QUESTIONS
+    summary_data: Optional[dict] = None      # if None, reads from mcp_state.json
+    evacuation_plan: list = []
+    run_judge: bool = True
+
+@app.post("/research/mcp-comparison")
+async def research_mcp_comparison(req: MCPComparisonRequest):
+    """
+    Run MCP vs non-MCP A/B comparison over one or more questions against the
+    current simulation state. Returns per-question side-by-side responses
+    plus auto metrics and (optional) LLM-judge scores.
+    """
+    from genai.mcp_evaluator import compare_many, DEFAULT_QUESTIONS
+    try:
+        from genai.context_builder import build_expert_context
+    except ImportError:
+        from context_builder import build_expert_context
+    from genai.mcp_evacuation_server import _load_state
+
+    summary_data    = req.summary_data
+    evacuation_plan = req.evacuation_plan or []
+
+    if not summary_data:
+        state = _load_state()
+        summary_data    = state.get("summary_data") or {}
+        evacuation_plan = state.get("evacuation_plan") or []
+        if not summary_data:
+            raise HTTPException(
+                status_code=400,
+                detail="No simulation state available. Run a simulation first or supply summary_data."
+            )
+
+    enriched = await build_expert_context(summary_data, evacuation_plan)
+    questions = req.questions or DEFAULT_QUESTIONS
+    results   = await compare_many(questions, enriched, run_judge=req.run_judge)
+    return {"count": len(results), "results": results}
+
+
 class CopilotRequest(BaseModel):
     messages: list
     available_hoblis: list = []
