@@ -2147,9 +2147,13 @@ async def run_scenario_analysis_generator(
             success_rate = round(total_evacuated / max(total_at_risk_pop, 1) * 100, 1)
             
             pressure_points_count = 0
+            total_bottleneck_load = 0
             if hasattr(planner, "calculate_pressure_points"):
                 try:
-                    pressure_points_count = len(planner.calculate_pressure_points(decoded_plan))
+                    # Use top_n=9999 to get ALL pressure points, not just top 5
+                    all_pp = planner.calculate_pressure_points(decoded_plan, top_n=9999)
+                    pressure_points_count = len(all_pp)
+                    total_bottleneck_load = sum(p["total_evacuees"] for p in all_pp)
                 except:
                     pass
 
@@ -2161,6 +2165,7 @@ async def run_scenario_analysis_generator(
                 "total_at_risk_pop": total_at_risk_pop,
                 "success_rate_pct": success_rate,
                 "pressure_points_count": pressure_points_count,
+                "total_bottleneck_load": total_bottleneck_load,
                 "breakdown": breakdown
             }
         
@@ -2179,10 +2184,32 @@ async def run_scenario_analysis_generator(
         }
         yield f"data: {json.dumps(payload_result)}\n\n"
         
+    # Rank summation to find best overall algorithm
+    # We want MIN fitness, MIN execution_time, MAX success_rate_pct, MIN total_bottleneck_load
+    total_ranks = {"ga": 0, "aco": 0, "pso": 0}
+    valid_algos = ["ga", "aco", "pso"]
+    
+    for scenario_name, algos in analysis_data.items():
+        if not all(algos.get(a) for a in valid_algos):
+            continue
+            
+        fitness_ranked = sorted(valid_algos, key=lambda a: algos[a]["fitness"])
+        time_ranked = sorted(valid_algos, key=lambda a: algos[a]["execution_time"])
+        success_ranked = sorted(valid_algos, key=lambda a: algos[a]["success_rate_pct"], reverse=True)
+        pressure_ranked = sorted(valid_algos, key=lambda a: algos[a]["total_bottleneck_load"])
+        
+        for a in valid_algos:
+            rank_score = (fitness_ranked.index(a) * 3) + (time_ranked.index(a) * 1) + (success_ranked.index(a) * 2) + (pressure_ranked.index(a) * 1)
+            total_ranks[a] += rank_score
+            
+    best_overall = min(total_ranks.keys(), key=lambda k: total_ranks[k]) if any(total_ranks.values()) else "N/A"
+
     final_payload = {
         "scenario_analysis_done": True,
         "metrics": analysis_data,
         "location": hobli,
+        "best_overall_algorithm": best_overall,
+        "algorithm_scores": total_ranks,
         "timestamp": datetime.now().isoformat()
     }
     

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, BarChart2, Activity, Zap, Shield,
   TrendingDown, TrendingUp, Info, Cpu,
-  BrainCircuit, Layers, RefreshCw, AlertTriangle
+  BrainCircuit, Layers, RefreshCw, AlertTriangle, Trophy
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -35,7 +35,7 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
     }
   }, [metrics]);
 
-  const chartData = useMemo(() => {
+  const fitnessChartData = useMemo(() => {
     if (!metrics) return [];
     
     return SCENARIOS.map(s => {
@@ -43,8 +43,24 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
       if (metrics[s.key]) {
         ['ga', 'aco', 'pso'].forEach(algo => {
           if (metrics[s.key][algo]) {
-             // For success rate chart
-             dataPoint[`${algo.toUpperCase()}_Success`] = metrics[s.key][algo].success_rate_pct;
+             // Fitness is high, so we show it in millions for readability
+             dataPoint[`${algo.toUpperCase()}_Fitness`] = metrics[s.key][algo].fitness / 1_000_000;
+          }
+        });
+      }
+      return dataPoint;
+    });
+  }, [metrics]);
+
+  const timeChartData = useMemo(() => {
+    if (!metrics) return [];
+    
+    return SCENARIOS.map(s => {
+      const dataPoint = { name: s.label };
+      if (metrics[s.key]) {
+        ['ga', 'aco', 'pso'].forEach(algo => {
+          if (metrics[s.key][algo]) {
+             dataPoint[`${algo.toUpperCase()}_Time`] = metrics[s.key][algo].execution_time;
           }
         });
       }
@@ -60,7 +76,7 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
       if (metrics[s.key]) {
         ['ga', 'aco', 'pso'].forEach(algo => {
           if (metrics[s.key][algo]) {
-             dataPoint[`${algo.toUpperCase()}_Pressure`] = metrics[s.key][algo].pressure_points_count || 0;
+             dataPoint[`${algo.toUpperCase()}_Pressure`] = metrics[s.key][algo].total_bottleneck_load || metrics[s.key][algo].pressure_points_count || 0;
           }
         });
       }
@@ -205,6 +221,31 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
                   Generating scenarios and running algorithms. This may take a moment...
                 </div>
               )}
+
+              {isComplete && metrics._best_overall_algorithm && (
+                <div className="overall-winner-banner" style={{
+                  background: 'linear-gradient(135deg, #f0fdfa, #ccfbf1)',
+                  border: '1px solid #5eead4',
+                  borderRadius: '12px',
+                  padding: '16px 24px',
+                  marginBottom: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '16px'
+                }}>
+                  <div style={{ background: '#14b8a6', color: 'white', padding: '12px', borderRadius: '12px' }}>
+                    <Trophy size={24} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', color: '#0f766e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      Recommended Algorithm: <strong>{ALGO_CONFIG[metrics._best_overall_algorithm]?.name || metrics._best_overall_algorithm.toUpperCase()}</strong>
+                    </h3>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#0f766e', opacity: 0.8 }}>
+                      Based on comprehensive rank evaluation of Fitness, Execution Time, Route Success, and Bottleneck Load across all flood intensities.
+                    </p>
+                  </div>
+                </div>
+              )}
               
               <div className="scenario-grid">
                 {SCENARIOS.map(scenario => {
@@ -242,8 +283,8 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
                                     </span>
                                   </div>
                                   <div className="sac-metric">
-                                    <span className="sac-lbl">Bottlenecks</span>
-                                    <span className="sac-val">{result.pressure_points_count}</span>
+                                    <span className="sac-lbl" title="Total evacuees stuck at bottleneck junctions">Bottleneck Load</span>
+                                    <span className="sac-val">{result.total_bottleneck_load?.toLocaleString() || result.pressure_points_count}</span>
                                   </div>
                                   <div className="sac-metric">
                                     <span className="sac-lbl">Evacuated</span>
@@ -266,20 +307,44 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
             <div className="charts-view">
               <div className="chart-container" style={{ marginBottom: '24px' }}>
                 <div className="chart-header">
-                  <h3>Success Rate Resilience</h3>
-                  <p>How well each algorithm maintains routing success as flood severity increases.</p>
+                  <h3>Route Quality (Fitness Score)</h3>
+                  <p>Total evacuation cost (Weighted Distance + Time + Penalties). Lower is Better.</p>
                 </div>
                 <div className="chart-wrapper">
                   <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                    <BarChart data={fitnessChartData} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="name" />
-                      <YAxis domain={[0, 100]} label={{ value: 'Success %', angle: -90, position: 'insideLeft' }} />
+                      <YAxis label={{ value: 'Cost (Millions)', angle: -90, position: 'insideLeft' }} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => [`${value.toFixed(2)}M`, 'Fitness']}
+                      />
+                      <Legend />
+                      <Bar dataKey="GA_Fitness" name="GA" fill={ALGO_CONFIG.ga.color} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ACO_Fitness" name="ACO" fill={ALGO_CONFIG.aco.color} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="PSO_Fitness" name="PSO" fill={ALGO_CONFIG.pso.color} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="chart-container" style={{ marginBottom: '24px' }}>
+                <div className="chart-header">
+                  <h3>Computational Efficiency</h3>
+                  <p>Algorithm execution time across scenarios (Lower = Faster).</p>
+                </div>
+                <div className="chart-wrapper">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={timeChartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" />
+                      <YAxis label={{ value: 'Seconds', angle: -90, position: 'insideLeft' }} />
                       <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
                       <Legend />
-                      <Bar dataKey="GA_Success" name="GA" fill={ALGO_CONFIG.ga.color} radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="ACO_Success" name="ACO" fill={ALGO_CONFIG.aco.color} radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="PSO_Success" name="PSO" fill={ALGO_CONFIG.pso.color} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="GA_Time" name="GA" fill={ALGO_CONFIG.ga.color} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ACO_Time" name="ACO" fill={ALGO_CONFIG.aco.color} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="PSO_Time" name="PSO" fill={ALGO_CONFIG.pso.color} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -287,15 +352,15 @@ export function ScenarioAnalysisPopup({ isOpen, onClose, metrics, locationName }
               
               <div className="chart-container">
                 <div className="chart-header">
-                  <h3>Pressure Points (Bottlenecks)</h3>
-                  <p>Number of congested intersections identified in the routes (Lower = Better).</p>
+                  <h3>Bottleneck Load (Evacuees)</h3>
+                  <p>Total number of people routed through congested intersections (Lower = Better).</p>
                 </div>
                 <div className="chart-wrapper">
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={pressureChartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="name" />
-                      <YAxis />
+                      <YAxis label={{ value: 'Stuck Evacuees', angle: -90, position: 'insideLeft' }} />
                       <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
                       <Legend />
                       <Bar dataKey="GA_Pressure" name="GA" fill={ALGO_CONFIG.ga.color} radius={[4, 4, 0, 0]} />

@@ -310,7 +310,10 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
             }
 
             if (data.scenario_analysis_done) {
-                setScenarioMetrics(data.metrics);
+                const finalMetrics = { ...data.metrics };
+                finalMetrics._best_overall_algorithm = data.best_overall_algorithm;
+                finalMetrics._algorithm_scores = data.algorithm_scores;
+                setScenarioMetrics(finalMetrics);
                 setIsScenarioAnalysing(false);
                 setScenarioProgress('');
                 setScenarioAnalysisOpen(true);
