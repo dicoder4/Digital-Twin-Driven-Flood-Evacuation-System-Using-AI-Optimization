@@ -89,6 +89,10 @@ export default function App() {
   const [metroStations, setMetroStations] = useState([]);
   const [metroLines, setMetroLines] = useState([]);
 
+  // ── DRA Pin-Drop ─────────────────────────────────────────────
+  const [pinDropMode, setPinDropMode] = useState(false);
+  const [pinResolvedHobli, setPinResolvedHobli] = useState(null);
+
   // ── Sidebar resize ────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const sidebarRef = useRef(null);
@@ -518,21 +522,37 @@ export default function App() {
           {/* ── SETUP TAB ────────────────────────────────── */}
           <div style={{ display: activeTab === 'setup' ? 'block' : 'none' }}>
             {isDraMode ? (
-              <DraSidebar
-                allHoblis={regions.allHoblis}
-                selHobli={regions.selHobli}
-                onHobli={handleHobli}
-                onLoad={handleLoadRegion}
-                loading={regionLoading}
-                loaded={regionLoaded}
-                loadedHobli={loadedHobli}
-                rainfallMm={rainfallMm}
-                onRainfallChange={setRainfallMm}
-                steps={steps}
-                onStepsChange={setSteps}
-                onRunEvacuation={handleDraRunEvacuation}
-                simulationRunning={sim.isRunning}
-              />
+                <DraSidebar
+                  allHoblis={regions.allHoblis}
+                  selHobli={regions.selHobli}
+                  onHobli={handleHobli}
+                  onLoad={handleLoadRegion}
+                  loading={regionLoading}
+                  loaded={regionLoaded}
+                  loadedHobli={loadedHobli}
+                  rainfallMm={rainfallMm}
+                  onRainfallChange={setRainfallMm}
+                  onRunEvacuation={handleDraRunEvacuation}
+                  simulationRunning={sim.isRunning}
+                  pinDropMode={pinDropMode}
+                  onTogglePinDrop={() => {
+                    setPinDropMode(v => !v);
+                    if (pinDropMode) {
+                      setMapPinBox(null);
+                      setPinResolvedHobli(null);
+                    }
+                  }}
+                  pinResolvedHobli={pinResolvedHobli}
+                  onRunPinSimulation={async () => {
+                    if (!pinResolvedHobli?.hobli_name) return;
+                    // Switch region to the resolved hobli, then run
+                    await handleLoadRegion(pinResolvedHobli.hobli_name);
+                    sim.start(pinResolvedHobli.hobli_name, rainfallMm, steps, decayFactor, false, true, 'ga', 0);
+                    setActiveTab('evacuation');
+                    setPinDropMode(false);
+                    setMapPinBox(null);
+                  }}
+                />
             ) : (
               <>
                 <RegionSelector
@@ -727,9 +747,16 @@ export default function App() {
               compareActiveAlgo={compareActiveAlgo}
               onSetCompareAlgo={setCompareActiveAlgo}
               isDraMode={isDraMode}
+              user={user}
               evacuationPlan={sim.evacuationPlan || []}
               onRerunWithSuggestions={handleRerunWithSuggestions}
               simulationParams={{ rainfall_mm: rainfallMm, steps, decay_factor: decayFactor, population: populationCount }}
+              floodData={sim.floodData}
+              roadsData={sim.roadsData}
+              trafficRoadsData={sim.trafficRoadsData}
+              metroLines={metroLines}
+              metroStations={metroStations}
+              busManifest={busManifest}
             />
 
           </div>
@@ -817,10 +844,20 @@ export default function App() {
         busManifest={busManifest}
         selectedBusId={selectedBusId}
         mapPinBox={mapPinBox}
-        onMapClick={(lat, lon) => {
+        onMapClick={async (lat, lon) => {
+          if (isDraMode && pinDropMode) {
+            setMapPinBox({ lat, lon });
+            try {
+              const res = await axios.post(`${API_URL}/resolve-pin`, { lat, lon });
+              setPinResolvedHobli(res.data);
+            } catch (err) {
+              console.error("Failed to resolve pin:", err);
+              setPinResolvedHobli({ error: "Failed to resolve location" });
+            }
+            return;
+          }
           setMapPinBox(prev => {
             if (!prev) return { lat, lon };
-            // Increased proximity threshold (~500m area) to ensure easy removal
             const dist = Math.abs(prev.lat - lat) + Math.abs(prev.lon - lon);
             if (dist < 0.005) return null; 
             return { lat, lon };

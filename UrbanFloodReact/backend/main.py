@@ -377,6 +377,44 @@ async def get_metro_stations(hobli_name: str):
     return await service.fetch_metro_stations(hobli_name)
 
 
+class ResolvePinRequest(BaseModel):
+    lat: float
+    lon: float
+
+@app.post("/resolve-pin")
+async def resolve_pin(req: ResolvePinRequest):
+    """Find the nearest hobli to a given lat/lon coordinate using haversine distance."""
+    import math
+
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371  # Earth radius in km
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    best_key, best_dist, best_name = None, float('inf'), None
+    for key, info in HOBLI_COORDS.items():
+        hlat = info.get("lat") or info.get("latitude")
+        hlon = info.get("lon") or info.get("lng") or info.get("longitude")
+        if hlat is None or hlon is None:
+            continue
+        d = haversine(req.lat, req.lon, float(hlat), float(hlon))
+        if d < best_dist:
+            best_dist = d
+            best_key = key
+            best_name = info.get("original_name") or info.get("display") or key
+
+    if best_key is None:
+        raise HTTPException(status_code=404, detail="No hobli coordinates found in registry")
+
+    return {
+        "hobli_name": best_name,
+        "hobli_key": best_key,
+        "distance_km": round(best_dist, 2),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

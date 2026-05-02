@@ -14,7 +14,11 @@ export function DraSidebar({
     rainfallMm,
     onRainfallChange,
     onRunEvacuation,
-    simulationRunning
+    simulationRunning,
+    pinDropMode,
+    onTogglePinDrop,
+    pinResolvedHobli,
+    onRunPinSimulation
 }) {
     const canLoad = !!selHobli && !loading;
     const [fetchingWeather, setFetchingWeather] = useState(false);
@@ -67,7 +71,53 @@ export function DraSidebar({
                 </button>
             </section>
 
-            {loaded && loadedHobli === selHobli && (
+            {(!loaded || loadedHobli !== selHobli) && (
+                <section className="panel" style={{ borderLeft: '3px solid #f97316', marginTop: '1rem' }}>
+                    <h3 className="panel-title" style={{ color: '#c2410c' }}><MapPin size={13} /> Pin-Drop Simulation</h3>
+                    <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
+                        Click anywhere on the map to automatically resolve the nearest administrative boundary and run a targeted simulation.
+                    </p>
+                    <button 
+                        className="btn-secondary" 
+                        onClick={onTogglePinDrop}
+                        style={{ 
+                            width: '100%', 
+                            display: 'flex', 
+                            justifyContent: 'center', 
+                            gap: '6px',
+                            background: pinDropMode ? '#fff7ed' : '',
+                            borderColor: pinDropMode ? '#f97316' : '',
+                            color: pinDropMode ? '#c2410c' : ''
+                        }}
+                    >
+                        <MapPin size={13} />
+                        {pinDropMode ? 'Cancel Pin Drop' : 'Drop Pin on Map'}
+                    </button>
+
+                    {pinResolvedHobli && (
+                        <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                            <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>Resolved Location</div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                                {pinResolvedHobli.hobli_name || 'Unknown Region'}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                {pinResolvedHobli.distance_km} km away
+                            </div>
+                            
+                            <button
+                                className="btn-primary"
+                                onClick={onRunPinSimulation}
+                                disabled={simulationRunning || !pinResolvedHobli.hobli_name}
+                                style={{ width: '100%', marginTop: '10px', backgroundColor: '#f97316', borderColor: '#ea580c' }}
+                            >
+                                {simulationRunning ? <><Loader size={13} className="spin" /> Initialising...</> : <><Radio size={13} /> Run Here</>}
+                            </button>
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {loaded && loadedHobli === selHobli && !pinDropMode && (
                 <>
                     <section className="panel">
                         <h3 className="panel-title"><CloudRain size={13} /> Rainfall Parameters</h3>
@@ -101,7 +151,7 @@ export function DraSidebar({
                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                             >
                                 {fetchingWeather ? <Loader size={13} className="spin" /> : <CloudRain size={13} />}
-                                {fetchingWeather ? 'Fetching Open-Meteo...' : 'Fetch Real-Time Weather Data'}
+                                {fetchingWeather ? 'Fetching Open-Meteo...' : 'Fetch Weather Data'}
                             </button>
                             
                             {weatherCondition && (

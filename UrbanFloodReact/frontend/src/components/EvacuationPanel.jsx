@@ -7,10 +7,11 @@
  *  - Unreachable population alert
  */
 import { useMemo, useState, useEffect } from 'react';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit, Bell, Send } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
 import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
+import html2canvas from 'html2canvas';
 
 
 const ALGO_COLORS = {
@@ -171,8 +172,60 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
 }
 
 
-export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null, simulationParams = {} }) {
+export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null, simulationParams = {}, user = null, floodData = null, roadsData = null, trafficRoadsData = null, metroLines = null, metroStations = [], busManifest = null }) {
     const [genaiOpen, setGenaiOpen] = useState(false);
+    const [notifyLoading, setNotifyLoading] = useState(false);
+
+    const handleNotifyActions = async (targetSummary, targetPlan) => {
+        setNotifyLoading(true);
+        try {
+            // Use existing html2canvas logic if map exists, else null
+            let mapBase64 = null;
+            const mapEl = document.querySelector('.map-container') || document.querySelector('.maplibregl-map');
+            if (mapEl) {
+                const canvas = await html2canvas(mapEl, { useCORS: true, backgroundColor: null });
+                mapBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+            }
+
+            const isAuthority = user?.role === 'authority';
+            const endpoint = isAuthority ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
+            const url = `http://localhost:8000${endpoint}`;
+
+            const payload = {
+                user_data: user || { name: 'Guest', role: 'guest' },
+                researcher_data: user || { name: 'Guest', role: 'guest' },
+                evacuation_data: { ...targetSummary, algorithm: targetSummary.algorithm || 'AI Computed' },
+                location_data: { location_name: locationName, lat: 12.9716, lon: 77.5946 },
+                map_image_base64: mapBase64,
+                ai_report: isAuthority ? 'Emergency Mass SOS Broadcast Initiated.' : 'Please review evacuation metrics.',
+                map_state: {
+                    flood_geojson: floodData,
+                    roads_geojson: roadsData,
+                    traffic_geojson: trafficRoadsData,
+                    metro_geojson: metroLines,
+                    metro_stations: metroStations,
+                    bus_manifest: busManifest,
+                    evacuation_plan: targetPlan,
+                },
+                simulation_params: simulationParams,
+                frontend_base_url: window.location.origin
+            };
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error('Failed to send notification');
+            alert(isAuthority ? 'Mass SOS Broadcasted successfully.' : 'Authorities Notified successfully.');
+        } catch (err) {
+            console.error('Notification error:', err);
+            alert('Failed to send notification: ' + err.message);
+        } finally {
+            setNotifyLoading(false);
+        }
+    };
 
     // ── Analysis Logic ──
     const [analysisOpen, setAnalysisOpen] = useState(false);
@@ -554,6 +607,38 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </>
                 )}
 
+                {/* ── Emergency Actions (Compare Mode) ────────────────── */}
+                {ad && user?.role === 'authority' && (
+                    <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8, paddingBottom: 12 }}>
+                        <h3 className="panel-title" style={{ color: '#b91c1c' }}>
+                            <Bell size={13} /> Emergency Actions
+                        </h3>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                            <button
+                                onClick={() => handleNotifyActions(ad, compareResults[compareActiveAlgo]?.evacuation_plan ?? [])}
+                                disabled={notifyLoading}
+                                style={{
+                                    flex: 1,
+                                    background: user.role === 'authority' ? '#ef4444' : '#f59e0b',
+                                    color: '#fff', border: 'none', borderRadius: '6px',
+                                    cursor: notifyLoading ? 'not-allowed' : 'pointer',
+                                    padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    gap: '6px', fontSize: '13px', fontWeight: 600,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                    opacity: notifyLoading ? 0.7 : 1,
+                                    animation: user.role === 'authority' && !notifyLoading ? 'pulse 2s infinite' : 'none'
+                                }}>
+                                {notifyLoading ? 'Processing...' : (
+                                    <>
+                                        <Send size={14} />
+                                        {user.role === 'authority' ? 'Broadcast Mass SOS' : 'Notify Authorities'}
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </section>
+                )}
+
                 {/* ── GenAI Agent (compare mode) ─────────────────── */}
                 {ad && (
                     <section className="panel evac-section genai-dropdown">
@@ -695,6 +780,38 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </div>
                 )}
             </section>
+
+            {/* ── Emergency Actions (Single Mode) ──────────────────── */}
+            {summary && user?.role === 'authority' && (
+                <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8, paddingBottom: 12 }}>
+                    <h3 className="panel-title" style={{ color: '#b91c1c' }}>
+                        <Bell size={13} /> Emergency Actions
+                    </h3>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                            onClick={() => handleNotifyActions(summary, evacuationPlan)}
+                            disabled={notifyLoading}
+                            style={{
+                                flex: 1,
+                                background: user.role === 'authority' ? '#ef4444' : '#f59e0b',
+                                color: '#fff', border: 'none', borderRadius: '6px',
+                                cursor: notifyLoading ? 'not-allowed' : 'pointer',
+                                padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                gap: '6px', fontSize: '13px', fontWeight: 600,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                opacity: notifyLoading ? 0.7 : 1,
+                                animation: user.role === 'authority' && !notifyLoading ? 'pulse 2s infinite' : 'none'
+                            }}>
+                            {notifyLoading ? 'Processing...' : (
+                                <>
+                                    <Send size={14} />
+                                    {user.role === 'authority' ? 'Broadcast Mass SOS' : 'Notify Authorities'}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </section>
+            )}
 
             {/* ── GenAI Agent ────────────────────────────────── */}
             {summary && (

@@ -1,442 +1,165 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Droplets, ShieldAlert, Navigation, Activity, Users, Map, Eye, EyeOff } from 'lucide-react';
+import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
+const labelStyle = { display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' };
+const inputStyle = { width: '100%', padding: '11px 16px', fontSize: '0.9rem', border: '2px solid #e2e8f0', borderRadius: '10px', outline: 'none', color: '#1e293b', transition: 'border-color 0.2s', background: 'white', boxSizing: 'border-box' };
+const eyeBtnStyle = { position: 'absolute', top: 0, right: '12px', bottom: 0, display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0 };
+
+function FeatureCard({ icon, title, desc }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px' }}>
+      <div style={{ background: 'rgba(30,58,138,0.5)', padding: '8px', borderRadius: '10px', display: 'flex', flexShrink: 0 }}>{icon}</div>
+      <div>
+        <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: '#e0edff' }}>{title}</h3>
+        <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: 'rgba(191,219,254,0.7)', lineHeight: 1.4 }}>{desc}</p>
+      </div>
+    </div>
+  );
+}
 
 const LoginPage = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    username: '',
-    password: '',
-    confirmPassword: '',
-    name: '',
-    email: '',
-    phone: '',
-    address: '',
-    role: 'authority',
-  });
-  
-  // Backwards compatibility with existing logic
-  const username = formData.username;
-  const password = formData.password;
-  
+  const [formData, setFormData] = useState({ username: '', password: '', confirmPassword: '', name: '', email: '', phone: '', address: '', role: 'authority' });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const visited = localStorage.getItem('hasVisitedBefore');
-    if (!visited) {
-      setIsFirstVisit(true);
-      localStorage.setItem('hasVisitedBefore', 'true');
-    }
-  }, []);
-
-  const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  useEffect(() => { const visited = localStorage.getItem('hasVisitedBefore'); if (!visited) { setIsFirstVisit(true); localStorage.setItem('hasVisitedBefore', 'true'); } }, []);
+  const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleAuth = async (e) => {
-    e.preventDefault();
-    setError(null);
-
-    // Frontend validation for strong password
+    e.preventDefault(); setError(null);
     if (isRegistering) {
-      if (formData.password !== formData.confirmPassword) {
-        setError("Passwords do not match.");
-        return;
-      }
-
+      if (formData.password !== formData.confirmPassword) { setError("Passwords do not match."); return; }
       const pwd = formData.password;
-      if (pwd.length < 8 || !/[A-Z]/.test(pwd) || !/\d/.test(pwd) || !/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) {
-        setError("Password must be at least 8 characters, with 1 uppercase, 1 number, and 1 special character.");
-        return;
-      }
+      if (pwd.length < 8 || !/[A-Z]/.test(pwd) || !/\d/.test(pwd) || !/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) { setError("Password must be at least 8 characters, with 1 uppercase, 1 number, and 1 special character."); return; }
     }
-
     setLoading(true);
-
     const endpoint = isRegistering ? 'register' : 'login';
-    const payload = isRegistering 
-      ? formData 
-      : { username: formData.username, password: formData.password };
-
+    const payload = isRegistering ? formData : { username: formData.username, password: formData.password };
     try {
-      const response = await fetch(`http://localhost:8000/auth/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `${isRegistering ? 'Registration' : 'Login'} failed`);
-      }
-
-      const responseData = await response.json();
-      login(responseData.user);
-      navigate('/');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      const response = await fetch(`http://localhost:8000/auth/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail || `${isRegistering ? 'Registration' : 'Login'} failed`); }
+      const responseData = await response.json(); login(responseData.user); navigate('/');
+    } catch (err) { setError(err.message); } finally { setLoading(false); }
   };
 
   const handleDemoLogin = async (role) => {
-    setError(null);
-    setLoading(true);
-
+    setError(null); setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/auth/demo-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Demo login failed');
-      }
-
-      const responseData = await response.json();
-      login(responseData.user);
-      navigate('/');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      const response = await fetch('http://localhost:8000/auth/demo-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+      if (!response.ok) throw new Error('Demo login failed');
+      const responseData = await response.json(); login(responseData.user); navigate('/');
+    } catch (err) { setError(err.message); } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex bg-slate-50 font-sans">
-      {/* Left Side - Branding/Hero */}
-      <div className="hidden lg:flex lg:w-1/2 bg-blue-600 relative overflow-hidden items-center justify-center p-12">
-        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-700 to-blue-900 opacity-90"></div>
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-blue-500 opacity-20 blur-3xl"></div>
-        <div className="absolute top-20 right-20 w-72 h-72 rounded-full bg-blue-400 opacity-20 blur-3xl"></div>
-        
-        <div className="relative z-10 text-white w-full max-w-lg">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="bg-white p-3 rounded-2xl shadow-xl">
-              <Droplets size={36} className="text-blue-600" />
+    <div style={{ height: '100vh', display: 'flex', fontFamily: "'Inter', sans-serif", background: '#f8fafc', overflow: 'hidden' }}>
+      {/* Left Hero */}
+      <div style={{ display: 'none', width: '50%', background: 'linear-gradient(145deg, #1e3a8a 0%, #1d4ed8 50%, #2563eb 100%)', position: 'relative', overflow: 'hidden' }} className="login-hero-panel">
+        <div style={{ position: 'absolute', bottom: '-80px', left: '-60px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(59,130,246,0.15)', filter: 'blur(60px)' }} />
+        <div style={{ position: 'absolute', top: '60px', right: '-40px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(96,165,250,0.12)', filter: 'blur(50px)' }} />
+        <div style={{ position: 'relative', zIndex: 10, color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%', padding: '3rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
+            <div style={{ background: 'white', padding: '10px', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex' }}>
+              <Droplets size={32} color="#2563eb" />
             </div>
-            <h1 className="text-5xl font-extrabold tracking-tight">Flood Evac AI</h1>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>Flood Evac AI</h1>
+              <div style={{ fontSize: '0.85rem', color: 'rgba(191,219,254,0.9)', fontWeight: 500, marginTop: '2px' }}>Digital Twin–Driven Evacuation System</div>
+            </div>
           </div>
-          <h2 className="text-3xl font-semibold mb-6 text-blue-50 leading-snug">Digital Twin–Driven Evacuation System</h2>
-          <p className="text-blue-200 text-xl mb-12 leading-relaxed">
-            A dynamic simulation platform for urban planners and disaster authorities. Integrating real-time environmental data, physics-based flood modeling, and advanced AI optimization to generate dynamic, life-saving evacuation strategies.
+          <div style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '12px 16px', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#e0edff' }}>🏙️ Bangalore Urban Flood Monitoring</div>
+            <div style={{ fontSize: '0.82rem', color: 'rgba(191,219,254,0.75)', marginTop: '3px' }}>ಬೆಂಗಳೂರು ನಗರ ಪ್ರವಾಹ ಸ್ಥಳಾಂತರ ವ್ಯವಸ್ಥೆ</div>
+          </div>
+          <p style={{ color: 'rgba(191,219,254,0.85)', fontSize: '1rem', lineHeight: 1.65, marginBottom: '2rem', maxWidth: '480px' }}>
+            A simulation platform for urban planners and disaster authorities — integrating environmental data, physics-based flood modeling, and advanced AI optimization for life-saving evacuation strategies.
           </p>
-          <div className="space-y-6">
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Map size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">High-Fidelity Digital Twin</h3>
-                <p className="text-blue-200/90 mt-1">Automatic generation of urban road networks and elevation models via OSM and SRTM data, rendered interactively with MapLibre.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Activity size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">Physics-Based Flood Simulation</h3>
-                <p className="text-blue-200/90 mt-1">Dynamic SWM-style modeling of flood propagation driven by historic or manual variable rainfall intensity and terrain topology.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Navigation size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">Metaheuristic AI Routing</h3>
-                <p className="text-blue-200/90 mt-1">Deploying Genetic Algorithms (GA), Ant Colony Optimization (ACO), and PSO synchronized with live TomTom traffic feeds.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><Users size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">Agentic GenAI Co-Pilot</h3>
-                <p className="text-blue-200/90 mt-1">Dual FastMCP architecture powering an autonomous Expert Panel to synthesize the physics simulation into actionable NDRF directives.</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-800/40 p-3 rounded-xl border border-blue-400/20"><ShieldAlert size={24} className="text-blue-300" /></div>
-              <div>
-                <h3 className="font-semibold text-lg text-blue-50">Multimodal Resource Management</h3>
-                <p className="text-blue-200/90 mt-1">Real-time monitoring of safe shelters, city bus fleet manifests, IDRN tactical supplies, and Metro mass-transit integrity.</p>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '2rem' }}>
+            <FeatureCard icon={<Map size={20} color="#93c5fd" />} title="High-Fidelity Digital Twin" desc="Urban road networks & elevation models via OSM and SRTM, rendered with MapLibre." />
+            <FeatureCard icon={<Navigation size={20} color="#93c5fd" />} title="Metaheuristic AI Routing" desc="GA, ACO & PSO algorithms synchronized with TomTom traffic feeds for optimal evacuation." />
+            <FeatureCard icon={<ShieldAlert size={20} color="#93c5fd" />} title="Multimodal Resource Management" desc="Shelter monitoring, bus fleet manifests, IDRN supplies & Metro transit integrity." />
+          </div>
+          <div style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <a href="#" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#93c5fd', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none' }}><ExternalLink size={14} /> Learn more about this project</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(191,219,254,0.6)', fontSize: '0.8rem' }}>
+              <Mail size={13} /><a href="mailto:floodevacuationsystem@gmail.com" style={{ color: 'rgba(191,219,254,0.7)', textDecoration: 'none' }}>floodevacuationsystem@gmail.com</a>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 sm:p-12 xl:p-24 relative">
-        <div className="max-w-lg xl:max-w-2xl w-full">
-          {/* Mobile Header */}
-          <div className="lg:hidden flex items-center justify-center gap-3 mb-10">
-            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg">
-               <Droplets size={28} className="text-white" />
-            </div>
-            <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Flood Evac AI</h1>
+      {/* Right Form */}
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem', overflowY: 'auto' }} className="login-form-panel">
+        <div style={{ maxWidth: '520px', width: '100%', margin: 'auto 0' }}>
+          <div className="login-mobile-header" style={{ display: 'none', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '2rem' }}>
+            <div style={{ background: '#2563eb', padding: '8px', borderRadius: '12px', display: 'flex' }}><Droplets size={24} color="white" /></div>
+            <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 800, color: '#1e293b' }}>Flood Evac AI</h1>
           </div>
-
-          <div className="mb-12 text-center lg:text-left">
-            <h2 className="text-4xl xl:text-5xl font-bold text-slate-800 mb-4 tracking-tight">
-              {isRegistering ? 'Create Account' : (isFirstVisit ? 'Welcome' : 'Welcome Back')}
-            </h2>
-            <p className="text-slate-500 text-xl xl:text-2xl">
-              {isRegistering ? 'Register to access the simulation platform.' : 'Sign in to access the command center.'}
-            </p>
+          <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
+            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: '#1e293b', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>{isRegistering ? 'Create Account' : (isFirstVisit ? 'Welcome' : 'Welcome Back')}</h2>
+            <p style={{ color: '#64748b', fontSize: '1rem' }}>{isRegistering ? 'Register to access the simulation platform.' : 'Sign in to access the command center.'}</p>
           </div>
+          {error && (<div style={{ marginBottom: '1.5rem', background: '#fef2f2', border: '1px solid #fecaca', padding: '12px 16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}><ShieldAlert size={18} color="#ef4444" style={{ flexShrink: 0 }} /><p style={{ margin: 0, fontSize: '0.85rem', color: '#b91c1c', fontWeight: 500 }}>{error}</p></div>)}
 
-          {error && (
-            <div className="mb-8 bg-red-50 border border-red-200 p-4 rounded-xl flex items-center gap-3">
-              <ShieldAlert size={20} className="text-red-500 flex-shrink-0" />
-              <p className="text-sm text-red-700 font-medium">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleAuth} className="space-y-6">
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {isRegistering && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Account Type</label>
-                    <select
-                      name="role"
-                      value={formData.role}
-                      onChange={handleInputChange}
-                      className="w-full px-5 py-3 xl:py-4 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 transition duration-200 outline-none hover:border-slate-300 bg-white"
-                    >
-                      <option value="authority">🏢 Disaster Response Authority</option>
-                      <option value="researcher">🔬 Researcher</option>
-                    </select>
-                  </div>
-                  
-                  <div className="md:col-span-2">
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Choose Username</label>
-                    <input
-                      type="text"
-                      name="username"
-                      required
-                      value={formData.username}
-                      onChange={handleInputChange}
-                      className="w-full px-5 py-3 xl:py-4 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                      placeholder="Enter desired username"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Full Name</label>
-                    <input
-                      type="text"
-                      name="name"
-                      required
-                      value={formData.name}
-                      onChange={handleInputChange}
-                      className="w-full px-5 py-3 xl:py-4 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                      placeholder="Enter your full name"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Email Address</label>
-                    <input
-                      type="email"
-                      name="email"
-                      required
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full px-5 py-3 xl:py-4 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                      placeholder="Enter your email address"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Phone Number</label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      required
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      className="w-full px-5 py-3 xl:py-4 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                      placeholder="Enter your ph. number (e.g., +911234567890)"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Address</label>
-                    <input
-                      type="text"
-                      name="address"
-                      required
-                      value={formData.address}
-                      onChange={handleInputChange}
-                      className="w-full px-5 py-3 xl:py-4 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                      placeholder="Enter your address (e.g., 123 Main St, City, State)"
-                    />
-                  </div>
-                  
-                  <div className="md:col-span-2">
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Password</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        name="password"
-                        required
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        className="w-full px-5 py-3 xl:py-4 pr-12 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                        placeholder="Enter password"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm xl:text-base font-semibold text-slate-700 mb-2">Confirm Password</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        name="confirmPassword"
-                        required
-                        value={formData.confirmPassword}
-                        onChange={handleInputChange}
-                        className="w-full px-5 py-3 xl:py-4 pr-12 text-base border-2 border-slate-200 rounded-xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                        placeholder="Confirm password"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Account Type</label><select name="role" value={formData.role} onChange={handleInputChange} style={inputStyle}><option value="authority">🏢 Disaster Response Authority</option><option value="researcher">🔬 Researcher</option></select></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Choose Username</label><input type="text" name="username" required value={formData.username} onChange={handleInputChange} style={inputStyle} placeholder="Enter desired username" /></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Full Name</label><input type="text" name="name" required value={formData.name} onChange={handleInputChange} style={inputStyle} placeholder="Enter your full name" /></div>
+                <div><label style={labelStyle}>Email</label><input type="email" name="email" required value={formData.email} onChange={handleInputChange} style={inputStyle} placeholder="Enter email" /></div>
+                <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" required value={formData.phone} onChange={handleInputChange} style={inputStyle} placeholder="+91..." /></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Address</label><input type="text" name="address" required value={formData.address} onChange={handleInputChange} style={inputStyle} placeholder="Enter your address" /></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Password</label><div style={{ position: 'relative' }}><input type={showPassword ? "text" : "password"} name="password" required value={formData.password} onChange={handleInputChange} style={{ ...inputStyle, paddingRight: '44px' }} placeholder="Enter password" /><button type="button" onClick={() => setShowPassword(!showPassword)} style={eyeBtnStyle}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Confirm Password</label><div style={{ position: 'relative' }}><input type={showPassword ? "text" : "password"} name="confirmPassword" required value={formData.confirmPassword} onChange={handleInputChange} style={{ ...inputStyle, paddingRight: '44px' }} placeholder="Confirm password" /><button type="button" onClick={() => setShowPassword(!showPassword)} style={eyeBtnStyle}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+              </div>
             )}
-
-            {!isRegistering && (
-              <>
-                <div>
-                  <label className="block text-base xl:text-lg font-semibold text-slate-700 mb-3">Username</label>
-                  <input
-                    type="text"
-                    name="username"
-                    required
-                    value={formData.username}
-                    onChange={handleInputChange}
-                    className="w-full px-6 py-4 xl:py-5 text-lg border-2 border-slate-200 rounded-2xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                    placeholder="Enter your username"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-base xl:text-lg font-semibold text-slate-700 mb-3">Password</label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      required
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      className="w-full px-6 py-4 xl:py-5 pr-14 text-lg border-2 border-slate-200 rounded-2xl focus:ring-0 focus:border-blue-500 text-slate-800 placeholder-slate-400 transition duration-200 outline-none hover:border-slate-300"
-                      placeholder="••••••••"
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-                    >
-                      {showPassword ? <EyeOff size={24} /> : <Eye size={24} />}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="pt-4">
-              <button
-                type="submit"
-                disabled={loading}
-                className={"w-full bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold py-5 xl:py-6 text-lg xl:text-xl rounded-2xl shadow-lg shadow-blue-600/30 transition-all duration-200 flex justify-center items-center " + (loading ? 'opacity-70 cursor-not-allowed' : '')}
-              >
-                {loading ? 'Processing...' : (isRegistering ? 'Register & Login' : 'Sign In')}
+            {!isRegistering && (<>
+              <div><label style={{ ...labelStyle, fontSize: '0.95rem' }}>Username</label><input type="text" name="username" required value={formData.username} onChange={handleInputChange} style={{ ...inputStyle, padding: '14px 18px', fontSize: '1rem', borderRadius: '14px' }} placeholder="Enter your username" /></div>
+              <div><label style={{ ...labelStyle, fontSize: '0.95rem' }}>Password</label><div style={{ position: 'relative' }}><input type={showPassword ? "text" : "password"} name="password" required value={formData.password} onChange={handleInputChange} style={{ ...inputStyle, padding: '14px 18px', paddingRight: '48px', fontSize: '1rem', borderRadius: '14px' }} placeholder="••••••••" /><button type="button" onClick={() => setShowPassword(!showPassword)} style={eyeBtnStyle}>{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></div></div>
+            </>)}
+            <div style={{ paddingTop: '0.5rem' }}>
+              <button type="submit" disabled={loading} style={{ width: '100%', background: loading ? '#93c5fd' : 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', fontWeight: 700, padding: '14px', fontSize: '1rem', borderRadius: '14px', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', boxShadow: '0 4px 14px rgba(37,99,235,0.3)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                {loading ? 'Processing...' : (isRegistering ? 'Register & Login' : 'Sign In')}{!loading && <ArrowRight size={18} />}
               </button>
             </div>
-            
-            <div className="text-center mt-6">
-              <p className="text-slate-600 text-lg">
-                {isRegistering ? "Already have an account?" : "Don't have an account?"}
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setIsRegistering(!isRegistering);
-                    setError(null);
-                  }}
-                  className="ml-2 font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  {isRegistering ? "Sign In" : "Register"}
-                </button>
-              </p>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>{isRegistering ? "Already have an account?" : "Don't have an account?"}<button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(null); }} style={{ marginLeft: '6px', fontWeight: 700, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0 }}>{isRegistering ? "Sign In" : "Register"}</button></p>
             </div>
           </form>
 
-          <div className="mt-10">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-slate-50 text-slate-400 font-semibold tracking-wide uppercase text-xs">Sandbox Access</span>
-              </div>
+          <div style={{ marginTop: '2rem' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} /><span style={{ padding: '0 14px', color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Sandbox Access</span><div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             </div>
-
-            <div className="mt-8 grid grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('authority')}
-                disabled={loading}
-                className="flex flex-col items-center justify-center px-4 py-4 border-2 border-orange-100 bg-white hover:bg-orange-50 hover:border-orange-200 rounded-xl text-orange-600 transition-all duration-200 group active:scale-95 shadow-sm"
-              >
-                <div className="bg-orange-50 p-2 rounded-full mb-2 group-hover:bg-orange-100 transition-colors">
-                  <ShieldAlert size={20} className="text-orange-500" />
-                </div>
-                <span className="text-sm font-bold">Authority Role</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <button type="button" onClick={() => handleDemoLogin('authority')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #fed7aa', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div style={{ background: '#fff7ed', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><ShieldAlert size={18} color="#f97316" /></div>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#9a3412' }}>Authority Role</span>
+                <span style={{ fontSize: '0.7rem', color: '#c2410c', marginTop: '2px' }}>DRA Command Panel</span>
               </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('researcher')}
-                disabled={loading}
-                className="flex flex-col items-center justify-center px-4 py-4 border-2 border-purple-100 bg-white hover:bg-purple-50 hover:border-purple-200 rounded-xl text-purple-600 transition-all duration-200 group active:scale-95 shadow-sm"
-              >
-                <div className="bg-purple-50 p-2 rounded-full mb-2 group-hover:bg-purple-100 transition-colors">
-                  <Navigation size={20} className="text-purple-500" />
-                </div>
-                <span className="text-sm font-bold">Researcher Role</span>
+              <button type="button" onClick={() => handleDemoLogin('researcher')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #ddd6fe', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div style={{ background: '#f5f3ff', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><Navigation size={18} color="#7c3aed" /></div>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#5b21b6' }}>Researcher Role</span>
+                <span style={{ fontSize: '0.7rem', color: '#6d28d9', marginTop: '2px' }}>Full Simulation Lab</span>
               </button>
             </div>
           </div>
-          
-          <p className="mt-12 text-center text-sm text-slate-400 font-medium">
-            &copy; 2026 Digital Twin Flood Evacuation
-          </p>
+          <p style={{ marginTop: '2rem', textAlign: 'center', fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>&copy; 2026 Digital Twin Flood Evacuation</p>
         </div>
       </div>
+
+      <style>{`
+        @media (min-width: 1024px) { .login-hero-panel { display: flex !important; } .login-form-panel { width: 50% !important; } .login-mobile-header { display: none !important; } }
+        @media (max-width: 1023px) { .login-mobile-header { display: flex !important; } }
+      `}</style>
     </div>
   );
 };

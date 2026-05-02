@@ -124,7 +124,7 @@ export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
                         }}
                     >
                         {fetchingWeather ? <Loader size={13} className="spin" /> : <CloudRain size={13} />}
-                        {fetchingWeather ? 'Fetching Weather...' : 'Fetch Real-Time Weather'}
+                        {fetchingWeather ? 'Fetching Weather...' : 'Fetch Weather Data'}
                     </button>
 
                     {weatherStatus && (

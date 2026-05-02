@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 import LoginPage from './pages/LoginPage.jsx'
+import SharedReportPage from './pages/SharedReportPage.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext'
 
 const PrivateRoute = ({ children }) => {
@@ -17,6 +18,7 @@ createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/report/:reportId" element={<SharedReportPage />} />
           <Route 
             path="/*" 
             element={
