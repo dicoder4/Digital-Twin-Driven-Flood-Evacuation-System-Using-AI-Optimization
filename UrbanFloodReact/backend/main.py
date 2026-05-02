@@ -383,7 +383,10 @@ class ResolvePinRequest(BaseModel):
 
 @app.post("/resolve-pin")
 async def resolve_pin(req: ResolvePinRequest):
-    """Find the nearest hobli to a given lat/lon coordinate using haversine distance."""
+    """Find the nearest hobli to a given lat/lon coordinate using haversine distance.
+    Only considers hoblis present in REGIONS_TREE (i.e. those with rainfall data and
+    full simulation support), so the returned hobli is always fully functional.
+    """
     import math
 
     def haversine(lat1, lon1, lat2, lon2):
@@ -393,8 +396,21 @@ async def resolve_pin(req: ResolvePinRequest):
         a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
+    # Build set of norm_keys that are valid (present in REGIONS_TREE with rainfall data)
+    valid_keys: set[str] = set()
+    for district_data in REGIONS_TREE.values():
+        for hobli_list in district_data.values():
+            for display_name in hobli_list:
+                valid_keys.add(norm_key(display_name))
+
+    # Search candidates: prefer REGIONS_TREE hoblis; fall back to all HOBLI_COORDS if tree is empty
+    candidate_keys = valid_keys if valid_keys else set(HOBLI_COORDS.keys())
+
     best_key, best_dist, best_name = None, float('inf'), None
-    for key, info in HOBLI_COORDS.items():
+    for key in candidate_keys:
+        info = HOBLI_COORDS.get(key)
+        if not info:
+            continue
         hlat = info.get("lat") or info.get("latitude")
         hlon = info.get("lon") or info.get("lng") or info.get("longitude")
         if hlat is None or hlon is None:

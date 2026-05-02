@@ -96,22 +96,31 @@ export function DraSidebar({
 
                     {pinResolvedHobli && (
                         <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                            <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>Resolved Location</div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
-                                {pinResolvedHobli.hobli_name || 'Unknown Region'}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                                {pinResolvedHobli.distance_km} km away
-                            </div>
-                            
-                            <button
-                                className="btn-primary"
-                                onClick={onRunPinSimulation}
-                                disabled={simulationRunning || !pinResolvedHobli.hobli_name}
-                                style={{ width: '100%', marginTop: '10px', backgroundColor: '#f97316', borderColor: '#ea580c' }}
-                            >
-                                {simulationRunning ? <><Loader size={13} className="spin" /> Initialising...</> : <><Radio size={13} /> Run Here</>}
-                            </button>
+                            {pinResolvedHobli.loading ? (
+                                <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Loader size={12} className="spin" /> Resolving location…
+                                </div>
+                            ) : pinResolvedHobli.error ? (
+                                <div style={{ fontSize: '12px', color: '#dc2626' }}>{pinResolvedHobli.error}</div>
+                            ) : (
+                                <>
+                                    <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>Resolved Location</div>
+                                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                                        {pinResolvedHobli.hobli_name}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                        {pinResolvedHobli.distance_km} km away
+                                    </div>
+                                    <button
+                                        className="btn-primary"
+                                        onClick={onRunPinSimulation}
+                                        disabled={simulationRunning}
+                                        style={{ width: '100%', marginTop: '10px', backgroundColor: '#f97316', borderColor: '#ea580c' }}
+                                    >
+                                        {simulationRunning ? <><Loader size={13} className="spin" /> Initialising...</> : <><Radio size={13} /> Run Here</>}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
                 </section>

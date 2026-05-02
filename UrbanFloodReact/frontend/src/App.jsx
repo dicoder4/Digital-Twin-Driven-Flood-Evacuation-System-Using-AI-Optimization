@@ -92,6 +92,7 @@ export default function App() {
   // ── DRA Pin-Drop ─────────────────────────────────────────────
   const [pinDropMode, setPinDropMode] = useState(false);
   const [pinResolvedHobli, setPinResolvedHobli] = useState(null);
+  const pinAbortRef = useRef(null);
 
   // ── Sidebar resize ────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -846,13 +847,18 @@ export default function App() {
         mapPinBox={mapPinBox}
         onMapClick={async (lat, lon) => {
           if (isDraMode && pinDropMode) {
+            // Cancel any in-flight resolve-pin request
+            if (pinAbortRef.current) pinAbortRef.current.abort();
+            pinAbortRef.current = new AbortController();
             setMapPinBox({ lat, lon });
+            setPinResolvedHobli({ loading: true });
             try {
-              const res = await axios.post(`${API_URL}/resolve-pin`, { lat, lon });
+              const res = await axios.post(`${API_URL}/resolve-pin`, { lat, lon }, { signal: pinAbortRef.current.signal });
               setPinResolvedHobli(res.data);
             } catch (err) {
+              if (axios.isCancel(err) || err.name === 'CanceledError') return;
               console.error("Failed to resolve pin:", err);
-              setPinResolvedHobli({ error: "Failed to resolve location" });
+              setPinResolvedHobli({ error: "Could not resolve location. Try a different spot." });
             }
             return;
           }
