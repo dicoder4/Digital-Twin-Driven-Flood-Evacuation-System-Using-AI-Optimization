@@ -7,8 +7,11 @@ import axios from 'axios';
 import { CloudRain, Calendar, ChevronDown, Loader } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
 import { API_URL } from '../config';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 
 export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
+    const { lang } = useLanguage();
     const [mode, setMode] = useState('historical'); // 'historical' | 'manual'
     const [records, setRecords] = useState([]);
     const [selDate, setSelDate] = useState('');
@@ -52,20 +55,20 @@ export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
 
     return (
         <section className="panel">
-            <h3 className="panel-title"><CloudRain size={13} /> Rainfall Input</h3>
+            <h3 className="panel-title"><CloudRain size={13} /> {t('rainfall_input', lang)}</h3>
 
             <div className="mode-toggle">
-                <button className={`toggle-btn ${mode === 'historical' ? 'active' : ''}`} onClick={() => setMode('historical')}>Historical</button>
-                <button className={`toggle-btn ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')}>Manual</button>
+                <button className={`toggle-btn ${mode === 'historical' ? 'active' : ''}`} onClick={() => setMode('historical')}>{t('historical', lang)}</button>
+                <button className={`toggle-btn ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')}>{t('manual', lang)}</button>
             </div>
 
             {mode === 'historical' ? (
                 records.length > 0 ? (
                     <>
-                        <label className="field-label"><Calendar size={11} /> Select Date</label>
+                        <label className="field-label"><Calendar size={11} /> {t('select_date', lang)}</label>
                         <div className="select-wrap">
                             <select value={selDate} onChange={e => handleDateSelect(e.target.value)} className="styled-select">
-                                <option value="">— Pick a date —</option>
+                                <option value="">{t('pick_date', lang)}</option>
                                 {records.map(r => (
                                     <option key={r.date} value={r.date}>
                                         {r.date} — {r.actual_mm} mm
@@ -77,22 +80,22 @@ export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
 
                         {selRec && (
                             <div className="rainfall-card">
-                                <div className="rf-row"><span>Actual</span><strong>{selRec.actual_mm} mm</strong></div>
-                                {selRec.normal_mm != null && <div className="rf-row"><span>Normal</span><strong>{selRec.normal_mm} mm</strong></div>}
+                                <div className="rf-row"><span>{t('actual', lang)}</span><strong>{selRec.actual_mm} mm</strong></div>
+                                {selRec.normal_mm != null && <div className="rf-row"><span>{t('normal', lang)}</span><strong>{selRec.normal_mm} mm</strong></div>}
                                 {selRec.dep_pct != null && (
-                                    <div className="rf-row"><span>Risk</span><RiskBadge depPct={selRec.dep_pct} /></div>
+                                    <div className="rf-row"><span>{t('risk', lang)}</span><RiskBadge depPct={selRec.dep_pct} /></div>
                                 )}
-                                <div className="rf-row"><span>→ Using</span><strong>{rainfallMm} mm</strong></div>
+                                <div className="rf-row"><span>{t('using', lang)}</span><strong>{rainfallMm} mm</strong></div>
                             </div>
                         )}
                     </>
                 ) : (
-                    <p className="hint-text">No historical data for this hobli.</p>
+                    <p className="hint-text">{t('no_historical', lang)}</p>
                 )
             ) : (
                 <>
                     <label className="field-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Rainfall (mm)</span>
+                        <span>{t('rainfall_mm', lang)}</span>
                         <span style={{ fontWeight: 600, color: '#2563eb' }}>{rainfallMm} mm</span>
                     </label>
                     <input
@@ -112,19 +115,10 @@ export function RainfallPanel({ loadedHobli, rainfallMm, onRainfallChange }) {
                         className="btn-secondary"
                         onClick={handleFetchWeather}
                         disabled={fetchingWeather || !loadedHobli}
-                        style={{
-                            marginTop: '1rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            width: '100%',
-                            fontSize: '12px',
-                            padding: '8px'
-                        }}
+                        style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', fontSize: '12px', padding: '8px' }}
                     >
                         {fetchingWeather ? <Loader size={13} className="spin" /> : <CloudRain size={13} />}
-                        {fetchingWeather ? 'Fetching Weather...' : 'Fetch Weather Data'}
+                        {fetchingWeather ? t('fetching_weather', lang) : t('fetch_weather', lang)}
                     </button>
 
                     {weatherStatus && (

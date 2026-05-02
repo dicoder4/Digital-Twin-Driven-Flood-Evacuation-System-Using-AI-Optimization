@@ -13,6 +13,8 @@ import { useState, useEffect } from 'react';
 import { ShieldCheck, Loader, MapPin, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../config';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 
 const TYPE_EMOJI = {
     school: '🏫', hospital: '🏥', community_centre: '🏛',
@@ -24,6 +26,7 @@ const TYPE_LABEL = {
 };
 
 export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
+    const { lang } = useLanguage();
     const [loading, setLoading] = useState(false);
     const [error, setError]     = useState('');
 
@@ -33,9 +36,9 @@ export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
         setError('');
         try {
             const res = await axios.get(`${API_URL}/shelters/${encodeURIComponent(loadedHobli)}`);
-            onCandidates(res.data.shelters);          // raw candidates → App
+            onCandidates(res.data.shelters);
         } catch {
-            setError('Could not fetch shelters. Ensure the region is loaded.');
+            setError(t('shelters_error', lang));
         } finally {
             setLoading(false);
         }
@@ -56,7 +59,7 @@ export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
 
     return (
         <section className="panel">
-            <h3 className="panel-title"><ShieldCheck size={13} /> Evacuation Shelters</h3>
+            <h3 className="panel-title"><ShieldCheck size={13} /> {t('evac_shelters', lang)}</h3>
 
             <button
                 className={`btn-primary${loading ? ' btn-disabled' : ''}`}
@@ -64,8 +67,8 @@ export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
                 disabled={loading}
             >
                 {loading
-                    ? <><Loader size={12} className="spin" /> Searching OSM…</>
-                    : <><MapPin size={12} /> {shelters ? 'Refresh Shelters' : 'Find Shelters'}</>
+                    ? <><Loader size={12} className="spin" /> {t('searching_osm', lang)}</>
+                    : <><MapPin size={12} /> {shelters ? t('refresh_shelters', lang) : t('find_shelters', lang)}</>
                 }
             </button>
 
@@ -73,22 +76,20 @@ export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
 
             {shelters && (
                 <>
-                    {/* Summary — always visible */}
                     <div className="shelter-summary">
                         <span className="shelter-safe">{safeCount}</span>
-                        <span className="shelter-muted">safe · {totalCount} total</span>
+                        <span className="shelter-muted">{t('shelter_safe', lang).replace('✓ ', '')} · {totalCount} {lang === 'en' ? 'total' : 'ಒಟ್ಟು'}</span>
                     </div>
 
                     {hasSynth && (
                         <p className="pop-hint" style={{ color: '#d97706' }}>
-                            ⚠ Approximate locations (no OSM match)
+                            {t('approx_locations', lang)}
                         </p>
                     )}
 
-                    {/* Collapsible list */}
                     <details className="shelter-details">
                         <summary className="shelter-details-summary">
-                            <ChevronDown size={11} /> View shelter list
+                            <ChevronDown size={11} /> {t('view_shelter_list', lang)}
                         </summary>
                         <ul className="shelter-list">
                             {shelters.map(s => (
@@ -98,11 +99,11 @@ export function SheltersPanel({ loadedHobli, shelters, onCandidates }) {
                                     <div className="shelter-info">
                                         <div className="shelter-name">{s.name}</div>
                                         <div className="shelter-meta">
-                                            {TYPE_LABEL[s.type] ?? s.type} · {s.capacity.toLocaleString()} cap
+                                            {TYPE_LABEL[s.type] ?? s.type} · {s.capacity.toLocaleString()} {t('cap', lang)}
                                         </div>
                                     </div>
                                     <span className={`shelter-badge ${s.safe ? 'shelter-badge-safe' : 'shelter-badge-unsafe'}`}>
-                                        {s.safe ? '✓ Safe' : '✗ Flooded'}
+                                        {s.safe ? t('shelter_safe', lang) : t('shelter_flooded', lang)}
                                     </span>
                                 </li>
                             ))}

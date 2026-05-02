@@ -2,8 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { MessageCircle, Send, Loader, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 
 export function EvacuationChat({ context, evacuationPlan = [] }) {
+    const { lang } = useLanguage();
     const [messages, setMessages] = useState([
         {
             role: 'assistant',
@@ -83,7 +86,7 @@ export function EvacuationChat({ context, evacuationPlan = [] }) {
         <section className="panel evac-section chat-section" style={{ height: 'calc(100% - 2rem)', display: 'flex', flexDirection: 'column', borderTop: 'none', marginTop: 0 }}>
             <div className="chat-header">
                 <h3 className="panel-title" style={{ color: '#6d28d9', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                    <MessageCircle size={14} /> Ask AI
+                    <MessageCircle size={14} /> {t('ask_ai', lang)}
                 </h3>
             </div>
 
@@ -114,7 +117,7 @@ export function EvacuationChat({ context, evacuationPlan = [] }) {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask something..."
+                    placeholder={t('chat_placeholder', lang)}
                     disabled={isStreaming || !context}
                 />
                 <button

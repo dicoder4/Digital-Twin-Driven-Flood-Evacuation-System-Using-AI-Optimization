@@ -6,9 +6,12 @@ import { API_URL } from '../config';
 import { ShieldAlert, Clock, Users, MapPin, Building2, ChevronLeft, Download, ExternalLink, Activity, Info, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 
 export default function SharedReportPage() {
     const { reportId } = useParams();
+    const { lang } = useLanguage();
     const [report, setReport] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -40,7 +43,7 @@ export default function SharedReportPage() {
             <div className="flex items-center justify-center h-screen bg-slate-900 text-white">
                 <div className="flex flex-col items-center gap-4">
                     <Activity className="animate-pulse text-blue-400" size={48} />
-                    <p className="text-lg font-medium tracking-wide">Loading Secure Digital Twin Report...</p>
+                    <p className="text-lg font-medium tracking-wide">{t('loading_report', lang)}</p>
                 </div>
             </div>
         );
@@ -51,10 +54,10 @@ export default function SharedReportPage() {
             <div className="flex items-center justify-center h-screen bg-slate-50">
                 <div className="bg-white p-8 rounded-2xl shadow-xl border border-red-100 max-w-md text-center">
                     <ShieldAlert className="text-red-500 mx-auto mb-4" size={56} />
-                    <h1 className="text-2xl font-bold text-slate-800 mb-2">Report Unavailable</h1>
+                    <h1 className="text-2xl font-bold text-slate-800 mb-2">{t('report_unavailable', lang)}</h1>
                     <p className="text-slate-600 mb-6">{error}</p>
                     <Link to="/login" className="inline-block px-6 py-2.5 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors">
-                        Back to Login
+                        {t('back_to_login', lang)}
                     </Link>
                 </div>
             </div>
@@ -66,10 +69,10 @@ export default function SharedReportPage() {
             <div className="flex items-center justify-center h-screen bg-slate-50">
                 <div className="bg-white p-8 rounded-2xl shadow-xl border border-red-100 max-w-md text-center">
                     <ShieldAlert className="text-red-500 mx-auto mb-4" size={56} />
-                    <h1 className="text-2xl font-bold text-slate-800 mb-2">Report Data Missing</h1>
+                    <h1 className="text-2xl font-bold text-slate-800 mb-2">{t('report_data_missing', lang)}</h1>
                     <p className="text-slate-600 mb-6">This report was generated without interactive map data. Please generate a new report from the main simulation panel.</p>
                     <Link to="/" className="inline-block px-6 py-2.5 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors">
-                        Return to Digital Twin
+                        {t('return_to_twin', lang)}
                     </Link>
                 </div>
             </div>
@@ -87,13 +90,13 @@ export default function SharedReportPage() {
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-widest">
                             <ShieldAlert size={14} className="text-blue-600" />
-                            Official Report
+                            {t('official_report', lang)}
                         </div>
                         <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-mono uppercase">{reportId}</span>
                     </div>
 
                     <h1 className="text-2xl font-black text-slate-900 leading-tight mb-2 uppercase italic tracking-tighter">
-                        {report.is_sos ? 'Mass SOS Alert' : 'Evacuation Analysis'}
+                        {report.is_sos ? t('mass_sos_alert', lang) : t('evac_analysis', lang)}
                     </h1>
                     <p className="text-slate-500 text-sm mb-6 flex items-center gap-2">
                         <MapPin size={12} /> {location} · {timestamp}
@@ -102,11 +105,11 @@ export default function SharedReportPage() {
                     {/* Stats Grid */}
                     <div className="grid grid-cols-2 gap-3 mb-8">
                         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                            <div className="text-[10px] font-bold text-blue-600 uppercase mb-1">Evacuated</div>
+                            <div className="text-[10px] font-bold text-blue-600 uppercase mb-1">{t('evacuated', lang)}</div>
                             <div className="text-2xl font-black text-blue-900 tracking-tighter">{evacuation_data.evacuated_count?.toLocaleString()}</div>
                         </div>
                         <div className="bg-red-50/50 p-4 rounded-xl border border-red-100">
-                            <div className="text-[10px] font-bold text-red-600 uppercase mb-1">Success Rate</div>
+                            <div className="text-[10px] font-bold text-red-600 uppercase mb-1">{t('success_rate', lang)}</div>
                             <div className="text-2xl font-black text-red-900 tracking-tighter">{((evacuation_data.evacuated_count / evacuation_data.total_at_risk) * 100).toFixed(1)}%</div>
                         </div>
                     </div>
@@ -115,7 +118,7 @@ export default function SharedReportPage() {
                     {ai_report && (
                         <div className="mb-8 p-5 bg-slate-900 rounded-2xl text-slate-200 border border-slate-800 shadow-lg">
                             <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider mb-3">
-                                <BrainCircuit size={16} /> Civic AI Expert Field Analysis
+                                <BrainCircuit size={16} /> {t('civic_ai_analysis', lang)}
                             </div>
                             <div className="prose prose-invert prose-sm max-w-none prose-headings:text-white prose-strong:text-blue-300">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{ai_report}</ReactMarkdown>
@@ -126,7 +129,7 @@ export default function SharedReportPage() {
                     {/* Shelter List */}
                     <div className="mb-8">
                         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <Building2 size={12} /> Active Safe Centers
+                            <Building2 size={12} /> {t('active_safe_centers', lang)}
                         </h3>
                         <div className="space-y-2">
                             {map_state.evacuation_plan.map(s => (
@@ -158,7 +161,7 @@ export default function SharedReportPage() {
 
                     <div className="pt-6 border-t border-slate-100 text-[10px] text-slate-400 font-medium">
                         <p>Report prepared by {researcher || authority || 'Urban Flood Model'}</p>
-                        <p>© 2026 Digital Twin Flood Evacuation System</p>
+                        <p>© 2026 {t('dt_footer', lang)}</p>
                     </div>
                 </div>
             </aside>
@@ -186,18 +189,18 @@ export default function SharedReportPage() {
                 <div className="absolute top-6 right-6 z-10 flex flex-col items-end gap-2 pointer-events-none">
                     <div className="bg-white/90 backdrop-blur px-4 py-2 rounded-full shadow-xl border border-slate-200 flex items-center gap-3">
                         <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                        <span className="text-xs font-black text-slate-800 uppercase tracking-tighter italic">Live Digital Twin View</span>
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-tighter italic">{t('live_dt_view', lang)}</span>
                     </div>
                     {simulation_params && (
                         <div className="bg-slate-900/80 backdrop-blur px-4 py-2 rounded-2xl shadow-xl border border-slate-700 text-white flex flex-col items-end">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Scenario Parameters</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">{t('scenario_params', lang)}</span>
                             <div className="flex gap-4">
                                 <div className="text-right">
-                                    <span className="block text-[8px] text-slate-500 font-black uppercase">Rainfall</span>
+                                    <span className="block text-[8px] text-slate-500 font-black uppercase">{t('rainfall', lang)}</span>
                                     <span className="text-sm font-black text-blue-400 italic leading-none">{simulation_params.rainfall_mm}mm</span>
                                 </div>
                                 <div className="text-right">
-                                    <span className="block text-[8px] text-slate-500 font-black uppercase">Decay</span>
+                                    <span className="block text-[8px] text-slate-500 font-black uppercase">{t('decay', lang)}</span>
                                     <span className="text-sm font-black text-blue-400 italic leading-none">{simulation_params.decay_factor}</span>
                                 </div>
                             </div>

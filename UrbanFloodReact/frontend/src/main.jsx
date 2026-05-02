@@ -6,6 +6,7 @@ import App from './App.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import SharedReportPage from './pages/SharedReportPage.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { LanguageProvider } from './context/LanguageContext'
 
 const PrivateRoute = ({ children }) => {
   const { isAuthenticated } = useAuth()
@@ -14,6 +15,7 @@ const PrivateRoute = ({ children }) => {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
+    <LanguageProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -30,5 +32,6 @@ createRoot(document.getElementById('root')).render(
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </LanguageProvider>
   </StrictMode>,
 )
