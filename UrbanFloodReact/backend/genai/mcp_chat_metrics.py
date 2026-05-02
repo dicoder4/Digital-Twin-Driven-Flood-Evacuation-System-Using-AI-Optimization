@@ -76,19 +76,23 @@ def _tools_to_openai_schema(tools: list) -> list[dict]:
     return schemas
 
 
-async def _groq_create_with_retry(groq_client: Any, max_retries: int = 4, **kwargs) -> Any:
-    """Call groq_client.chat.completions.create with exponential backoff on 429."""
+async def _groq_create_with_retry(groq_client: Any, max_retries: int = 2, **kwargs) -> Any:
+    """Call groq_client.chat.completions.create with backoff on 429.
+    Only 2 retries — if daily token quota is exhausted, retrying indefinitely wastes time."""
     import groq as groq_lib
-    delay = 15
+    delay = 10
     for attempt in range(max_retries):
         try:
             return groq_client.chat.completions.create(**kwargs)
-        except groq_lib.RateLimitError:
+        except groq_lib.RateLimitError as e:
+            # If it's a daily token limit (not per-minute), don't retry at all
+            if "tokens per day" in str(e):
+                raise
             if attempt == max_retries - 1:
                 raise
             print(f"[MCP] Groq 429 — backing off {delay}s (attempt {attempt+1}/{max_retries})")
             await asyncio.sleep(delay)
-            delay = min(delay * 2, 60)
+            delay = min(delay * 2, 30)
 
 
 def _fill_tool_defaults(fn_name: str, args: dict, enriched_context: dict) -> dict:

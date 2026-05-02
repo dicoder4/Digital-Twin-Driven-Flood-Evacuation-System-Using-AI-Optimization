@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, BarChart2, Activity, Zap, Shield,
   TrendingDown, TrendingUp, Info, Cpu,
-  ChevronRight, BrainCircuit, MessageSquare,
-  BarChartIcon, Layers, Timer, Repeat, RefreshCw
+  ChevronRight, BrainCircuit,
+  BarChartIcon, Layers, RefreshCw,
+  GitCompare, AlertCircle, Clock, Hash, Wrench
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Bar, BarChart
+  Tooltip, ResponsiveContainer, Legend, Bar, BarChart
 } from 'recharts';
 import { API_URL } from '../config';
 import ReactMarkdown from 'react-markdown';
@@ -30,6 +31,12 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
   const [activeTab, setActiveTab] = useState('summary');
   const [chatMessages, setChatMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
+
+  // MCP vs Non-MCP state
+  const [mcpResults, setMcpResults] = useState(null);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [mcpError, setMcpError] = useState(null);
+  const [expandedQ, setExpandedQ] = useState(null);
 
   // NOTE: `algoKeys` is computed below from `metrics` to avoid showing empty cards.
 
@@ -184,6 +191,44 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
     }
   };
 
+  const runMcpComparison = async () => {
+    if (mcpResults || mcpLoading) return;
+    setMcpLoading(true);
+    setMcpError(null);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 300000); // 5 min hard timeout
+      const res = await fetch(`${API_URL}/research/mcp-comparison`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_judge: false }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      if (!data.results || data.results.length === 0) {
+        throw new Error('Both Gemini and Groq API quotas are exhausted. Please try again tomorrow when quotas reset (midnight PST / ~12:30 PM IST).');
+      }
+      // Check if all results failed (empty responses)
+      const allFailed = data.results.every(r =>
+        !r.non_mcp?.response_text && !r.mcp?.response_text
+      );
+      if (allFailed) {
+        throw new Error('API quotas exhausted (Gemini: 20 req/day, Groq: 100K tokens/day). Results will be available after midnight PST (~12:30 PM IST).');
+      }
+      setMcpResults(data.results || []);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        setMcpError('Request timed out after 5 minutes. Both API quotas may be exhausted — try again tomorrow.');
+      } else {
+        setMcpError(err.message);
+      }
+    } finally {
+      setMcpLoading(false);
+    }
+  };
+
   return (
     <div className="analysis-overlay">
       <div className="analysis-modal">
@@ -231,6 +276,15 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
             }}
           >
             <Cpu size={14} /> Research Planner AI
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'mcp' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('mcp');
+              runMcpComparison();
+            }}
+          >
+            <GitCompare size={14} /> MCP vs Non-MCP
           </button>
         </div>
 
@@ -420,6 +474,184 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                   <strong>Capacity Penalty</strong> indicates how much the algorithm "cheated" by overflowing shelters. A high penalty usually means the algorithm failed to find a valid distribution.
                 </span>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'mcp' && (
+            <div className="mcp-container">
+              {mcpLoading && (
+                <div className="mcp-loading">
+                  <div className="spinner" />
+                  <p>Running MCP vs Non-MCP comparison across {5} questions…</p>
+                  <p className="mcp-loading-sub">This may take 60–120s due to LLM calls and inter-question delays.</p>
+                </div>
+              )}
+
+              {mcpError && (
+                <div className="mcp-error">
+                  <AlertCircle size={18} />
+                  <div>
+                    <strong>Comparison failed</strong>
+                    <p>{mcpError}</p>
+                  </div>
+                </div>
+              )}
+
+              {!mcpLoading && !mcpError && !mcpResults && (
+                <div className="mcp-empty">
+                  <GitCompare size={32} style={{ color: '#94a3b8' }} />
+                  <p>Click the tab to start the comparison.</p>
+                </div>
+              )}
+
+              {mcpResults && mcpResults.length > 0 && (() => {
+                // Compute averages
+                const scored = mcpResults.filter(r =>
+                  r.non_mcp?.auto_metrics && r.mcp?.auto_metrics
+                );
+                const nmAvgNum = scored.length
+                  ? (scored.reduce((s, r) => s + (r.non_mcp.auto_metrics.numeric_match_rate || 0), 0) / scored.length).toFixed(2)
+                  : '—';
+                const mcpAvgNum = scored.length
+                  ? (scored.reduce((s, r) => s + (r.mcp.auto_metrics.numeric_match_rate || 0), 0) / scored.length).toFixed(2)
+                  : '—';
+                const nmAvgLat = scored.length
+                  ? (scored.reduce((s, r) => s + (r.non_mcp.latency_s || 0), 0) / scored.length).toFixed(1)
+                  : '—';
+                const mcpAvgLat = scored.length
+                  ? (scored.reduce((s, r) => s + (r.mcp.latency_s || 0), 0) / scored.length).toFixed(1)
+                  : '—';
+
+                return (
+                  <>
+                    {/* Summary strip */}
+                    <div className="mcp-summary-strip">
+                      <div className="mcp-summary-card nm">
+                        <span className="mcp-mode-label">Non-MCP</span>
+                        <div className="mcp-summary-stats">
+                          <div><Clock size={12} /><span>{nmAvgLat}s avg latency</span></div>
+                          <div><Hash size={12} /><span>{nmAvgNum} numeric accuracy</span></div>
+                          <div><Wrench size={12} /><span>0 tool calls</span></div>
+                        </div>
+                      </div>
+                      <div className="mcp-vs-badge">VS</div>
+                      <div className="mcp-summary-card mcp">
+                        <span className="mcp-mode-label">MCP</span>
+                        <div className="mcp-summary-stats">
+                          <div><Clock size={12} /><span>{mcpAvgLat}s avg latency</span></div>
+                          <div><Hash size={12} /><span>{mcpAvgNum} numeric accuracy</span></div>
+                          <div><Wrench size={12} /><span>{scored.reduce((s, r) => s + (r.mcp.tool_call_count || 0), 0)} total tool calls</span></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Per-question results */}
+                    <div className="mcp-questions">
+                      {mcpResults.map((r, i) => {
+                        const nm = r.non_mcp || {};
+                        const mc = r.mcp || {};
+                        const isOpen = expandedQ === i;
+                        const nmWins = (nm.auto_metrics?.numeric_match_rate || 0) >= (mc.auto_metrics?.numeric_match_rate || 0);
+
+                        return (
+                          <div key={i} className="mcp-question-card">
+                            <div
+                              className="mcp-question-header"
+                              onClick={() => setExpandedQ(isOpen ? null : i)}
+                            >
+                              <div className="mcp-q-label">
+                                <span className="mcp-q-num">Q{i + 1}</span>
+                                <span className="mcp-q-text">{r.question}</span>
+                              </div>
+                              <div className="mcp-q-badges">
+                                <span className={`mcp-winner-badge ${nmWins ? 'nm' : 'mcp'}`}>
+                                  {nmWins ? 'Non-MCP' : 'MCP'} wins
+                                </span>
+                                <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: '0.2s' }} />
+                              </div>
+                            </div>
+
+                            {/* Metrics row always visible */}
+                            <div className="mcp-metrics-row">
+                              <div className="mcp-metric-cell">
+                                <span className="mcp-metric-label">Provider</span>
+                                <span className="mcp-metric-nm">{nm.provider || '—'}</span>
+                                <span className="mcp-metric-sep">/</span>
+                                <span className="mcp-metric-mcp">{mc.provider || '—'}</span>
+                              </div>
+                              <div className="mcp-metric-cell">
+                                <span className="mcp-metric-label">Latency</span>
+                                <span className="mcp-metric-nm">{nm.latency_s ?? '—'}s</span>
+                                <span className="mcp-metric-sep">/</span>
+                                <span className="mcp-metric-mcp">{mc.latency_s ?? '—'}s</span>
+                              </div>
+                              <div className="mcp-metric-cell">
+                                <span className="mcp-metric-label">Words</span>
+                                <span className="mcp-metric-nm">{nm.response_words ?? '—'}</span>
+                                <span className="mcp-metric-sep">/</span>
+                                <span className="mcp-metric-mcp">{mc.response_words ?? '—'}</span>
+                              </div>
+                              <div className="mcp-metric-cell">
+                                <span className="mcp-metric-label">Numeric Acc.</span>
+                                <span className="mcp-metric-nm">{nm.auto_metrics?.numeric_match_rate?.toFixed(2) ?? '—'}</span>
+                                <span className="mcp-metric-sep">/</span>
+                                <span className="mcp-metric-mcp">{mc.auto_metrics?.numeric_match_rate?.toFixed(2) ?? '—'}</span>
+                              </div>
+                              <div className="mcp-metric-cell">
+                                <span className="mcp-metric-label">Tool Calls</span>
+                                <span className="mcp-metric-nm">0</span>
+                                <span className="mcp-metric-sep">/</span>
+                                <span className="mcp-metric-mcp">{mc.tool_call_count ?? '—'}</span>
+                              </div>
+                            </div>
+
+                            {/* Tool trace + responses (expanded) */}
+                            {isOpen && (
+                              <div className="mcp-expanded">
+                                {mc.tool_calls?.length > 0 && (
+                                  <div className="mcp-tool-trace">
+                                    <span className="mcp-trace-label">Tools called:</span>
+                                    {mc.tool_calls.map((t, j) => (
+                                      <span key={j} className="mcp-tool-chip">{t.name}</span>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="mcp-responses">
+                                  <div className="mcp-response-col nm">
+                                    <div className="mcp-response-header">Non-MCP Response</div>
+                                    <div className="mcp-response-body">
+                                      {nm.response_text
+                                        ? nm.response_text.slice(0, 400) + (nm.response_text.length > 400 ? '…' : '')
+                                        : <em style={{ color: '#94a3b8' }}>No response (quota exhausted)</em>}
+                                    </div>
+                                  </div>
+                                  <div className="mcp-response-col mcp">
+                                    <div className="mcp-response-header">MCP Response</div>
+                                    <div className="mcp-response-body">
+                                      {mc.response_text
+                                        ? mc.response_text.slice(0, 400) + (mc.response_text.length > 400 ? '…' : '')
+                                        : <em style={{ color: '#94a3b8' }}>No response (quota exhausted)</em>}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mcp-footer-note">
+                      <Info size={12} />
+                      <span>
+                        <strong>NM = Non-MCP</strong> (static dump, ~7,600 words) vs <strong>MCP</strong> (minimal seed + live tool calls).
+                        Numeric accuracy = fraction of cited numbers matching actual simulation data.
+                        Latency includes all tool round-trips for MCP.
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -847,6 +1079,313 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
         @keyframes blink {
           0%, 100% { opacity: 0; }
           50% { opacity: 1; }
+        }
+
+        /* ── MCP vs Non-MCP tab ── */
+        .mcp-container {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .mcp-loading, .mcp-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          padding: 60px 20px;
+          color: #64748b;
+          font-size: 13px;
+          text-align: center;
+        }
+
+        .mcp-loading-sub {
+          font-size: 11px;
+          color: #94a3b8;
+          margin: 0;
+        }
+
+        .mcp-error {
+          display: flex;
+          gap: 12px;
+          align-items: flex-start;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 12px;
+          padding: 16px;
+          color: #991b1b;
+          font-size: 13px;
+        }
+
+        .mcp-error p { margin: 4px 0 0; font-size: 11px; color: #b91c1c; }
+
+        .mcp-summary-strip {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: white;
+          border-radius: 16px;
+          padding: 16px 20px;
+          border: 1px solid #e2e8f0;
+        }
+
+        .mcp-summary-card {
+          flex: 1;
+          padding: 12px 16px;
+          border-radius: 12px;
+        }
+
+        .mcp-summary-card.nm {
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+        }
+
+        .mcp-summary-card.mcp {
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
+        }
+
+        .mcp-mode-label {
+          display: block;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          margin-bottom: 8px;
+          color: #475569;
+        }
+
+        .mcp-summary-stats {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .mcp-summary-stats > div {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          color: #334155;
+          font-weight: 500;
+        }
+
+        .mcp-vs-badge {
+          font-size: 13px;
+          font-weight: 900;
+          color: #94a3b8;
+          padding: 0 8px;
+        }
+
+        .mcp-questions {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .mcp-question-card {
+          background: white;
+          border-radius: 14px;
+          border: 1px solid #e2e8f0;
+          overflow: hidden;
+        }
+
+        .mcp-question-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 16px;
+          cursor: pointer;
+          gap: 12px;
+        }
+
+        .mcp-question-header:hover {
+          background: #f8fafc;
+        }
+
+        .mcp-q-label {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex: 1;
+          min-width: 0;
+        }
+
+        .mcp-q-num {
+          font-size: 10px;
+          font-weight: 800;
+          background: #f1f5f9;
+          color: #475569;
+          padding: 3px 7px;
+          border-radius: 6px;
+          flex-shrink: 0;
+        }
+
+        .mcp-q-text {
+          font-size: 12px;
+          font-weight: 600;
+          color: #1e293b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .mcp-q-badges {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+
+        .mcp-winner-badge {
+          font-size: 10px;
+          font-weight: 700;
+          padding: 3px 8px;
+          border-radius: 6px;
+        }
+
+        .mcp-winner-badge.mcp {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .mcp-winner-badge.nm {
+          background: #dbeafe;
+          color: #1e40af;
+        }
+
+        .mcp-metrics-row {
+          display: flex;
+          gap: 0;
+          border-top: 1px solid #f1f5f9;
+          background: #fafafa;
+        }
+
+        .mcp-metric-cell {
+          flex: 1;
+          padding: 8px 12px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          border-right: 1px solid #f1f5f9;
+          gap: 2px;
+        }
+
+        .mcp-metric-cell:last-child { border-right: none; }
+
+        .mcp-metric-label {
+          font-size: 9px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #94a3b8;
+        }
+
+        .mcp-metric-nm {
+          font-size: 11px;
+          font-weight: 600;
+          color: #3b82f6;
+        }
+
+        .mcp-metric-mcp {
+          font-size: 11px;
+          font-weight: 600;
+          color: #10b981;
+        }
+
+        .mcp-metric-sep {
+          font-size: 10px;
+          color: #cbd5e1;
+        }
+
+        .mcp-expanded {
+          padding: 12px 16px;
+          border-top: 1px solid #f1f5f9;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .mcp-tool-trace {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .mcp-trace-label {
+          font-size: 10px;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: uppercase;
+        }
+
+        .mcp-tool-chip {
+          font-size: 10px;
+          font-weight: 600;
+          background: #f0fdf4;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+          padding: 2px 8px;
+          border-radius: 6px;
+        }
+
+        .mcp-responses {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+
+        .mcp-response-col {
+          border-radius: 10px;
+          overflow: hidden;
+          border: 1px solid #e2e8f0;
+        }
+
+        .mcp-response-col.nm { border-color: #bfdbfe; }
+        .mcp-response-col.mcp { border-color: #bbf7d0; }
+
+        .mcp-response-header {
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          padding: 6px 12px;
+          border-bottom: 1px solid #e2e8f0;
+        }
+
+        .mcp-response-col.nm .mcp-response-header {
+          background: #eff6ff;
+          color: #1e40af;
+          border-color: #bfdbfe;
+        }
+
+        .mcp-response-col.mcp .mcp-response-header {
+          background: #f0fdf4;
+          color: #166534;
+          border-color: #bbf7d0;
+        }
+
+        .mcp-response-body {
+          padding: 10px 12px;
+          font-size: 11px;
+          line-height: 1.6;
+          color: #334155;
+          background: white;
+          white-space: pre-wrap;
+        }
+
+        .mcp-footer-note {
+          background: #eff6ff;
+          border-radius: 12px;
+          padding: 12px 16px;
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          font-size: 11px;
+          color: #1e40af;
+          border: 1px solid #bfdbfe;
         }
       `}</style>
     </div>

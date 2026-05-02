@@ -224,8 +224,9 @@ async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
             groq_client = _get_groq_client()
             if groq_client:
                 import groq as groq_lib
-                delay = 15
-                for attempt in range(4):
+                import asyncio
+                delay = 10
+                for attempt in range(2):
                     try:
                         groq_resp = groq_client.chat.completions.create(
                             model="llama-3.3-70b-versatile",
@@ -237,13 +238,12 @@ async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
                             max_tokens=1500,
                         )
                         break
-                    except groq_lib.RateLimitError:
-                        if attempt == 3:
+                    except groq_lib.RateLimitError as e:
+                        if "tokens per day" in str(e) or attempt == 1:
                             raise
-                        import asyncio
                         print(f"[non-MCP] Groq 429 — backing off {delay}s")
                         await asyncio.sleep(delay)
-                        delay = min(delay * 2, 60)
+                        delay = min(delay * 2, 30)
                 text = groq_resp.choices[0].message.content or ""
                 result["provider"] = "groq"
                 result["prompt_words"] = len(groq_prompt.split())

@@ -213,7 +213,18 @@ async def research_mcp_comparison(req: MCPComparisonRequest):
 
     enriched = await build_expert_context(summary_data, evacuation_plan)
     questions = req.questions or DEFAULT_QUESTIONS
-    results   = await compare_many(questions, enriched, run_judge=req.run_judge)
+
+    try:
+        results = await asyncio.wait_for(
+            compare_many(questions, enriched, run_judge=req.run_judge),
+            timeout=290.0,  # 290s hard cap — just under browser's 5-min timeout
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Comparison timed out. Both Gemini and Groq API quotas are likely exhausted. Try again after midnight PST (~12:30 PM IST) when quotas reset."
+        )
+
     return {"count": len(results), "results": results}
 
 
