@@ -21,12 +21,9 @@ import re
 
 DEFAULT_QUESTIONS = [
     "Which shelter is most at risk of overflow and what should we do about it?",
-    "What is the safest evacuation route from the most flooded zone?",
     "How many people cannot be evacuated and why?",
     "Which roads are critical bottlenecks and how should NDRF approach them?",
     "Are there bus stops near the flooded zones that can support evacuation?",
-    "Which transit routes will be disabled by the current flood?",
-    "What are the unmet rescue needs, and who should we escalate to?",
     "Give me an overall situation report I can hand to the District Commissioner.",
 ]
 
@@ -260,9 +257,18 @@ async def compare_one(question: str, enriched_context: dict, run_judge: bool = T
     }
 
 
-async def compare_many(questions: list, enriched_context: dict, run_judge: bool = True) -> list:
-    """Convenience wrapper — runs compare_one over a list of questions sequentially."""
+async def compare_many(
+    questions: list,
+    enriched_context: dict,
+    run_judge: bool = True,
+    inter_question_delay_s: float = 8.0,
+) -> list:
+    """Runs compare_one over a list of questions sequentially with a delay between
+    each to avoid exhausting Groq's per-minute rate limit mid-run."""
+    import asyncio
     out = []
-    for q in questions:
+    for i, q in enumerate(questions):
         out.append(await compare_one(q, enriched_context, run_judge=run_judge))
+        if i < len(questions) - 1:
+            await asyncio.sleep(inter_question_delay_s)
     return out

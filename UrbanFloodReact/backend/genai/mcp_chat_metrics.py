@@ -8,10 +8,12 @@ non-streaming and records every tool call (name, args, result) plus
 token usage and latency. Leaves the production streaming path untouched.
 """
 
+import asyncio
 import json
 import os
 import time
 import inspect
+from typing import Any
 
 
 # Same system prompt as the production chat — keeps the comparison fair.
@@ -39,35 +41,203 @@ Rules:
 """
 
 
+def _tools_to_openai_schema(tools: list) -> list[dict]:
+    """Convert Python tool functions to OpenAI JSON schema format for Groq."""
+    PY_TO_JSON = {"str": "string", "float": "number", "int": "integer", "bool": "boolean"}
+    schemas = []
+    for fn in tools:
+        sig = inspect.signature(fn)
+        properties = {}
+        required = []
+        for name, param in sig.parameters.items():
+            ann = param.annotation
+            json_type = PY_TO_JSON.get(ann.__name__ if hasattr(ann, "__name__") else "", "string")
+            properties[name] = {"type": json_type}
+            doc_line = next(
+                (l.strip() for l in (fn.__doc__ or "").splitlines()
+                 if name.lower() in l.lower() and ":" in l), None
+            )
+            if doc_line:
+                properties[name]["description"] = doc_line
+            if param.default is inspect.Parameter.empty:
+                required.append(name)
+        schemas.append({
+            "type": "function",
+            "function": {
+                "name": fn.__name__,
+                "description": (fn.__doc__ or "").strip().split("\n")[0],
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    **({"required": required} if required else {}),
+                },
+            },
+        })
+    return schemas
+
+
+async def _groq_create_with_retry(groq_client: Any, max_retries: int = 4, **kwargs) -> Any:
+    """Call groq_client.chat.completions.create with exponential backoff on 429."""
+    import groq as groq_lib
+    delay = 15
+    for attempt in range(max_retries):
+        try:
+            return groq_client.chat.completions.create(**kwargs)
+        except groq_lib.RateLimitError:
+            if attempt == max_retries - 1:
+                raise
+            print(f"[MCP] Groq 429 — backing off {delay}s (attempt {attempt+1}/{max_retries})")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)
+
+
+def _fill_tool_defaults(fn_name: str, args: dict, enriched_context: dict) -> dict:
+    """Fill missing required args with sensible defaults from the simulation context."""
+    if fn_name == "analyze_transit_disruptions":
+        sim = enriched_context.get("simulation", {})
+        if not args.get("location_name"):
+            args["location_name"] = sim.get("location", "Bengaluru")
+        if args.get("flood_depth_m") is None:
+            args["flood_depth_m"] = 0.3
+    if fn_name == "check_bus_availability":
+        sim = enriched_context.get("simulation", {})
+        if args.get("lat") is None or args.get("lon") is None:
+            # Use centroid of Bengaluru if not provided
+            args.setdefault("lat", 12.9716)
+            args.setdefault("lon", 77.5946)
+    if fn_name == "identify_evacuation_hubs":
+        sim = enriched_context.get("simulation", {})
+        if not args.get("zone_name"):
+            args["zone_name"] = sim.get("location", "")
+    return args
+
+
+async def _run_groq_tool_loop(
+    groq_client: Any,
+    tools: list,
+    user_prompt: str,
+    result: dict,
+    enriched_context: dict,
+    max_loops: int = 10,
+) -> str:
+    """
+    Full OpenAI-format tool-calling loop for Groq with retry on 429.
+    Mirrors the Gemini loop: send → execute tools → feed results back → repeat.
+    """
+    tool_schemas = _tools_to_openai_schema(tools)
+    tool_map = {fn.__name__: fn for fn in tools}
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user",   "content": user_prompt},
+    ]
+
+    for _ in range(max_loops):
+        resp = await _groq_create_with_retry(
+            groq_client,
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            tools=tool_schemas,
+            tool_choice="auto",
+            temperature=0.2,
+            max_tokens=2000,
+        )
+        msg = resp.choices[0].message
+
+        if not msg.tool_calls:
+            return msg.content or ""
+
+        messages.append({
+            "role": "assistant",
+            "content": msg.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in msg.tool_calls
+            ],
+        })
+
+        for tc in msg.tool_calls:
+            fn_name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+
+            args = _fill_tool_defaults(fn_name, args, enriched_context)
+
+            func = tool_map.get(fn_name)
+            if func is None:
+                tool_result = f"Tool '{fn_name}' not found"
+            else:
+                try:
+                    if inspect.iscoroutinefunction(func):
+                        tool_result = await func(**args)
+                    else:
+                        tool_result = func(**args)
+                except Exception as e:
+                    tool_result = f"Error executing tool: {e}"
+
+            preview = (str(tool_result)[:300] + "...") if len(str(tool_result)) > 300 else str(tool_result)
+            result["tool_calls"].append({"name": fn_name, "args": args, "result_preview": preview})
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": str(tool_result),
+            })
+
+    # Max loops reached — ask for final answer
+    messages.append({"role": "user", "content": "Please summarize your findings based on the tool results above."})
+    final = await _groq_create_with_retry(
+        groq_client,
+        model="llama-3.3-70b-versatile",
+        messages=messages,
+        temperature=0.2,
+        max_tokens=2000,
+    )
+    return final.choices[0].message.content or ""
+
+
 def _load_tools():
-    """Re-export the same tool set used by stream_chat so behavior matches."""
+    """Full tool set — includes parameter-less discovery tools + parameterised query tools."""
     from genai.mcp_evacuation_server import (
-        narrate_best_route, analyze_road_conditions, get_rescue_guidelines,
-        check_bus_availability, analyze_transit_disruptions, identify_evacuation_hubs,
+        get_simulation_state, get_shelter_status, get_route_summary,
+        get_terrain_analysis, narrate_best_route, analyze_road_conditions,
+        get_rescue_guidelines, check_bus_availability, analyze_transit_disruptions,
+        identify_evacuation_hubs,
     )
     from genai.mcp_flood_intelligence_server import (
         get_metro_status, get_flood_impact, get_shelter_resource_map,
         get_vulnerability_hotspots,
     )
     return [
-        narrate_best_route, analyze_road_conditions, get_rescue_guidelines,
-        check_bus_availability, analyze_transit_disruptions, identify_evacuation_hubs,
-        get_metro_status, get_flood_impact, get_shelter_resource_map,
-        get_vulnerability_hotspots,
+        get_simulation_state, get_shelter_status, get_route_summary,
+        get_terrain_analysis, narrate_best_route, analyze_road_conditions,
+        get_rescue_guidelines, check_bus_availability, analyze_transit_disruptions,
+        identify_evacuation_hubs, get_metro_status, get_flood_impact,
+        get_shelter_resource_map, get_vulnerability_hotspots,
     ]
 
 
 def _minimal_seed(enriched_context: dict) -> dict:
     """
-    Strip the MCP arm's seed context down to a simulation summary only.
+    Strip the MCP arm's seed context to simulation summary + shelter overview only.
     This forces Gemini to call tools (get_shelter_status, get_route_summary,
     analyze_road_conditions, etc.) to fetch the detail it needs, rather than
     answering from the pre-loaded context dump.
+
+    Includes shelter_overview to help the model select appropriate tools, but NOT
+    the full shelter list (which would make tools redundant).
 
     Without this, Gemini sees 140 shelters inline and never calls a single tool —
     making the MCP arm functionally identical to the non-MCP arm.
     """
     sim = enriched_context.get("simulation", {})
+    overview = enriched_context.get("shelter_overview", {})
     return {
         "simulation_summary": {
             "location":               sim.get("location"),
@@ -77,11 +247,13 @@ def _minimal_seed(enriched_context: dict) -> dict:
             "total_at_risk_remaining":sim.get("total_at_risk_remaining"),
             "execution_time_s":       sim.get("execution_time_s"),
         },
-        "note": (
-            "This is a minimal seed context. Use the available tools to fetch "
-            "shelter status, route details, road conditions, terrain, metro disruptions, "
-            "rescue guidelines, and any other specifics needed to answer the question."
-        ),
+        "shelter_overview": overview,  # High-level counts only, NOT full shelter list
+        "available_tools": [
+            "get_simulation_state", "get_shelter_status", "get_route_summary",
+            "get_terrain_analysis", "analyze_road_conditions", "get_rescue_guidelines",
+            "narrate_best_route", "get_metro_status", "get_flood_impact",
+            "get_vulnerability_hotspots", "check_bus_availability", "analyze_transit_disruptions"
+        ]
     }
 
 
@@ -135,6 +307,8 @@ async def analyze_with_mcp(question: str, enriched_context: dict, max_tool_loops
         result["error"] = "GEMINI_API_KEY not set"
         return result
 
+    t0 = time.time()
+
     try:
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
@@ -143,7 +317,6 @@ async def analyze_with_mcp(question: str, enriched_context: dict, max_tool_loops
             tools=tools,
         )
 
-        t0 = time.time()
         chat = model.start_chat()
         response = chat.send_message(user_prompt)
 
@@ -195,6 +368,7 @@ async def analyze_with_mcp(question: str, enriched_context: dict, max_tool_loops
 
         result["latency_s"]       = round(time.time() - t0, 2)
         result["tool_call_count"] = len(result["tool_calls"])
+        result["provider"]        = "gemini"
 
         try:
             text = response.text or ""
@@ -217,32 +391,26 @@ async def analyze_with_mcp(question: str, enriched_context: dict, max_tool_loops
     except Exception as e:
         result["error"] = str(e)
         
-        # Fallback to Groq if Gemini fails (e.g., rate limit 429)
-        print(f"[MCP] Gemini failed: {e}. Attempting Groq fallback...")
+        # Fallback to Groq with full tool-calling loop
+        print(f"[MCP] Gemini failed: {e}. Attempting Groq tool-calling fallback...")
         try:
             from groq import Groq
             groq_key = os.environ.get("GROQ_API_KEY")
             if groq_key:
                 groq_client = Groq(api_key=groq_key)
-                groq_response = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    temperature=0.2,
-                    max_tokens=2000,
-                )
-                text = groq_response.choices[0].message.content
-                result["response_text"] = text
+                text = await _run_groq_tool_loop(groq_client, tools, user_prompt, result, enriched_context)
+                result["response_text"]  = text
                 result["response_chars"] = len(text)
                 result["response_words"] = len(text.split())
-                result["error"] = None  # Clear the error since fallback succeeded
                 result["tool_call_count"] = len(result["tool_calls"])
-                print(f"[MCP] Groq fallback succeeded with {len(text)} chars")
+                result["error"] = None
+                result["provider"] = "groq"
+                result["latency_s"] = round(time.time() - t0, 2)
+                print(f"[MCP] Groq tool-calling fallback succeeded: {result['tool_call_count']} tools, {len(text)} chars")
             else:
-                print(f"[MCP] Groq API key not available for fallback")
+                print("[MCP] Groq API key not available for fallback")
         except Exception as groq_e:
+            result["latency_s"] = round(time.time() - t0, 2)
             print(f"[MCP] Groq fallback also failed: {groq_e}")
 
     return result
