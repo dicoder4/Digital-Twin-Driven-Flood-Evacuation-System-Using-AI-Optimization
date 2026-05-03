@@ -7,10 +7,13 @@
  *  - Unreachable population alert
  */
 import { useMemo, useState, useEffect } from 'react';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit, Layers, GitCompare } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit, Bell, Send, Layers, GitCompare } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
 import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
+import html2canvas from 'html2canvas';
 import { ScenarioAnalysisPopup } from './ScenarioAnalysisPopup';
 import { McpComparisonPopup } from './McpComparisonPopup';
 
@@ -55,6 +58,7 @@ const PRIORITY_STYLE = {
 };
 
 function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) {
+    const { lang } = useLanguage();
     if (!suggestions || suggestions.length === 0) return null;
 
     const totalSuggestedCap = suggestions.reduce((acc, s) => acc + s.suggested_capacity, 0);
@@ -65,8 +69,8 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
     return (
         <section className="panel evac-section" style={{ borderTop: '2px solid #fda4af', marginTop: 8 }}>
             <h3 className="panel-title" style={{ color: '#be123c' }}>
-                <PlusCircle size={13} /> Shelter Gap Analysis
-                <span className="panel-title-hint"> — {atRiskRemaining.toLocaleString()} people need shelter</span>
+                <PlusCircle size={13} /> {t('shelter_gap', lang)}
+                <span className="panel-title-hint"> — {atRiskRemaining.toLocaleString()} {t('people_need_shelter', lang)}</span>
             </h3>
 
             {/* Coverage summary bar */}
@@ -79,7 +83,7 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
                         {suggestions.length} shelter{suggestions.length > 1 ? 's' : ''} identified
                     </span>
                     <span style={{ color: coveragePct >= 100 ? '#15803d' : '#b45309', fontWeight: 700 }}>
-                        {coveragePct}% of deficit covered
+                        {coveragePct}% {t('deficit_covered', lang)}
                     </span>
                 </div>
                 <div style={{ background: '#fecdd3', borderRadius: 4, height: 4 }}>
@@ -90,8 +94,8 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
                     }} />
                 </div>
                 <div style={{ color: '#64748b', marginTop: 3 }}>
-                    Total suggested capacity: <strong>{totalSuggestedCap.toLocaleString()}</strong> &nbsp;|&nbsp;
-                    Deficit: <strong style={{ color: '#be123c' }}>{atRiskRemaining.toLocaleString()}</strong>
+                    {t('total_suggested_cap', lang)} <strong>{totalSuggestedCap.toLocaleString()}</strong> &nbsp;|&nbsp;
+                    {t('deficit', lang)} <strong style={{ color: '#be123c' }}>{atRiskRemaining.toLocaleString()}</strong>
                 </div>
             </div>
 
@@ -173,8 +177,61 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
 }
 
 
-export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null, simulationParams = {} }) {
+export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null, simulationParams = {}, user = null, floodData = null, roadsData = null, trafficRoadsData = null, metroLines = null, metroStations = [], busManifest = null }) {
+    const { lang } = useLanguage();
     const [genaiOpen, setGenaiOpen] = useState(false);
+    const [notifyLoading, setNotifyLoading] = useState(false);
+
+    const handleNotifyActions = async (targetSummary, targetPlan) => {
+        setNotifyLoading(true);
+        try {
+            // Use existing html2canvas logic if map exists, else null
+            let mapBase64 = null;
+            const mapEl = document.querySelector('.map-container') || document.querySelector('.maplibregl-map');
+            if (mapEl) {
+                const canvas = await html2canvas(mapEl, { useCORS: true, backgroundColor: null });
+                mapBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+            }
+
+            const isAuthority = user?.role === 'authority';
+            const endpoint = isAuthority ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
+            const url = `http://localhost:8000${endpoint}`;
+
+            const payload = {
+                user_data: user || { name: 'Guest', role: 'guest' },
+                researcher_data: user || { name: 'Guest', role: 'guest' },
+                evacuation_data: { ...targetSummary, algorithm: targetSummary.algorithm || 'AI Computed' },
+                location_data: { location_name: locationName, lat: 12.9716, lon: 77.5946 },
+                map_image_base64: mapBase64,
+                ai_report: isAuthority ? 'Emergency Mass SOS Broadcast Initiated.' : 'Please review evacuation metrics.',
+                map_state: {
+                    flood_geojson: floodData,
+                    roads_geojson: roadsData,
+                    traffic_geojson: trafficRoadsData,
+                    metro_geojson: metroLines,
+                    metro_stations: metroStations,
+                    bus_manifest: busManifest,
+                    evacuation_plan: targetPlan,
+                },
+                simulation_params: simulationParams,
+                frontend_base_url: window.location.origin
+            };
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error('Failed to send notification');
+            alert(isAuthority ? 'Mass SOS Broadcasted successfully.' : 'Authorities Notified successfully.');
+        } catch (err) {
+            console.error('Notification error:', err);
+            alert('Failed to send notification: ' + err.message);
+        } finally {
+            setNotifyLoading(false);
+        }
+    };
 
     // ── Analysis Logic ──
     const [analysisOpen, setAnalysisOpen] = useState(false);
@@ -380,21 +437,21 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         return (
             <div className="evac-panel">
                 <section className="panel evac-section">
-                    <h3 className="panel-title"><Trophy size={13} /> Algorithm Comparison</h3>
+                    <h3 className="panel-title"><Trophy size={13} /> {t('algo_comparison', lang)}</h3>
 
                     {/* Route selector hint */}
                     <div className="compare-route-hint">
-                        <MapPin size={10} /> Click <strong>Show Routes</strong> on any row to view that algorithm's evacuation plan on the map
+                        <MapPin size={10} /> Click <strong>{t('show_routes', lang)}</strong> on any row to view that algorithm's evacuation plan on the map
                     </div>
 
                     <div className="compare-table">
                         <div className="compare-header">
                             <span>Algorithm</span>
-                            <span title="Lower is better — total flood-weighted distance + time cost for all evacuees">Fitness ↓</span>
-                            <span>Success %</span>
-                            <span>Time</span>
+                            <span title="Lower is better — total flood-weighted distance + time cost for all evacuees">{t('fitness_col', lang)}</span>
+                            <span>{t('success_pct_col', lang)}</span>
+                            <span>{t('time_col', lang)}</span>
                         </div>
-                        {rows.map(({ algo, best_fitness: fit = null, success_rate_pct: rate = 0, ga_execution_time: t = 0, error }) => {
+                        {rows.map(({ algo, best_fitness: fit = null, success_rate_pct: rate = 0, ga_execution_time: execTime = 0, error }) => {
                             const c = ALGO_COLORS[algo];
                             const isWinner = algo === bestAlgo;
                             const isActive = algo === compareActiveAlgo;
@@ -411,16 +468,16 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                         <span className="compare-algo" style={{ color: c.text }}>
                                             {isWinner && <Trophy size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />}
                                             {algo.toUpperCase()}
-                                            {isWinner && <span className="compare-winner-badge">BEST</span>}
+                                            {isWinner && <span className="compare-winner-badge">{t('best', lang)}</span>}
                                         </span>
                                         {error
-                                            ? <span className="compare-error" style={{ gridColumn: '2 / -1' }}>Failed</span>
+                                            ? <span className="compare-error" style={{ gridColumn: '2 / -1' }}>{t('failed', lang)}</span>
                                             : <>
                                                 <span style={{ fontWeight: isWinner ? 700 : 400, color: isWinner ? c.text : undefined }}>{fitLabel}</span>
                                                 <span className={rate >= 80 ? 'compare-rate-good' : rate >= 50 ? 'compare-rate-warn' : 'compare-rate-bad'}>
                                                     {rate}%
                                                 </span>
-                                                <span>{t}s</span>
+                                                <span>{execTime}s</span>
                                             </>
                                         }
                                     </div>
@@ -432,7 +489,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                             onClick={() => onSetCompareAlgo(isActive ? null : algo)}
                                         >
                                             <MapPin size={9} />
-                                            {isActive ? `Showing ${algo.toUpperCase()} routes` : `Show ${algo.toUpperCase()} routes`}
+                                            {isActive ? `${t('showing_routes', lang)} (${algo.toUpperCase()})` : `${t('show_routes', lang)} (${algo.toUpperCase()})`}
                                             {isActive && <span className="compare-route-active-dot" />}
                                         </button>
                                     )}
@@ -457,14 +514,14 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         onClick={handleRunAnalysis}
                         disabled={(isAnalysing && !analysisMetrics) || isScenarioAnalysing}
                     >
-                        {(isAnalysing && !analysisMetrics) ? (
-                            <><RefreshCw size={12} className="spin" /> {analysisProgress || 'Calculating Stability...'}</>
+                        {isAnalysing ? (
+                            <><RefreshCw size={12} className="spin" /> {analysisProgress || t('calculating_stability', lang)}</>
                         ) : (
-                            <><BrainCircuit size={12} /> Analyse Algorithm performance{deepAnalysis ? ' (100 iter)' : ''}</>
+                            <><BrainCircuit size={12} /> {t('analyse_algo', lang)}{deepAnalysis ? ' (100 iter)' : ''}</>
                         )}
                         <ChevronRight size={12} />
                     </button>
-                    
+
                     <button
                         className={`analyse-algos-btn ${isScenarioAnalysing && !scenarioMetrics ? 'analysing' : ''}`}
                         onClick={handleRunScenarioAnalysis}
@@ -490,7 +547,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                             <ChevronRight size={12} />
                         </button>
                     )}
-                    
+
                     <label
                         style={{
                             display: 'flex', alignItems: 'center', gap: 6,
@@ -507,7 +564,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                             style={{ accentColor: '#7c3aed', width: 13, height: 13, cursor: 'inherit' }}
                         />
                         <span>
-                            <strong style={{ color: '#7c3aed' }}>Deep Analysis</strong> — 100 iterations per algorithm
+                            <strong style={{ color: '#7c3aed' }}>{t('deep_analysis', lang)}</strong> — 100 iterations per algorithm
                             <span style={{ color: '#94a3b8' }}> (slower, better for ACO pheromone convergence)</span>
                         </span>
                     </label>
@@ -537,33 +594,33 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     <>
                         <section className="panel evac-section" style={{ borderTop: `2px solid ${adColor.border}` }}>
                             <h3 className="panel-title" style={{ color: adColor.text }}>
-                                <ShieldCheck size={13} /> {compareActiveAlgo.toUpperCase()} — Evacuation Overview
+                                <ShieldCheck size={13} /> {compareActiveAlgo.toUpperCase()} — {t('evac_overview', lang)}
                             </h3>
 
                             <div className="evac-stat-grid">
                                 <div className="evac-stat-card evac-stat-green">
                                     <Users size={16} />
                                     <div className="evac-stat-val">{ad.total_evacuated.toLocaleString()}</div>
-                                    <div className="evac-stat-lbl">Evacuated</div>
+                                    <div className="evac-stat-lbl">{t('evacuated', lang)}</div>
                                 </div>
                                 {((ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 || ad.genuinely_unreachable === 0) && (
                                     <div className={`evac-stat-card ${(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? 'evac-stat-orange' : 'evac-stat-green'}`} style={(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? { border: '1px solid #fdba74', background: '#fff7ed' } : {}}>
                                         <Users size={16} color={(ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? "#f97316" : undefined} />
                                         <div className="evac-stat-val" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#c2410c' : undefined }}>{(ad.total_at_risk_remaining - ad.genuinely_unreachable).toLocaleString()}</div>
-                                        <div className="evac-stat-lbl" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{ad.genuinely_unreachable > 0 ? 'At Risk (Cap)' : 'At Risk'}</div>
+                                        <div className="evac-stat-lbl" style={{ color: (ad.total_at_risk_remaining - ad.genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{ad.genuinely_unreachable > 0 ? t('at_risk', lang) + ' (Cap)' : t('at_risk', lang)}</div>
                                     </div>
                                 )}
                                 {ad.genuinely_unreachable > 0 && (
                                     <div className="evac-stat-card evac-stat-red" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
                                         <AlertTriangle size={16} color="#dc2626" />
                                         <div className="evac-stat-val" style={{ color: '#b91c1c' }}>{ad.genuinely_unreachable.toLocaleString()}</div>
-                                        <div className="evac-stat-lbl" style={{ color: '#ef4444' }}>Needs Rescue</div>
+                                        <div className="evac-stat-lbl" style={{ color: '#ef4444' }}>{t('needs_rescue', lang)}</div>
                                     </div>
                                 )}
                                 <div className="evac-stat-card evac-stat-blue">
                                     <ShieldCheck size={16} />
                                     <div className="evac-stat-val">{ad.success_rate_pct}%</div>
-                                    <div className="evac-stat-lbl">Success Rate</div>
+                                    <div className="evac-stat-lbl">{t('success_rate', lang)}</div>
                                 </div>
                                 <div className="evac-stat-card evac-stat-muted">
                                     <Clock size={16} />
@@ -574,7 +631,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                                     <div className="evac-stat-card" style={{ background: '#ecfeff', border: '1px solid #22d3ee' }}>
                                         <span style={{ fontSize: 16 }}>🚦</span>
                                         <div className="evac-stat-val" style={{ color: '#0891b2' }}>{ad.traffic_segment_count}</div>
-                                        <div className="evac-stat-lbl">Traffic Roads</div>
+                                        <div className="evac-stat-lbl">{t('traffic_roads', lang)}</div>
                                     </div>
                                 )}
                             </div>
@@ -614,13 +671,13 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         {ad.genuinely_unreachable > 0 && (
                             <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8 }}>
                                 <h3 className="panel-title" style={{ color: '#b91c1c' }}>
-                                    <AlertTriangle size={13} /> Manual Rescue Required
-                                    <span className="panel-title-hint"> — {ad.genuinely_unreachable.toLocaleString()} people stranded</span>
+                                    <AlertTriangle size={13} /> {t('manual_rescue', lang)}
+                                    <span className="panel-title-hint"> — {ad.genuinely_unreachable.toLocaleString()} {t('people_stranded', lang)}</span>
                                 </h3>
                                 <div style={{ fontSize: 10, color: '#7f1d1d', marginBottom: 2, lineHeight: 1.5, background: '#fef2f2', padding: 8, borderRadius: 6, border: '1px solid #fca5a5' }}>
-                                    <strong>Isolation Detected:</strong> {ad.genuinely_unreachable.toLocaleString()} people are completely surrounded by floodwater deeper than the 0.15m (6-inch) safe wading limit.
+                                    <strong>{t('isolation_detected', lang)}</strong> {ad.genuinely_unreachable.toLocaleString()} people are completely surrounded by floodwater deeper than the 0.15m (6-inch) safe wading limit.
                                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #fecaca' }}>
-                                        No safe evacuation route or emergency shelter placement is possible. <strong>Dispatch high-water rescue vehicles or boats immediately.</strong>
+                                        {t('dispatch_rescue', lang)}
                                     </div>
                                 </div>
                             </section>
@@ -628,7 +685,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
 
                         {adSortedShelters.length > 0 && (
                             <section className="panel evac-section">
-                                <h3 className="panel-title"><Building2 size={13} /> Shelter Capacity
+                                <h3 className="panel-title"><Building2 size={13} /> {t('shelter_capacity', lang)}
                                     <span className="panel-title-hint">— {compareActiveAlgo.toUpperCase()} assignment · click to view routes</span>
                                 </h3>
                                 <div className="shelter-fill-list">
@@ -674,6 +731,38 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </>
                 )}
 
+                {/* ── Emergency Actions (Compare Mode) ────────────────── */}
+                {ad && user?.role === 'authority' && (
+                    <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8, paddingBottom: 12 }}>
+                        <h3 className="panel-title" style={{ color: '#b91c1c' }}>
+                            <Bell size={13} /> {t('emergency_actions', lang)}
+                        </h3>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                            <button
+                                onClick={() => handleNotifyActions(ad, compareResults[compareActiveAlgo]?.evacuation_plan ?? [])}
+                                disabled={notifyLoading}
+                                style={{
+                                    flex: 1,
+                                    background: user.role === 'authority' ? '#ef4444' : '#f59e0b',
+                                    color: '#fff', border: 'none', borderRadius: '6px',
+                                    cursor: notifyLoading ? 'not-allowed' : 'pointer',
+                                    padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    gap: '6px', fontSize: '13px', fontWeight: 600,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                    opacity: notifyLoading ? 0.7 : 1,
+                                    animation: user.role === 'authority' && !notifyLoading ? 'pulse 2s infinite' : 'none'
+                                }}>
+                                {notifyLoading ? t('processing', lang) : (
+                                    <>
+                                        <Send size={14} />
+                                        {user.role === 'authority' ? t('broadcast_sos', lang) : t('notify_authorities', lang)}
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </section>
+                )}
+
                 {/* ── GenAI Agent (compare mode) ─────────────────── */}
                 {ad && (
                     <section className="panel evac-section genai-dropdown">
@@ -683,7 +772,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         >
                             <span className="genai-dropdown-title">
                                 <Cpu size={14} />
-                                GenAI Agent
+                                {t('genai_agent', lang)}
                             </span>
                             <ChevronDown
                                 size={14}
@@ -721,8 +810,8 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         return (
             <div className="evac-empty">
                 <ShieldCheck size={32} className="evac-empty-icon" />
-                <p>Run a simulation to see evacuation analysis.<br />
-                    Enable <strong>Evacuation Mode</strong> to scale population to 1% for faster testing.</p>
+                <p>{t('run_sim_to_see', lang)}<br />
+                    Enable <strong>{t('evac_mode', lang)}</strong> to scale population to 1% for faster testing.</p>
             </div>
         );
     }
@@ -750,32 +839,32 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
 
             {/* ── Overview ─────────────────────────────── */}
             <section className="panel evac-section">
-                <h3 className="panel-title"><ShieldCheck size={13} /> Evacuation Overview</h3>
+                <h3 className="panel-title"><ShieldCheck size={13} /> {t('evac_overview', lang)}</h3>
 
                 <div className="evac-stat-grid">
                     <div className="evac-stat-card evac-stat-green">
                         <Users size={16} />
                         <div className="evac-stat-val">{total_evacuated.toLocaleString()}</div>
-                        <div className="evac-stat-lbl">Evacuated</div>
+                        <div className="evac-stat-lbl">{t('evacuated', lang)}</div>
                     </div>
                     {((total_at_risk_remaining - genuinely_unreachable) > 0 || genuinely_unreachable === 0) && (
                         <div className={`evac-stat-card ${(total_at_risk_remaining - genuinely_unreachable) > 0 ? 'evac-stat-orange' : 'evac-stat-green'}`} style={(total_at_risk_remaining - genuinely_unreachable) > 0 ? { border: '1px solid #fdba74', background: '#fff7ed' } : {}}>
                             <Users size={16} color={(total_at_risk_remaining - genuinely_unreachable) > 0 ? "#f97316" : undefined} />
                             <div className="evac-stat-val" style={{ color: (total_at_risk_remaining - genuinely_unreachable) > 0 ? '#c2410c' : undefined }}>{(total_at_risk_remaining - genuinely_unreachable).toLocaleString()}</div>
-                            <div className="evac-stat-lbl" style={{ color: (total_at_risk_remaining - genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{genuinely_unreachable > 0 ? 'At Risk (Cap)' : 'At Risk'}</div>
+                            <div className="evac-stat-lbl" style={{ color: (total_at_risk_remaining - genuinely_unreachable) > 0 ? '#ea580c' : undefined }}>{genuinely_unreachable > 0 ? t('at_risk', lang) + ' (Cap)' : t('at_risk', lang)}</div>
                         </div>
                     )}
                     {genuinely_unreachable > 0 && (
                         <div className="evac-stat-card evac-stat-red" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
                             <AlertTriangle size={16} color="#dc2626" />
                             <div className="evac-stat-val" style={{ color: '#b91c1c' }}>{genuinely_unreachable.toLocaleString()}</div>
-                            <div className="evac-stat-lbl" style={{ color: '#ef4444' }}>Needs Rescue</div>
+                            <div className="evac-stat-lbl" style={{ color: '#ef4444' }}>{t('needs_rescue', lang)}</div>
                         </div>
                     )}
                     <div className="evac-stat-card evac-stat-blue">
                         <ShieldCheck size={16} />
                         <div className="evac-stat-val">{success_rate_pct}%</div>
-                        <div className="evac-stat-lbl">Success Rate</div>
+                        <div className="evac-stat-lbl">{t('success_rate', lang)}</div>
                     </div>
                     <div className="evac-stat-card evac-stat-muted">
                         <Clock size={16} />
@@ -786,7 +875,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         <div className="evac-stat-card" style={{ background: '#ecfeff', border: '1px solid #22d3ee' }}>
                             <span style={{ fontSize: 16 }}>🚦</span>
                             <div className="evac-stat-val" style={{ color: '#0891b2' }}>{trafficSegmentCount}</div>
-                            <div className="evac-stat-lbl">Traffic Roads</div>
+                            <div className="evac-stat-lbl">{t('traffic_roads', lang)}</div>
                         </div>
                     )}
                 </div>
@@ -816,6 +905,38 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                 )}
             </section>
 
+            {/* ── Emergency Actions (Single Mode) ──────────────────── */}
+            {summary && user?.role === 'authority' && (
+                <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8, paddingBottom: 12 }}>
+                    <h3 className="panel-title" style={{ color: '#b91c1c' }}>
+                        <Bell size={13} /> {t('emergency_actions', lang)}
+                    </h3>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                            onClick={() => handleNotifyActions(summary, evacuationPlan)}
+                            disabled={notifyLoading}
+                            style={{
+                                flex: 1,
+                                background: user.role === 'authority' ? '#ef4444' : '#f59e0b',
+                                color: '#fff', border: 'none', borderRadius: '6px',
+                                cursor: notifyLoading ? 'not-allowed' : 'pointer',
+                                padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                gap: '6px', fontSize: '13px', fontWeight: 600,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                opacity: notifyLoading ? 0.7 : 1,
+                                animation: user.role === 'authority' && !notifyLoading ? 'pulse 2s infinite' : 'none'
+                            }}>
+                            {notifyLoading ? t('processing', lang) : (
+                                <>
+                                    <Send size={14} />
+                                    {user.role === 'authority' ? t('broadcast_sos', lang) : t('notify_authorities', lang)}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </section>
+            )}
+
             {/* ── GenAI Agent ────────────────────────────────── */}
             {summary && (
                 <section className="panel evac-section genai-dropdown">
@@ -825,7 +946,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     >
                         <span className="genai-dropdown-title">
                             <Cpu size={14} />
-                            GenAI Agent
+                            {t('genai_agent', lang)}
                         </span>
                         <ChevronDown
                             size={14}
@@ -856,13 +977,13 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
             {genuinely_unreachable > 0 && (
                 <section className="panel evac-section" style={{ borderTop: '2px solid #fecaca', marginTop: 8 }}>
                     <h3 className="panel-title" style={{ color: '#b91c1c' }}>
-                        <AlertTriangle size={13} /> Manual Rescue Required
-                        <span className="panel-title-hint"> — {genuinely_unreachable.toLocaleString()} people stranded</span>
+                        <AlertTriangle size={13} /> {t('manual_rescue', lang)}
+                        <span className="panel-title-hint"> — {genuinely_unreachable.toLocaleString()} {t('people_stranded', lang)}</span>
                     </h3>
                     <div style={{ fontSize: 10, color: '#7f1d1d', marginBottom: 2, lineHeight: 1.5, background: '#fef2f2', padding: 8, borderRadius: 6, border: '1px solid #fca5a5' }}>
-                        <strong>Isolation Detected:</strong> {genuinely_unreachable.toLocaleString()} people are completely surrounded by floodwater deeper than the 0.15m (6-inch) safe wading limit.
+                        <strong>{t('isolation_detected', lang)}</strong> {genuinely_unreachable.toLocaleString()} people are completely surrounded by floodwater deeper than the 0.15m (6-inch) safe wading limit.
                         <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #fecaca' }}>
-                            No safe evacuation route or emergency shelter placement is possible. <strong>Dispatch high-water rescue vehicles or boats immediately.</strong>
+                            {t('dispatch_rescue', lang)}
                         </div>
                     </div>
                 </section>
@@ -871,7 +992,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
             {/* ── Shelter Fill Report (clickable) ───────── */}
             {sortedShelters.length > 0 && (
                 <section className="panel evac-section">
-                    <h3 className="panel-title"><Building2 size={13} /> Shelter Capacity
+                    <h3 className="panel-title"><Building2 size={13} /> {t('shelter_capacity', lang)}
                         <span className="panel-title-hint">— click to view routes</span>
                     </h3>
                     <div className="shelter-fill-list">

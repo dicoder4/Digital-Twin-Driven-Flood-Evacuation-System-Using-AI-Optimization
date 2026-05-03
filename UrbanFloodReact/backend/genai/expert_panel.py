@@ -581,24 +581,44 @@ REQUIRED STRUCTURE:
 MANDATORY:
 - Use exact numbers from 'simulation' and 'shelter_overview'. Do NOT invent figures.
 - Tone: Authoritative, calm, urgent.
+- Output MUST strictly embed detailed fields for use in Notification APIs (e.g., coordinates, AI routing).
 
 OUTPUT:
+**OFFICIAL SITUATION REPORT (Report Level)**
+Affected Zone: [Location]
+Evacuation Status: [N] citizens moved to safety.
+Remaining Risk: [N] citizens pending evacuation.
+Shelter Status: [N] Relief Centres active ([N] at full capacity).
+Resource Mobilisation: Logistics and Tactical teams deployed.
+Coordinates & Routing: [Lat, Lon] via [Algorithm]
 
-**OFFICIAL SITUATION REPORT (Govt of Karnataka)**
-- **Affected Zone:** [Hobli Name]
-- **Evacuation Status:** [Total Evacuated] citizens moved to safety.
-- **Remaining Risk:** [Risk Count] citizens pending evacuation.
-- **Shelter Status:** [Count] Relief Centres active ([Count Critical] at full capacity).
-- **Resource Mobilisation:** Logistics and Tactical teams deployed.
+📋 Field Reference Card
+💧 Water: 3 L/person/day drinking | 20 L/person/day hygiene.
+🏥 Medical: Mass casualty triaging setup.
+🍔 Food & Nutrition: [Note standards].
+""",
+    "sos_expert": """You are the Mass SOS Emergency Broadcaster.
+MANDATORY:
+- This is a PUBLIC WARNING sent to citizens via SMS/Email.
+- Output MUST be bilingual: Kannada and English.
+- Keep it extremely short, actionable, and clear.
+- Use exact shelter names from the data provided.
 
-**PUBLIC WARNING (SMS_BROADCAST_TEMPLATE)**
-🚨 FLOOD EMERGENCY ALERT 🚨
-Heavy flooding reported in [Hobli Name].
-✅ SAFE: [List safe shelters with remaining capacity]
-❌ AVOID: [Blocked routes or full shelters]
-📞 HELPLINE: 112 / 1070
-*Do not panic. Follow police instructions.*
-""",   
+OUTPUT FORMAT:
+🚨 ತುರ್ತು ಪ್ರವಾಹ ಎಚ್ಚರಿಕೆ / EMERGENCY FLOOD ALERT 🚨
+[Location] ದಲ್ಲಿ ಭಾರಿ ಪ್ರವಾಹ ವರದಿಯಾಗಿದೆ. (Heavy flooding reported in [Location].)
+
+✅ ಸುರಕ್ಷಿತ ಸ್ಥಳಗಳು (SAFE ZONES):
+[Names of 3 safe shelters with capacity]
+
+❌ ತಪ್ಪಿಸಿ (AVOID):
+[Names of full/danger shelters]
+
+🚶‍♂️ ನಿಯಮ (PROTOCOL): 
+Civic AI [Algorithm] ವ್ಯವಸ್ಥೆಯು ಒದಗಿಸಿದ ಮಾರ್ಗಗಳ ಮೂಲಕ ಮಾತ್ರ ತೆರಳಿ. (Proceed strictly via optimal routes provided by the Civic AI [Algorithm] System.)
+
+📞 ಸಹಾಯವಾಣಿ (HELPLINE): 112 / 1070. ಯಾರು ಭಯಪಡಬೇಡಿ. (Do not panic.)
+""",
     "algo_analyst": """You are a senior AI Algorithm Performance Analyst specialising in metaheuristic optimisation for disaster evacuation.
 
 You are given the results of a 3-run stability test for GA, ACO, and PSO on a real flood evacuation scenario. Each run uses ±5% Gaussian noise on the distance matrix to simulate real-world flood depth uncertainty, forcing algorithms to explore different solution regions.

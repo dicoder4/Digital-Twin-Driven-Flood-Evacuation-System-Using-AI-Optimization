@@ -2,17 +2,30 @@ import { useState, useRef, useEffect } from 'react';
 import { MessageCircle, Send, Loader, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
+
+const buildGreeting = (lang) =>
+    `${t('chat_greeting', lang)}\n${t('chat_intro', lang)}\n\n- ${t('chat_q1', lang)}\n- ${t('chat_q2', lang)}\n- ${t('chat_q3', lang)}\n- ${t('chat_q4', lang)}\n- ${t('chat_q5', lang)}`;
 
 export function EvacuationChat({ context, evacuationPlan = [] }) {
-    const [messages, setMessages] = useState([
-        {
-            role: 'assistant',
-            text: "Hi! I'm your AI Evacuation Assistant.\nHere are some questions you can ask me to help plan the evacuation efficiently:\n\n- What is the safest route to the nearest shelter?\n- Which junctions are experiencing the worst bottlenecks?\n- How many evacuees are assigned to each shelter?\n- Are there any shelters exceeding their capacity?\n- Which optimization algorithm performed the best for this simulation?"
-        }
+    const { lang } = useLanguage();
+    const [messages, setMessages] = useState(() => [
+        { role: 'assistant', text: buildGreeting(lang) }
     ]);
     const [input, setInput] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
     const chatEndRef = useRef(null);
+
+    // Update greeting when language toggles and chat is still pristine
+    useEffect(() => {
+        setMessages(prev => {
+            if (prev.length === 1 && prev[0].role === 'assistant') {
+                return [{ role: 'assistant', text: buildGreeting(lang) }];
+            }
+            return prev;
+        });
+    }, [lang]);
 
     // Auto-scroll to bottom
     useEffect(() => {
@@ -83,7 +96,7 @@ export function EvacuationChat({ context, evacuationPlan = [] }) {
         <section className="panel evac-section chat-section" style={{ height: 'calc(100% - 2rem)', display: 'flex', flexDirection: 'column', borderTop: 'none', marginTop: 0 }}>
             <div className="chat-header">
                 <h3 className="panel-title" style={{ color: '#6d28d9', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                    <MessageCircle size={14} /> Ask AI
+                    <MessageCircle size={14} /> {t('ask_ai', lang)}
                 </h3>
             </div>
 
@@ -114,7 +127,7 @@ export function EvacuationChat({ context, evacuationPlan = [] }) {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask something..."
+                    placeholder={t('chat_placeholder', lang)}
                     disabled={isStreaming || !context}
                 />
                 <button

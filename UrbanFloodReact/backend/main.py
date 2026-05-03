@@ -91,7 +91,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from auth_routes import router as auth_router
+from notification_routes import router as notification_router
+
 app.include_router(automation_router)
+app.include_router(auth_router)
+app.include_router(notification_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
@@ -447,6 +452,60 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
 async def get_metro_stations(hobli_name: str):
     """Return cached metro stations for a hobli."""
     return await service.fetch_metro_stations(hobli_name)
+
+
+class ResolvePinRequest(BaseModel):
+    lat: float
+    lon: float
+
+@app.post("/resolve-pin")
+async def resolve_pin(req: ResolvePinRequest):
+    """Find the nearest hobli to a given lat/lon coordinate using haversine distance.
+    Only considers hoblis present in REGIONS_TREE (i.e. those with rainfall data and
+    full simulation support), so the returned hobli is always fully functional.
+    """
+    import math
+
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371  # Earth radius in km
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    # Build set of norm_keys that are valid (present in REGIONS_TREE with rainfall data)
+    valid_keys: set[str] = set()
+    for district_data in REGIONS_TREE.values():
+        for hobli_list in district_data.values():
+            for display_name in hobli_list:
+                valid_keys.add(norm_key(display_name))
+
+    # Search candidates: prefer REGIONS_TREE hoblis; fall back to all HOBLI_COORDS if tree is empty
+    candidate_keys = valid_keys if valid_keys else set(HOBLI_COORDS.keys())
+
+    best_key, best_dist, best_name = None, float('inf'), None
+    for key in candidate_keys:
+        info = HOBLI_COORDS.get(key)
+        if not info:
+            continue
+        hlat = info.get("lat") or info.get("latitude")
+        hlon = info.get("lon") or info.get("lng") or info.get("longitude")
+        if hlat is None or hlon is None:
+            continue
+        d = haversine(req.lat, req.lon, float(hlat), float(hlon))
+        if d < best_dist:
+            best_dist = d
+            best_key = key
+            best_name = info.get("original_name") or info.get("display") or key
+
+    if best_key is None:
+        raise HTTPException(status_code=404, detail="No hobli coordinates found in registry")
+
+    return {
+        "hobli_name": best_name,
+        "hobli_key": best_key,
+        "distance_km": round(best_dist, 2),
+    }
 
 
 if __name__ == "__main__":

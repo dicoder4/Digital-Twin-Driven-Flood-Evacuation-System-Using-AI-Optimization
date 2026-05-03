@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Bus, Train, Users, MapPin, Loader, FileText, ChevronRight, ChevronUp, ChevronDown, Activity, Trash2, AlertTriangle } from 'lucide-react';
 import { API_URL } from '../config';
 import './PublicTransportAgent.css';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 
 export function PublicTransportAgent({
     evacuationPlan,
@@ -15,6 +17,7 @@ export function PublicTransportAgent({
     selectedMetroId,   // ID/Name of metro to highlight
     loadedHobli
 }) {
+    const { lang } = useLanguage();
     const [manifest, setManifest] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -85,23 +88,23 @@ export function PublicTransportAgent({
         if (status === 'unsafe') {
             return (
                 <span className="pta-status-pill pta-status-flooded">
-                    <AlertTriangle size={10} style={{ marginRight: '3px' }} /> Unsafe
+                    <AlertTriangle size={10} style={{ marginRight: '3px' }} /> {t('status_unsafe', lang)}
                 </span>
             );
         }
         if (status === 'caution') {
             return (
                 <span className="pta-status-pill" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b' }}>
-                    Caution
+                    {t('status_caution', lang)}
                 </span>
             );
         }
         if (status === 'safe') {
-            return <span className="pta-status-pill pta-status-operational">Safe</span>;
+            return <span className="pta-status-pill pta-status-operational">{t('status_safe', lang)}</span>;
         }
         return (
             <span className="pta-status-pill" style={{ background: '#f1f5f9', color: '#94a3b8' }}>
-                Analyzing...
+                {t('analyzing', lang)}
             </span>
         );
     };
@@ -110,7 +113,7 @@ export function PublicTransportAgent({
 
     const handleGenerateManifest = async () => {
         if (!evacuationPlan || evacuationPlan.length === 0) {
-            setError("No evacuation routes available. Please run a simulation first.");
+            setError(t('no_evac_routes', lang));
             return;
         }
 
@@ -148,7 +151,7 @@ export function PublicTransportAgent({
         <section className="panel pta-section" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div className="pta-header">
                 <h3 className="panel-title" style={{ color: '#059669', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                    <Activity size={18} /> Public Transport Agent
+                    <Activity size={18} /> {t('transport_agent', lang)}
                 </h3>
                 <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem', marginBottom: 0 }}>
                     Coordinate multi-modal logistics for {loadedHobli || 'Region'}.
@@ -161,7 +164,7 @@ export function PublicTransportAgent({
                 <div className="pta-accordion">
                     <div className="pta-accordion-header" onClick={() => setBusOpen(!busOpen)}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: '#334155', fontSize: '0.85rem' }}>
-                            <Bus size={16} color="#d97706" /> BMTC Bus Fleet
+                            <Bus size={16} color="#d97706" /> {t('bmtc_fleet', lang)}
                         </div>
                         {busOpen ? <ChevronUp size={16} color="#94a3b8" /> : <ChevronDown size={16} color="#94a3b8" />}
                     </div>
@@ -174,7 +177,7 @@ export function PublicTransportAgent({
                                 disabled={loading || !evacuationPlan.length}
                             >
                                 {loading ? <Loader size={16} className="spin" /> : <FileText size={16} />}
-                                Generate Fleet Manifest
+                                {t('gen_fleet', lang)}
                             </button>
 
                             {error && <div className="pta-error" style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.5rem' }}>{error}</div>}
@@ -184,13 +187,13 @@ export function PublicTransportAgent({
                                     <div className="pta-summary">
                                         <div className="pta-stat-box">
                                             <span className="pta-stat-val">{manifest.total_buses}</span>
-                                            <span className="pta-stat-label">Buses</span>
+                                            <span className="pta-stat-label">{t('buses_label', lang)}</span>
                                         </div>
                                         <div className="pta-stat-box">
                                             <span className="pta-stat-val">
                                                 {manifest.manifest.reduce((sum, bus) => sum + bus.evacuees, 0)}
                                             </span>
-                                            <span className="pta-stat-label">Pax Routed</span>
+                                            <span className="pta-stat-label">{t('pax_routed', lang)}</span>
                                         </div>
                                     </div>
 
@@ -198,9 +201,9 @@ export function PublicTransportAgent({
                                         <table className="pta-table">
                                             <thead>
                                                 <tr>
-                                                    <th>FLEET / ROUTE</th>
-                                                    <th>DESTINATION</th>
-                                                    <th style={{ textAlign: 'right' }}>PAX</th>
+                                                    <th>{t('fleet_route_col', lang)}</th>
+                                                    <th>{t('destination_col', lang)}</th>
+                                                    <th style={{ textAlign: 'right' }}>{t('pax_col', lang)}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -238,10 +241,10 @@ export function PublicTransportAgent({
                 <div className="pta-accordion">
                     <div className="pta-accordion-header" onClick={() => setMetroOpen(!metroOpen)}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: '#334155', fontSize: '#085rem' }}>
-                            <Train size={16} color="#059669" /> Namma Metro/Rail Network
+                            <Train size={16} color="#059669" /> {t('metro_network', lang)}
                             {metroReports.length > 0 && (
                                 <span style={{ marginLeft: '4px', fontSize: '0.65rem', background: floodedMetroCount > 0 ? '#fee2e2' : '#dcfce7', color: floodedMetroCount > 0 ? '#dc2626' : '#16a34a', padding: '1px 6px', borderRadius: '10px' }}>
-                                    {floodedMetroCount} Flooded
+                                    {floodedMetroCount} {t('flooded_label', lang)}
                                 </span>
                             )}
                         </div>
@@ -251,22 +254,22 @@ export function PublicTransportAgent({
                     {metroOpen && (
                         <div className="pta-accordion-content">
                             <div style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #dcfce7', borderRadius: '8px', padding: '0.6rem 0.75rem', marginBottom: '1rem', fontSize: '0.75rem' }}>
-                                Metro/Rail network is loaded when you click <strong>Load Network</strong> in Setup.
+                                {t('metro_hint', lang)}
                             </div>
 
                             {displayMetro.length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8', fontSize: '0.8rem' }}>
                                     <Train size={24} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
-                                    <p>No metro/rail stations found for this loaded region.</p>
+                                    <p>{t('no_metro', lang)}</p>
                                 </div>
                             ) : (
                                 <div className="pta-table-wrapper" style={{ maxHeight: '300px' }}>
                                     <table className="pta-table">
                                         <thead>
                                             <tr>
-                                                <th>STATION NAME</th>
-                                                <th>LINE</th>
-                                                <th>STATUS / SAFETY</th>
+                                                <th>{t('station_col', lang)}</th>
+                                                <th>{t('line_col', lang)}</th>
+                                                <th>{t('status_col', lang)}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
