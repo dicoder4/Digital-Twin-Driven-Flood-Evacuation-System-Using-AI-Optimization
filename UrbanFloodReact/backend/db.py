@@ -158,7 +158,8 @@ def bootstrap_mongo_data():
         rain_col = db["rainfall_data"]
         if rain_col.count_documents({}) == 0:
             rain_inserted = 0
-            for month, fname in [("May", "Bengaluru_Rainfall_24Hrs_May.xlsx"), 
+            for month, fname in [("April", "Bengaluru_Rainfall_24Hrs_2026.xlsx"),
+                                 ("May", "Bengaluru_Rainfall_24Hrs_May.xlsx"), 
                                  ("June", "Bengaluru_Rainfall_24Hrs_June.xlsx"), 
                                  ("July", "Bengaluru_Rainfall_24Hrs_July.xlsx")]:
                 p = data_dir / fname

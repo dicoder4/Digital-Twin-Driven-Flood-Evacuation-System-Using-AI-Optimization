@@ -8,7 +8,11 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
+from twilio.rest import Client
+from dotenv import load_dotenv
 from db import _get_db
+
+load_dotenv()
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 logger = logging.getLogger(__name__)
@@ -19,6 +23,21 @@ class EmergencyNotificationSystem:
         self.alert_password = os.getenv("ALERT_PASSWORD", "")
         self.smtp_server = "smtp.gmail.com"
         self.smtp_port = 587
+        
+        # Twilio configuration
+        self.account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip("'\" ")
+        self.auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip("'\" ")
+        self.twilio_number = os.getenv("TWILIO_PHONE_NUMBER", "").strip("'\" ")
+        
+        self.twilio_client = None
+        if self.account_sid and self.auth_token:
+            try:
+                self.twilio_client = Client(self.account_sid, self.auth_token)
+                logger.info("Twilio client initialized successfully.")
+            except Exception as e:
+                logger.error(f"Failed to initialize Twilio client: {e}")
+        else:
+            logger.warning("Twilio credentials missing. SMS will be mocked.")
 
     def send_email_alert(self, recipient_email: str, subject: str, message: str, is_html: bool = False) -> bool:
         if not self.alert_email or not self.alert_password:
@@ -44,6 +63,23 @@ class EmergencyNotificationSystem:
             return True
         except Exception as e:
             logger.error(f"Failed to send email to {recipient_email}: {e}")
+            return False
+
+    def send_sms_alert(self, user_name: str, user_ph: str, message_text: str) -> bool:
+        """Send a flood alert SMS via Twilio"""
+        if not self.twilio_client or not self.twilio_number:
+            logger.warning(f"Twilio not configured. Mocking SMS to {user_name} ({user_ph}): {message_text}")
+            return True
+        try:
+            message = self.twilio_client.messages.create(
+                body=message_text,
+                from_=self.twilio_number,
+                to=user_ph
+            )
+            logger.info(f"✅ SMS sent to {user_name} ({user_ph}) with SID: {message.sid}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to send SMS to {user_ph}: {e}")
             return False
 
 # Pydantic models
@@ -172,12 +208,19 @@ async def notify_authorities(req: NotifyAuthoritiesRequest):
 
                 {ai_report_html}
                 
-                <h3 style="color: #2c3e50; font-size: 16px; margin-top: 30px; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px;">Evacuation Route Map</h3>
+                <!--
+                <h3 style="color: #2c3e50; font-size: 16px; margin-top: 30px; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px;">Evacuation Preview</h3>
+                <div style="margin: 20px 0; text-align: center;">
+                    {map_html_section}
+                </div>
+                
+
+                <h3 style="color: #2c3e50; font-size: 16px; margin-top: 30px; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px;">Interactive Evacuation Map</h3>
                 <div style="text-align: center; margin: 25px 0;">
                     <a href="{base_url}/report/{report_id}" style="display: inline-block; padding: 12px 24px; background-color: #2980b9; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">🗺️ View Live Interactive Evacuation Map</a>
                     <p style="font-size: 11px; color: #7f8c8d; margin-top: 10px;">Click to view dynamic routes, flood layers, and transport logistics.</p>
                 </div>
-                
+                -->
                 <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ecf0f1; font-size: 12px; color: #7f8c8d;">
                     <p style="margin: 0 0 5px 0;"><strong>Researcher:</strong> {researcher_name} ({researcher_email})</p>
                     <p style="margin: 0;"><strong>Report ID:</strong> {report_id}</p>
@@ -222,6 +265,7 @@ async def mass_sos(req: SOSRequest):
     lat = location_data.get('lat', 19.166624)
     lon = location_data.get('lon', 73.238906)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+    base_url = req.frontend_base_url or "http://localhost:5173"
 
     loc_lower = location_name.lower()
     local_instructions = "Stay calm. Do not panic. Move to higher ground or nearest safe center immediately."
@@ -252,6 +296,8 @@ async def mass_sos(req: SOSRequest):
         """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
     report_id = f"SOS-{uuid.uuid4().hex[:8].upper()}"
+    map_image_base64 = req.map_image_base64
+    map_html_section = f"<img src='data:image/png;base64,{map_image_base64}' style='max-width: 100%; height: auto; border: 2px solid #ddd; border-radius: 8px;' alt='Evacuation Route Map'/>" if map_image_base64 else "<p style='color: #666; font-style: italic;'>Map visualization not available</p>"
 
     # Save report to MongoDB for interactive viewer
     db = _get_db()
@@ -287,6 +333,13 @@ async def mass_sos(req: SOSRequest):
             <p style="margin-top: 15px;"><strong>🚨 IMMEDIATE EVACUATION ORDER FOR:</strong> {location_name}</p>
             <p><strong>🎯 Epicenter Coordinates:</strong> {lat:.6f}, {lon:.6f}</p>
             <p><strong>⏱️ Broadcast Timestamp:</strong> {timestamp}</p>
+
+            <!--
+            <h3 style="color: #d32f2f; margin-top: 25px;">🗺️ EVACUATION PREVIEW:</h3>
+            <div style="margin: 20px 0; text-align: center;">
+                {map_html_section}
+            </div>
+            -->
             
             <div style="text-align: center; margin: 25px 0;">
                 <a href="{base_url}/report/{report_id}" style="display: inline-block; padding: 12px 24px; background-color: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">🗺️ View Live Interactive Evacuation Map</a>
@@ -309,12 +362,29 @@ async def mass_sos(req: SOSRequest):
     notification_system = EmergencyNotificationSystem()
     results = {"users_notified": [], "total_sent": 0}
     
+    logger.info(f"Mass SOS initiated for location: {location_name} (lowercase: {loc_lower})")
+    
     for u in all_users:
         if u.get('email'):
             success = notification_system.send_email_alert(u['email'], subject, email_message, is_html=True)
             if success:
                 results["users_notified"].append(u['email'])
                 results["total_sent"] += 1
+        
+        # SMS Integration for Bengaluru/Karnataka (Commented out for now)
+        # phone = u.get('phone')
+        # if phone:
+        #     # Check if location matches Bengaluru/Karnataka or if it's within Bengaluru coordinate range
+        #     is_bengaluru_name = any(x in loc_lower for x in ["karnat", "bangalore", "bengaluru"])
+        #     is_bengaluru_coords = (12.5 <= lat <= 13.5) and (77.0 <= lon <= 78.0)
+        #     
+        #     if is_bengaluru_name or is_bengaluru_coords:
+        #         sms_text = "🚨 ನೆರೆ ಎಚ್ಚರಿಕೆ! ತುರ್ತು ಸಂಖ್ಯೆಗಳು: 100 (ಪೊಲೀಸ್), 108 (ಆಂಬ್ಯುಲೆನ್ಸ್), 101 (ಅಗ್ನಿಶಾಮಕ) / Flood Alert! Emergency numbers: 100 (Police), 108 (Ambulance), 101 (Fire)"
+        #         notification_system.send_sms_alert(u.get('name', u.get('username', 'User')), phone, sms_text)
+        #     else:
+        #         logger.info(f"Skipping SMS for {u.get('username')} because location {loc_lower} did not match Bengaluru criteria.")
+        # else:
+        #     logger.info(f"Skipping SMS for {u.get('username')} because no phone number was found.")
 
     return results
 

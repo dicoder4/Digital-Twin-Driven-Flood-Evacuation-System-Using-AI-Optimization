@@ -96,7 +96,7 @@ const LoginPage = () => {
           <div style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <a href="https://github.com/dicoder4/Digital-Twin-Driven-Flood-Evacuation-System-Using-AI-Optimization" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#93c5fd', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none' }}><ExternalLink size={14} /> {t('learn_more', lang)}</a>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(191,219,254,0.6)', fontSize: '0.8rem' }}>
-              <Mail size={13} /><a href="mailto:cryptkeep7@gmail.com" style={{ color: 'rgba(191,219,254,0.7)', textDecoration: 'none' }}>cryptkeep7@gmail.com</a>
+              <Mail size={13} /><a href="mailto:floodevacuationsystem@gmail.com" style={{ color: 'rgba(191,219,254,0.7)', textDecoration: 'none' }}>floodevacuationsystem@gmail.com</a>
             </div>
           </div>
         </div>

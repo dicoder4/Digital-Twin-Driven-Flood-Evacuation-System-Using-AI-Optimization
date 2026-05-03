@@ -21,3 +21,5 @@ pyproj
 fiona
 pymongo 
 dnspython
+twilio
+markdown
