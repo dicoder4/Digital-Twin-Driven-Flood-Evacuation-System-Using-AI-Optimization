@@ -2007,3 +2007,210 @@ async def run_advanced_analysis_generator(
               f"Diversity={data['path_diversity']}")
     
     yield f"data: {json.dumps(final_payload)}\n\n"
+
+
+async def run_scenario_analysis_generator(
+    hobli: str, steps: int, decay_factor: float,
+    population: int | None = None, use_traffic: bool = False,
+):
+    """
+    Runs GA, ACO, and PSO across three flood scenarios (Low, Medium, High).
+    Evaluates routing efficiency, success rate, and pressure points for each scenario.
+    """
+    import time
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    key = norm_key(hobli)
+
+    if key not in REGION_CACHE:
+        try:
+            await loop.run_in_executor(None, get_region, key)
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Region not loaded: {e}'})}\n\n"
+            return
+
+    entry = REGION_CACHE[key]
+    
+    if population is not None: 
+        total_pop = population
+    else: 
+        pop_data = await get_hobli_population(hobli)
+        total_pop = pop_data.get("total_population", 0)
+        
+    shelter_resp = await fetch_shelters(hobli)
+    all_shelters = [s for s in shelter_resp["shelters"]]
+    
+    scenarios = [
+        {"name": "low", "label": "Low (50mm)", "rainfall_mm": 50.0},
+        {"name": "medium", "label": "Medium (150mm)", "rainfall_mm": 150.0},
+        {"name": "high", "label": "High (250mm)", "rainfall_mm": 250.0}
+    ]
+    
+    analysis_data = {
+        "low": {},
+        "medium": {},
+        "high": {}
+    }
+    
+    # We do NOT use COMPARE_ANALYSIS_CACHE because the flood setup is different for each scenario.
+    
+    # Send initial progress
+    payload_start = {
+        'analysis_progress': True, 
+        'message': 'Starting scenario analysis across 3 flood levels...', 
+        'step': 0, 
+        'total': 3
+    }
+    yield f"data: {json.dumps(payload_start)}\n\n"
+    
+    for s_idx, scenario in enumerate(scenarios):
+        payload_scenario = {
+            'analysis_progress': True, 
+            'message': f"Running {scenario['label']} Scenario...", 
+            'scenario': scenario['name'], 
+            'step': s_idx + 1, 
+            'total': 3
+        }
+        yield f"data: {json.dumps(payload_scenario)}\n\n"
+        
+        sim = UrbanFloodSimulator(entry["G"].copy(), entry["drain_nodes"], entry["lake_nodes"])
+        # The user requested to use progressive flood mode itself
+        sim.set_progressive_rainfall(scenario["rainfall_mm"], steps)
+        sim_G = sim.G
+        sim.distribute_population(total_pop)
+        
+        # User requested progressive flood mode: run the full steps loop
+        def _run_flood():
+            for _ in range(steps):
+                sim.propagate_flood_step(decay_factor)
+        await loop.run_in_executor(None, _run_flood)
+        
+        at_risk_raw = sim.get_at_risk_nodes(depth_threshold_m=0.05)
+        at_risk = [{"id": n, "pop": p, "lat": sim.G.nodes[n]["y"], "lon": sim.G.nodes[n]["x"]} for n, p in at_risk_raw]
+        
+        if not at_risk or not all_shelters:
+            print(f"[{scenario['name']}] Skipping due to no at_risk or shelters")
+            for algo in ["ga", "aco", "pso"]:
+                analysis_data[scenario["name"]][algo] = None
+            continue
+            
+        n_risk = len(at_risk)
+        gens = max(20, min(50, 2000 // max(n_risk, 1)))
+        pop_sz = min(50, max(20, n_risk * 2))
+        
+        def _init_shared():
+            PClass = _get_planner_class("ga")
+            return PClass(
+                at_risk, all_shelters, sim.G,
+                pop_size=pop_sz, generations=gens,
+                use_tomtom_traffic=use_traffic,
+                shared_setup=None,
+            )
+
+        shared_instance = await loop.run_in_executor(None, _init_shared)
+        
+        def _single_algo_run(algo_key):
+            t0 = time.time()
+            PClass = _get_planner_class(algo_key)
+            planner = PClass(at_risk, all_shelters, sim_G,
+                            pop_size=pop_sz, generations=gens,
+                            n_ants=pop_sz, iterations=gens,
+                            n_particles=pop_sz,
+                            use_tomtom_traffic=False,
+                            shared_setup=shared_instance)
+            decoded_plan = planner.run()
+            elapsed = round(time.time() - t0, 2)
+            
+            # Reconstruct assignment chromosome
+            n_r = len(at_risk)
+            chromosome = [-1] * n_r
+            for move in decoded_plan:
+                origin_id = move.get("from_node")
+                for idx, node in enumerate(at_risk):
+                    if node["id"] == origin_id:
+                        shelter_id = move.get("to_shelter")
+                        for j, sh in enumerate(all_shelters):
+                            if sh["id"] == shelter_id:
+                                chromosome[idx] = j
+                                break
+                        break
+                        
+            fair_fitness = planner._fitness(chromosome)
+            try:
+                breakdown = planner._fitness_breakdown(chromosome)
+            except:
+                breakdown = {"total_fitness": fair_fitness}
+                
+            total_evacuated = sum(move["pop"] for move in decoded_plan)
+            # Use sum of population of at_risk nodes to calculate success rate accurately relative to the group needing evacuation.
+            total_at_risk_pop = sum(n["pop"] for n in at_risk)
+            success_rate = round(total_evacuated / max(total_at_risk_pop, 1) * 100, 1)
+            
+            pressure_points_count = 0
+            total_bottleneck_load = 0
+            if hasattr(planner, "calculate_pressure_points"):
+                try:
+                    # Use top_n=9999 to get ALL pressure points, not just top 5
+                    all_pp = planner.calculate_pressure_points(decoded_plan, top_n=9999)
+                    pressure_points_count = len(all_pp)
+                    total_bottleneck_load = sum(p["total_evacuees"] for p in all_pp)
+                except:
+                    pass
+
+            return {
+                "algorithm": algo_key,
+                "fitness": round(fair_fitness, 1),
+                "execution_time": elapsed,
+                "total_evacuated": total_evacuated,
+                "total_at_risk_pop": total_at_risk_pop,
+                "success_rate_pct": success_rate,
+                "pressure_points_count": pressure_points_count,
+                "total_bottleneck_load": total_bottleneck_load,
+                "breakdown": breakdown
+            }
+        
+        # Run algos concurrently for this scenario
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            futs = [pool.submit(_single_algo_run, algo) for algo in ["ga", "aco", "pso"]]
+            for fut in concurrent.futures.as_completed(futs):
+                res = fut.result()
+                analysis_data[scenario["name"]][res["algorithm"]] = res
+                
+        # Emit partial scenario result
+        payload_result = {
+            'scenario_result': True, 
+            'scenario': scenario['name'], 
+            'metrics': analysis_data[scenario['name']]
+        }
+        yield f"data: {json.dumps(payload_result)}\n\n"
+        
+    # Rank summation to find best overall algorithm
+    # We want MIN fitness, MIN execution_time, MAX success_rate_pct, MIN total_bottleneck_load
+    total_ranks = {"ga": 0, "aco": 0, "pso": 0}
+    valid_algos = ["ga", "aco", "pso"]
+    
+    for scenario_name, algos in analysis_data.items():
+        if not all(algos.get(a) for a in valid_algos):
+            continue
+            
+        fitness_ranked = sorted(valid_algos, key=lambda a: algos[a]["fitness"])
+        time_ranked = sorted(valid_algos, key=lambda a: algos[a]["execution_time"])
+        success_ranked = sorted(valid_algos, key=lambda a: algos[a]["success_rate_pct"], reverse=True)
+        pressure_ranked = sorted(valid_algos, key=lambda a: algos[a]["total_bottleneck_load"])
+        
+        for a in valid_algos:
+            rank_score = (fitness_ranked.index(a) * 3) + (time_ranked.index(a) * 1) + (success_ranked.index(a) * 2) + (pressure_ranked.index(a) * 1)
+            total_ranks[a] += rank_score
+            
+    best_overall = min(total_ranks.keys(), key=lambda k: total_ranks[k]) if any(total_ranks.values()) else "N/A"
+
+    final_payload = {
+        "scenario_analysis_done": True,
+        "metrics": analysis_data,
+        "location": hobli,
+        "best_overall_algorithm": best_overall,
+        "algorithm_scores": total_ranks,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    yield f"data: {json.dumps(final_payload)}\n\n"

@@ -48,7 +48,7 @@ export function AutomationPanel({ onTriggerSimulation }) {
                 <CloudRain size={16} /> Auto-Sentinel Pipeline
             </h3>
             <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginBottom: '1.5rem', lineHeight: '1.4' }}>
-                Autonomous Digital Twin trigger. Continuously polls live Open-Meteo feeds and initiates evacuation protocols natively when danger bounds are breached.
+                Autonomous Digital Twin trigger. Continuously polls live weather feeds and initiates evacuation protocols natively when danger bounds are breached.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'min-content 1fr', gap: '1rem', marginBottom: '2rem', alignItems: 'center' }}>

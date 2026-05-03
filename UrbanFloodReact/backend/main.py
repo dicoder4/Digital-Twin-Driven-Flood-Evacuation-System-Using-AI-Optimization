@@ -386,6 +386,29 @@ async def simulate_analysis(
 
 
 
+@app.get("/simulate-scenario-analysis")
+async def simulate_scenario_analysis(
+    hobli:           str   = Query(...),
+    steps:           int   = Query(20),
+    decay_factor:    float = Query(0.5),
+    population:      int | None = Query(None),
+    use_traffic:     bool  = Query(False),
+):
+    """
+    SSE stream for scenario algorithm performance analysis.
+    Runs each algorithm across Low(50mm), Medium(150mm), and High(250mm) scenarios.
+    """
+    return StreamingResponse(
+        service.run_scenario_analysis_generator(
+            hobli, steps, decay_factor,
+            population=population, use_traffic=use_traffic,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 @app.get("/shelters/{hobli_name}")
 async def get_shelters(hobli_name: str):
     """
@@ -414,6 +437,9 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
         "rainfall_mm": weather_data.get("precipitation_mm", 0),
         "condition": weather_data.get("description", "Unknown"),
         "temp_c": weather_data.get("temp_c"),
+        "source": weather_data.get("source", "unknown"),
+        "humidity": weather_data.get("humidity"),
+        "cloud_cover": weather_data.get("cloud_cover"),
     }
 
 
@@ -436,6 +462,19 @@ async def algorithm_analysis_stream(req: AlgorithmAnalysisRequest):
     from genai.expert_panel import stream_algorithm_analysis
     return StreamingResponse(
         stream_algorithm_analysis(req.metrics, req.location),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+class ScenarioAnalysisRequest(BaseModel):
+    metrics: dict
+    location: str
+
+@app.post("/scenario-analysis-stream")
+async def scenario_analysis_stream(req: ScenarioAnalysisRequest):
+    from genai.expert_panel import stream_scenario_analysis
+    return StreamingResponse(
+        stream_scenario_analysis(req.metrics, req.location),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
