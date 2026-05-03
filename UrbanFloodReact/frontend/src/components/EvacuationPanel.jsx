@@ -7,11 +7,12 @@
  *  - Unreachable population alert
  */
 import { useMemo, useState, useEffect } from 'react';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit, Layers } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRight, ChevronDown, Trophy, Zap, Cpu, PlusCircle, Navigation, RefreshCw, BrainCircuit, Layers, GitCompare } from 'lucide-react';
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
 import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
 import { ScenarioAnalysisPopup } from './ScenarioAnalysisPopup';
+import { McpComparisonPopup } from './McpComparisonPopup';
 
 
 const ALGO_COLORS = {
@@ -189,6 +190,9 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     const [isScenarioAnalysing, setIsScenarioAnalysing] = useState(false);
     const [scenarioProgress, setScenarioProgress] = useState('');
 
+    // ── MCP vs Non-MCP (standalone) ──
+    const [mcpComparisonOpen, setMcpComparisonOpen] = useState(false);
+
     // Clear analysis cache if the comparison results change (new simulation)
     useEffect(() => {
         setAnalysisMetrics(null);
@@ -197,13 +201,13 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     }, [compareResults]);
 
     const handleRunAnalysis = () => {
-        if (isAnalysing) return;
-
-        // Instant return if we already ran it with the exact same deep analysis setting
-        if (analysisMetrics && Object.keys(analysisMetrics).length === 3 && deepAnalysis === lastAnalysisWasDeep) {
+        // If we have any results, always reopen — even if still technically "analysing"
+        if (analysisMetrics && Object.keys(analysisMetrics).length > 0) {
             setAnalysisOpen(true);
             return;
         }
+
+        if (isAnalysing) return;
 
         setIsAnalysing(true);
         setAnalysisMetrics(null);
@@ -267,6 +271,12 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     };
 
     const handleRunScenarioAnalysis = () => {
+        // If we have any results, always reopen — even if still technically "analysing"
+        if (scenarioMetrics && Object.keys(scenarioMetrics).length > 0) {
+            setScenarioAnalysisOpen(true);
+            return;
+        }
+
         if (isScenarioAnalysing) return;
 
         setIsScenarioAnalysing(true);
@@ -443,11 +453,11 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </div>
 
                     <button
-                        className={`analyse-algos-btn ${isAnalysing ? 'analysing' : ''}`}
+                        className={`analyse-algos-btn ${isAnalysing && !analysisMetrics ? 'analysing' : ''}`}
                         onClick={handleRunAnalysis}
-                        disabled={isAnalysing || isScenarioAnalysing}
+                        disabled={(isAnalysing && !analysisMetrics) || isScenarioAnalysing}
                     >
-                        {isAnalysing ? (
+                        {(isAnalysing && !analysisMetrics) ? (
                             <><RefreshCw size={12} className="spin" /> {analysisProgress || 'Calculating Stability...'}</>
                         ) : (
                             <><BrainCircuit size={12} /> Analyse Algorithm performance{deepAnalysis ? ' (100 iter)' : ''}</>
@@ -456,18 +466,30 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     </button>
                     
                     <button
-                        className={`analyse-algos-btn ${isScenarioAnalysing ? 'analysing' : ''}`}
+                        className={`analyse-algos-btn ${isScenarioAnalysing && !scenarioMetrics ? 'analysing' : ''}`}
                         onClick={handleRunScenarioAnalysis}
-                        disabled={isAnalysing || isScenarioAnalysing}
-                        style={{ marginTop: '8px', background: isScenarioAnalysing ? '#cbd5e1' : 'linear-gradient(135deg, #06b6d4, #0891b2)', color: isScenarioAnalysing ? '#475569' : '#fff' }}
+                        disabled={isAnalysing || (isScenarioAnalysing && !scenarioMetrics)}
+                        style={{ marginTop: '8px', background: (isScenarioAnalysing && !scenarioMetrics) ? '#cbd5e1' : 'linear-gradient(135deg, #06b6d4, #0891b2)', color: (isScenarioAnalysing && !scenarioMetrics) ? '#475569' : '#fff' }}
                     >
-                        {isScenarioAnalysing ? (
+                        {(isScenarioAnalysing && !scenarioMetrics) ? (
                             <><RefreshCw size={12} className="spin" /> {scenarioProgress || 'Running Scenarios...'}</>
                         ) : (
                             <><Layers size={12} /> Scenario Algorithm Analysis</>
                         )}
                         <ChevronRight size={12} />
                     </button>
+
+                    {/* Set to false to hide the button when API quotas are exhausted */}
+                    {false && (
+                        <button
+                            className="analyse-algos-btn"
+                            onClick={() => setMcpComparisonOpen(true)}
+                            style={{ marginTop: '8px', background: 'linear-gradient(135deg, #a855f7, #7c3aed)', color: '#fff' }}
+                        >
+                            <GitCompare size={12} /> MCP vs Non-MCP Comparison
+                            <ChevronRight size={12} />
+                        </button>
+                    )}
                     
                     <label
                         style={{
@@ -497,12 +519,17 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     metrics={analysisMetrics}
                     locationName={locationName}
                 />
-                
+
                 <ScenarioAnalysisPopup
                     isOpen={scenarioAnalysisOpen}
                     onClose={() => setScenarioAnalysisOpen(false)}
                     metrics={scenarioMetrics}
                     locationName={locationName}
+                />
+
+                <McpComparisonPopup
+                    isOpen={mcpComparisonOpen}
+                    onClose={() => setMcpComparisonOpen(false)}
                 />
 
                 {/* ── Per-algo detail view (appears when an algo is active) ────── */}

@@ -403,5 +403,67 @@ UrbanFloodReact/backend/
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1 — Backend | ✅ Complete | All 3 files built, all bugs fixed, Groq tool-calling working |
-| Phase 2 — Frontend UI panel | ⏳ Not started | Side-by-side comparison tab in React |
+| Phase 2 — Frontend UI | ✅ Complete | Standalone popup button in EvacuationPanel, decoupled from Algo/Scenario analysis |
 | Phase 3 — Research sweep | ⏳ Not started | 3 scenarios × 5 questions = 15 pairs, CSV output for paper |
+
+---
+
+## Disabling the UI Button (When Quotas Are Exhausted)
+
+The MCP vs Non-MCP button lives in `UrbanFloodReact/frontend/src/components/EvacuationPanel.jsx`.
+It is controlled by a single boolean flag — find this block and set it to `false` to hide the button:
+
+
+LINE 483 
+
+
+```jsx
+// UrbanFloodReact/frontend/src/components/EvacuationPanel.jsx
+// Around the "MCP vs Non-MCP Comparison" button (after the Scenario Analysis button)
+
+{/* ── Set to true to show the MCP comparison button, false to hide ── */}
+{true && (
+    <button
+        className="analyse-algos-btn"
+        onClick={() => setMcpComparisonOpen(true)}
+        style={{ marginTop: '8px', background: 'linear-gradient(135deg, #a855f7, #7c3aed)', color: '#fff' }}
+    >
+        <GitCompare size={12} /> MCP vs Non-MCP Comparison
+        <ChevronRight size={12} />
+    </button>
+)}
+```
+
+**To disable:** change `{true &&` to `{false &&` — the button vanishes completely.
+**To re-enable:** change back to `{true &&`.
+
+> The popup component (`McpComparisonPopup`) and its state (`mcpComparisonOpen`) remain
+> in the file; only the button is hidden. No imports need to be removed.
+
+### When to disable
+
+- Both Gemini (20 req/day) and Groq (100K tokens/day) free-tier quotas are exhausted
+- Before a demo/presentation where you don't want accidental API calls
+- While testing algo/scenario analysis without burning LLM quota
+
+### When quotas reset
+
+| Provider | Reset time | Check |
+|----------|-----------|-------|
+| Gemini 2.5 Flash (free) | Midnight PST = ~12:30 PM IST | Check Google AI Studio usage |
+| Groq llama-3.3-70b (free) | Rolling 24h from first call | Check console.groq.com |
+
+---
+
+## Frontend File Map
+
+```
+UrbanFloodReact/frontend/src/components/
+├── EvacuationPanel.jsx       ← hosts the "MCP vs Non-MCP" button (purple, after Scenario Analysis)
+│                                toggle: change {true && ...} to {false && ...} to hide
+└── McpComparisonPopup.jsx    ← standalone popup: run button → loading → results cards
+                                 decoupled from AlgoAnalysisPopup and ScenarioAnalysisPopup
+```
+
+The popup has its own internal state — results are NOT shared with the algo analysis flow,
+so running algo analysis does NOT burn MCP comparison quota and vice versa.
