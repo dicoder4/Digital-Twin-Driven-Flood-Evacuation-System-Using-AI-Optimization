@@ -89,9 +89,18 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
     const { lang } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
-    const [messages, setMessages] = useState([
-        { role: 'assistant', content: "Hi! I'm your App Copilot. How can I help you navigate or run a simulation today?" }
+    const [messages, setMessages] = useState(() => [
+        { role: 'assistant', content: t('copilot_greeting', lang) }
     ]);
+
+    useEffect(() => {
+        setMessages(prev => {
+            if (prev.length === 1 && prev[0].role === 'assistant') {
+                return [{ role: 'assistant', content: t('copilot_greeting', lang) }];
+            }
+            return prev;
+        });
+    }, [lang]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);

@@ -6,6 +6,9 @@ import { MapPin, ChevronDown, Loader, CheckCircle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { t } from '../translations';
 
+const toDisplayName = (str) =>
+    str.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
 export function RegionSelector({
     districts, taluks, hoblis,
     selDistrict, selTaluk, selHobli,
@@ -23,7 +26,7 @@ export function RegionSelector({
             <div className="select-wrap">
                 <select value={selDistrict} onChange={e => onDistrict(e.target.value)} className="styled-select">
                     <option value="">{t('district_placeholder', lang)}</option>
-                    {districts.map(d => <option key={d} value={d}>{d}</option>)}
+                    {districts.map(d => <option key={d} value={d}>{toDisplayName(d)}</option>)}
                 </select>
                 <ChevronDown size={13} className="select-arrow" />
             </div>
@@ -32,7 +35,7 @@ export function RegionSelector({
             <div className="select-wrap">
                 <select value={selTaluk} onChange={e => onTaluk(e.target.value)} disabled={!selDistrict} className="styled-select">
                     <option value="">{t('taluk_placeholder', lang)}</option>
-                    {taluks.map(tk => <option key={tk} value={tk}>{tk}</option>)}
+                    {taluks.map(tk => <option key={tk} value={tk}>{toDisplayName(tk)}</option>)}
                 </select>
                 <ChevronDown size={13} className="select-arrow" />
             </div>
@@ -41,7 +44,7 @@ export function RegionSelector({
             <div className="select-wrap">
                 <select value={selHobli} onChange={e => onHobli(e.target.value)} disabled={!selTaluk} className="styled-select">
                     <option value="">{t('hobli_placeholder', lang)}</option>
-                    {hoblis.map(h => <option key={h} value={h}>{h}</option>)}
+                    {hoblis.map(h => <option key={h} value={h}>{toDisplayName(h)}</option>)}
                 </select>
                 <ChevronDown size={13} className="select-arrow" />
             </div>

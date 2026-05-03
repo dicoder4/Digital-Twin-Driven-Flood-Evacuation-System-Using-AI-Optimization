@@ -83,11 +83,11 @@ export function AutomationPanel({ onTriggerSimulation }) {
                         className="control-select"
                         style={{ width: '100%', padding: '0.5rem', borderRadius: '4px' }}
                     >
-                        <option value="Uttarahalli-1">Uttarahalli (Default)</option>
-                        <option value="Begur">Begur</option>
-                        <option value="Kengeri">Kengeri</option>
-                        <option value="Varthur">Varthur</option>
-                        <option value="Yeshwanthpura">Yeshwanthpura</option>
+                        <option value="Uttarahalli-1">{t('hobli_uttarahalli', lang)}</option>
+                        <option value="Begur">{t('hobli_begur', lang)}</option>
+                        <option value="Kengeri">{t('hobli_kengeri', lang)}</option>
+                        <option value="Varthur">{t('hobli_varthur', lang)}</option>
+                        <option value="Yeshwanthpura">{t('hobli_yeshwanthpura', lang)}</option>
                     </select>
                 </div>
                 <div>

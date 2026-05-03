@@ -190,6 +190,8 @@ const translations = {
     login_title:            { en: "Flood Evac AI",                              kn: "ಪ್ರವಾಹ ಸ್ಥಳಾಂತರ AI" },
     login_subtitle:         { en: "Digital Twin–Driven Evacuation System",      kn: "ಡಿಜಿಟಲ್ ಟ್ವಿನ್ ಚಾಲಿತ ಸ್ಥಳಾಂತರ ವ್ಯವಸ್ಥೆ" },
     login_city:             { en: "🏙️ Bangalore Urban Flood Monitoring",        kn: "🏙️ ಬೆಂಗಳೂರು ನಗರ ಪ್ರವಾಹ ಮೇಲ್ವಿಚಾರಣೆ" },
+    login_city_sub:         { en: "Bengaluru Urban Flood Evacuation System",    kn: "ಬೆಂಗಳೂರು ನಗರ ಪ್ರವಾಹ ಸ್ಥಳಾಂತರ ವ್ಯವಸ್ಥೆ" },
+    platform_desc:          { en: "A simulation platform for urban planners and disaster authorities — integrating environmental data, physics-based flood modeling, and advanced AI optimization for life-saving evacuation strategies.", kn: "ನಗರ ಯೋಜಕರು ಮತ್ತು ವಿಪತ್ತು ಪ್ರಾಧಿಕಾರಗಳಿಗಾಗಿ ಸಿಮ್ಯುಲೇಶನ್ ಪ್ಲಾಟ್‌ಫಾರ್ಮ್ — ಪರಿಸರ ಡೇಟಾ, ಭೌತಶಾಸ್ತ್ರ ಆಧಾರಿತ ಪ್ರವಾಹ ಮಾಡೆಲಿಂಗ್ ಮತ್ತು ಜೀವ ರಕ್ಷಣೆಗಾಗಿ ಮುಂದುವರಿದ AI ಆಪ್ಟಿಮೈಸೇಶನ್ ಅನ್ನು ಸಂಯೋಜಿಸುತ್ತದೆ." },
     create_account:         { en: "Create Account",                             kn: "ಖಾತೆ ರಚಿಸಿ" },
     welcome:                { en: "Welcome",                                    kn: "ಸ್ವಾಗತ" },
     welcome_back:           { en: "Welcome Back",                               kn: "ಮರಳಿ ಸ್ವಾಗತ" },
@@ -311,6 +313,13 @@ const translations = {
     copilot_greeting:       { en: "Hi! I'm your App Copilot. How can I help you navigate or run a simulation today?", kn: "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ ಅಪ್ಲಿಕೇಶನ್ ಸಹಾಯಕ. ಇಂದು ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?" },
     copilot_placeholder:    { en: "Ask me to navigate or run a simulation...",  kn: "ನ್ಯಾವಿಗೇಟ್ ಮಾಡಲು ಅಥವಾ ಸಿಮ್ಯುಲೇಶನ್ ರನ್ ಮಾಡಲು ಕೇಳಿ..." },
     copilot_thinking:       { en: "Thinking...",                                kn: "ಯೋಚಿಸಲಾಗುತ್ತಿದೆ..." },
+
+    // ── Automation Panel dropdown options ────────────────────────────────────
+    hobli_uttarahalli:      { en: "Uttarahalli (Default)",                      kn: "ಉತ್ತರಹಳ್ಳಿ (ಡೀಫಾಲ್ಟ್)" },
+    hobli_begur:            { en: "Begur",                                      kn: "ಬೆಗೂರು" },
+    hobli_kengeri:          { en: "Kengeri",                                    kn: "ಕೆಂಗೇರಿ" },
+    hobli_varthur:          { en: "Varthur",                                    kn: "ವರ್ತೂರು" },
+    hobli_yeshwanthpura:    { en: "Yeshwanthpura",                              kn: "ಯಶವಂತಪುರ" },
 };
 
 export function t(key, lang) {

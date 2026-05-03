@@ -83,10 +83,10 @@ const LoginPage = () => {
           </div>
           <div style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '12px 16px', marginBottom: '1.5rem' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#e0edff' }}>{t('login_city', lang)}</div>
-            <div style={{ fontSize: '0.82rem', color: 'rgba(191,219,254,0.75)', marginTop: '3px' }}>ಬೆಂಗಳೂರು ನಗರ ಪ್ರವಾಹ ಸ್ಥಳಾಂತರ ವ್ಯವಸ್ಥೆ</div>
+            <div style={{ fontSize: '0.82rem', color: 'rgba(191,219,254,0.75)', marginTop: '3px' }}>{t('login_city_sub', lang)}</div>
           </div>
           <p style={{ color: 'rgba(191,219,254,0.85)', fontSize: '1rem', lineHeight: 1.65, marginBottom: '2rem', maxWidth: '480px' }}>
-            A simulation platform for urban planners and disaster authorities — integrating environmental data, physics-based flood modeling, and advanced AI optimization for life-saving evacuation strategies.
+            {t('platform_desc', lang)}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '2rem' }}>
             <FeatureCard icon={<Map size={20} color="#93c5fd" />} title={t('feature_hifi', lang)} desc={t('feature_hifi_desc', lang)} />
