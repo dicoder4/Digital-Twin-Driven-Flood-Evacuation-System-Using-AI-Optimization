@@ -7,14 +7,14 @@ import os
 
 # --- CONFIGURATION ---
 BASE_URL = "https://www.ksndmc.org/en/Root/DownloadFile"
-PATH_TEMPLATE = r"\\192.168.2.21\e$\KSNDMC REPORTS\Daily Reports\Rainfall Pattern\2025\DTRP_{date}.pdf"
+PATH_TEMPLATE = r"\\192.168.2.21\e$\KSNDMC REPORTS\Daily Reports\Rainfall Pattern\2026\DTRP_{date}.pdf"
 FILENAME_TEMPLATE = "Rainfall Pattern_{date}.pdf"
 
 # Set your date range here
-START_DATE = datetime(2025, 7, 1)
-END_DATE = datetime(2025, 7, 31)
+START_DATE = datetime(2026, 4, 28)
+END_DATE = datetime(2026, 4, 30)
 RAW_FILE = "Raw_Data_Dump.xlsx"
-CLEAN_FILE = "Bengaluru_Rainfall_24Hrs_June.xlsx"
+CLEAN_FILE = "Bengaluru_Rainfall_24Hrs_2026.xlsx"
 
 def generate_dates(start, end):
     curr = start

@@ -551,7 +551,10 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                         const nm = r.non_mcp || {};
                         const mc = r.mcp || {};
                         const isOpen = expandedQ === i;
-                        const nmWins = (nm.auto_metrics?.numeric_match_rate || 0) >= (mc.auto_metrics?.numeric_match_rate || 0);
+                        const nmScore = nm.auto_metrics?.numeric_match_rate || 0;
+                        const mcScore = mc.auto_metrics?.numeric_match_rate || 0;
+                        const isTie = nmScore === mcScore;
+                        const nmWins = nmScore > mcScore;
 
                         return (
                           <div key={i} className="mcp-question-card">
@@ -564,8 +567,8 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
                                 <span className="mcp-q-text">{r.question}</span>
                               </div>
                               <div className="mcp-q-badges">
-                                <span className={`mcp-winner-badge ${nmWins ? 'nm' : 'mcp'}`}>
-                                  {nmWins ? 'Non-MCP' : 'MCP'} wins
+                                <span className={`mcp-winner-badge ${isTie ? '' : (nmWins ? 'nm' : 'mcp')}`} style={isTie ? { background: '#f1f5f9', color: '#64748b' } : {}}>
+                                  {isTie ? 'Tie' : (nmWins ? 'Non-MCP wins' : 'MCP wins')}
                                 </span>
                                 <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: '0.2s' }} />
                               </div>

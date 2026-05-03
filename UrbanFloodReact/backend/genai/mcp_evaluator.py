@@ -64,6 +64,20 @@ def _extract_numeric_facts(enriched_context: dict) -> set:
         if v is not None:
             facts.add(str(int(v)) if isinstance(v, (int, float)) and float(v).is_integer() else str(v))
 
+    # Metro facts
+    for m in enriched_context.get("metro_reports", []):
+        for k in ("depth", "lat", "lon"):
+            v = m.get(k)
+            if v is not None:
+                facts.add(str(v))
+
+    # Pressure juncture facts
+    for pj in enriched_context.get("pressure_junctures", []):
+        for k in ("depth", "load", "lat", "lon"):
+            v = pj.get(k)
+            if v is not None:
+                facts.add(str(v))
+
     return facts
 
 

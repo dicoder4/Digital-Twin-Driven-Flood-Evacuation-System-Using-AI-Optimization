@@ -1260,6 +1260,7 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
             "success_rate_pct":        round(
                 total_assigned / max(total_at_risk_before_ga, 1) * 100, 1
             ),
+            "rainfall_mm":             rainfall_mm,
             "algorithm":               algorithm.upper(),
             "ga_execution_time":       ga_execution_time,
             "best_fitness":            best_fitness,
@@ -1594,6 +1595,13 @@ async def run_compare_generator(
                 algo_suggestions, genuinely_unreachable = _compute_shelter_suggestions(
                     at_risk_formatted, safe_shelters, sim.G, plan
                 )
+            
+            pressure_points = []
+            if instance is not None:
+                try:
+                    pressure_points = instance.calculate_pressure_points(plan)
+                except Exception as e:
+                    print(f"Error calculating pressure points: {e}")
 
             compare_results[algo_key] = {
                 "evacuation_plan":       plan,
@@ -1606,12 +1614,14 @@ async def run_compare_generator(
                     "total_at_risk_initial":   total_at_risk_initial,
                     "simulation_population":   total_pop,
                     "success_rate_pct":        round(total_evac / max(total_at_risk_initial, 1) * 100, 1),
+                    "rainfall_mm":             rainfall_mm,
                     "algorithm":               algo_key.upper(),
                     "ga_execution_time":       elapsed,
                     "best_fitness":            fitness,
                     "avg_distance_per_person": round(fitness / max(total_at_risk_initial, 1), 1),
                     "shelter_reports":         shelter_reports,
                     "shelter_suggestions":     algo_suggestions,
+                    "pressure_points":         pressure_points,
                     "metro_reports":           _collect_metro_reports(sim, metro_stations, center_lat, center_lon, update_history=True),
                     "metro_lines": entry.get("metro_lines", []),
                 },
