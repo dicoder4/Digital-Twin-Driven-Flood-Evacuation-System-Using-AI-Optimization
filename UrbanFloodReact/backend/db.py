@@ -5,16 +5,18 @@ Handles connections to MongoDB and exposes structured
 fetching logic for backend components.
 
 Cache collections (all device-agnostic, no local disk):
-  region_cache     — GraphML XML + pickled features per hobli
-  shelter_cache    — OSM shelter candidates per hobli
-  dem_cache        — SRTM DEM GeoTIFF bytes per bounding-box key
-  mcp_state        — Latest MCP simulation state (single document)
+  region_cache       — GraphML XML + pickled features per hobli
+  shelter_cache      — OSM shelter candidates per hobli
+  dem_cache          — SRTM DEM GeoTIFF bytes per bounding-box key
+  mcp_state          — Latest MCP simulation state (single document)
+  evacuation_plans   — Large evacuation plan arrays (separate to avoid BSON limits)
 """
 
 import os
 import json
 import base64
 import logging
+from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from pymongo import MongoClient, ASCENDING
@@ -421,7 +423,10 @@ def set_dem_cache(dem_key: str, tif_bytes: bytes) -> None:
 # ── MCP State (single shared document) ───────────────────────────────────────
 
 def get_mcp_state() -> dict:
-    """Returns the latest simulation state dict, or an empty-state dict if none."""
+    """
+    Returns the latest simulation state dict, or an empty-state dict if none.
+    Fetches evacuation_plan from separate collection if it exists.
+    """
     db = _get_db()
     empty = {"summary_data": None, "evacuation_plan": None, "hobli": None, "algorithm_analysis": None}
     if db is None:
@@ -431,7 +436,19 @@ def get_mcp_state() -> dict:
     if not doc:
         logger.info("[MONGO] mcp_state: No simulation state stored yet — returning empty state")
         return empty
+    
+    # Fetch evacuation_plan from separate collection if reference exists
+    plan_ref = doc.get("evacuation_plan_ref")
+    evacuation_plan = None
+    if plan_ref:
+        plan_doc = db["evacuation_plans"].find_one({"_id": plan_ref})
+        if plan_doc:
+            evacuation_plan = plan_doc.get("plan")
+            logger.info("[MONGO] evacuation_plan READ — loaded %d routes", len(evacuation_plan) if evacuation_plan else 0)
+    
     doc.pop("_id", None)
+    doc.pop("evacuation_plan_ref", None)  # Remove reference, use actual plan
+    doc["evacuation_plan"] = evacuation_plan
     hobli = doc.get("hobli") or "unknown"
     logger.info("[MONGO] mcp_state READ — loaded state for hobli '%s'", hobli)
     return doc
@@ -439,16 +456,34 @@ def get_mcp_state() -> dict:
 
 def set_mcp_state(summary_data: dict, evacuation_plan: list = None,
                   hobli: str = None, algorithm_analysis: dict = None) -> None:
-    """Upsert the MCP simulation state into MongoDB."""
+    """
+    Upsert the MCP simulation state into MongoDB.
+    Large evacuation_plan is stored separately to avoid BSON size limits (16 MB).
+    """
     db = _get_db()
     if db is None:
         logger.warning("[MONGO] mcp_state: DB unavailable — state NOT saved for hobli '%s'", hobli)
         return
+    
+    # Store evacuation_plan separately if large (avoids BSON 16 MB limit)
+    plan_ref = None
+    if evacuation_plan:
+        plan_doc = {
+            "_id": f"plan_{hobli}",
+            "hobli": hobli,
+            "plan": evacuation_plan,
+            "timestamp": datetime.utcnow(),
+        }
+        db["evacuation_plans"].update_one({"_id": plan_doc["_id"]}, {"$set": plan_doc}, upsert=True)
+        plan_ref = plan_doc["_id"]
+        logger.info("[MONGO] evacuation_plan WRITE — saved %d routes to separate collection", len(evacuation_plan))
+    
+    # Store metadata + reference to plan
     db["mcp_state"].update_one(
         {"_id": "current"},
         {"$set": {
             "summary_data": summary_data,
-            "evacuation_plan": evacuation_plan or [],
+            "evacuation_plan_ref": plan_ref,
             "hobli": hobli or "",
             "algorithm_analysis": algorithm_analysis,
         }},
