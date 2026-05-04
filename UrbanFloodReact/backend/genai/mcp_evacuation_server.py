@@ -39,35 +39,32 @@ except ImportError:
 # ── Create MCP Server ─────────────────────────────────────────────────────────
 mcp = FastMCP("Urban Flood Evacuation AI Server")
 
-# ── Shared state file ──────────────────────────────────────────────────────────
-# Both FastAPI (writer) and MCP server (reader) use this file.
-# This solves the cross-process state problem — no shared memory needed.
-_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_state.json")
+# ── Shared state via MongoDB ──────────────────────────────────────────────────
+# FastAPI writes, MCP server reads — no local file needed on any deployment.
+try:
+    import db as _db
+except ImportError:
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    import db as _db
+
+# Kept for backward-compat with mcp_flood_intelligence_server which imports _STATE_FILE
+_STATE_FILE = None
 
 
 def update_state(summary_data: dict, evacuation_plan: list = None, hobli: str = None, algorithm_analysis: dict = None):
-    """Write the latest simulation results to the shared state file on disk."""
-    state = {
-        "summary_data": summary_data,
-        "evacuation_plan": evacuation_plan or [],
-        "hobli": hobli or "",
-        "algorithm_analysis": algorithm_analysis,
-    }
-    with open(_STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+    """Persist the latest simulation results to MongoDB."""
+    _db.set_mcp_state(summary_data, evacuation_plan, hobli, algorithm_analysis)
 
 
 def _load_state() -> dict:
-    """Read the latest simulation state from disk. Returns empty dict if no file."""
-    try:
-        with open(_STATE_FILE, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"summary_data": None, "evacuation_plan": None, "hobli": None, "algorithm_analysis": None}
+    """Read the latest simulation state from MongoDB."""
+    return _db.get_mcp_state()
 
 
 def _get_enriched_context() -> dict:
-    """Build enriched context from the latest simulation state on disk."""
+    """Build enriched context from the latest simulation state in MongoDB."""
     state = _load_state()
     if not state.get("summary_data"):
         return {}

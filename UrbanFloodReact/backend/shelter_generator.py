@@ -1,7 +1,7 @@
 """
 shelter_generator.py
 ────────────────────
-Step 1 — Extract shelter candidates from OSM (with disk cache).
+Step 1 — Extract shelter candidates from OSM (with MongoDB cache).
 Step 2 — Filter by current flood state (flood polygons + road risk).
 Step 3 — Assign rule-based capacity.
 Step 4 — Attach to road graph via nearest node.
@@ -14,23 +14,20 @@ Public API
 """
 
 import os
-import pickle
 import random
 import uuid
 import math
 import traceback
 import time
-from pathlib import Path
 from typing import Optional
 
 import osmnx as ox
 from shapely.geometry import Point, shape
 from shapely.ops import unary_union
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+import db
 
-CACHE_DIR = Path(__file__).parent / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
+# ── Constants ──────────────────────────────────────────────────────────────────
 
 SHELTER_TAGS = {
     "amenity": [
@@ -64,13 +61,11 @@ def extract_shelter_candidates(G, lat: float, lon: float, hobli_key: str, dist: 
 
     On empty OSM result → returns synthetic random shelters on graph nodes.
     """
-    cache_path = CACHE_DIR / f"{hobli_key}_shelters.pkl"
-
-    # ── Cache hit ──────────────────────────────────────────────────────────────
-    if cache_path.exists():
-        print(f"  [shelters] Cache hit → {cache_path.name}")
-        with open(cache_path, "rb") as f:
-            return pickle.load(f)
+    # ── Cache hit (MongoDB) ────────────────────────────────────────────────────
+    cached = db.get_shelter_cache(hobli_key)
+    if cached is not None:
+        print(f"  [shelters] MongoDB cache hit for '{hobli_key}'")
+        return cached
 
     # ── OSM query ─────────────────────────────────────────────────────────────
     candidates = []
@@ -191,10 +186,8 @@ def extract_shelter_candidates(G, lat: float, lon: float, hobli_key: str, dist: 
         print(f"  [shelters] No OSM results — generating {RANDOM_FALLBACK_COUNT} synthetic shelters")
         candidates = _generate_synthetic_shelters(G, RANDOM_FALLBACK_COUNT)
 
-    # ── Cache & return ─────────────────────────────────────────────────────────
-    with open(cache_path, "wb") as f:
-        pickle.dump(candidates, f)
-    print(f"  [shelters] Cached {len(candidates)} candidates → {cache_path.name}")
+    # ── Persist to MongoDB & return ────────────────────────────────────────────
+    db.set_shelter_cache(hobli_key, candidates)
     return candidates
 
 

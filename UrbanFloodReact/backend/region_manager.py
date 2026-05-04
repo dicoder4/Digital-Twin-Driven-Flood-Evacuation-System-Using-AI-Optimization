@@ -1,6 +1,6 @@
-"""
+﻿"""
 region_manager.py
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 Owns all mutable server state:
   - HOBLI_COORDS  : norm_key â†’ coord metadata
   - RAINFALL_DATA : norm_key â†’ list of rainfall records
@@ -8,13 +8,16 @@ Owns all mutable server state:
   - REGIONS_TREE  : district â†’ taluk â†’ [hobli display names]
 
 Provides:
-  - initialise(data_dir) â€” called once in lifespan
-  - get_region(hobli_key) â€” returns cached or downloads graph
-  - norm_key()            â€” re-exported for endpoints
+  - initialise(data_dir) â€" called once in lifespan
+  - get_region(hobli_key) â€" returns cached or downloads graph
+  - norm_key()            â€" re-exported for endpoints
 """
 
 from pathlib import Path
 import pickle
+import base64
+import io
+import tempfile
 import osmnx as ox
 from shapely.geometry import Point, LineString, box, shape, mapping
 from shapely.ops import unary_union
@@ -23,29 +26,26 @@ from coord_loader   import load_coords_from_json, norm_key  # noqa: F401 (re-exp
 from rainfall_loader import load_rainfall_excels
 import db
 
-# â”€â”€ Module-level state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Module-level state -------------------------------------------------------
 HOBLI_COORDS:  dict = {}
 RAINFALL_DATA: dict = {}
 REGION_CACHE:  dict = {}
 REGIONS_TREE:  dict = {}
 
 DATA_DIR  = Path(__file__).parent / "data"
-CACHE_DIR = Path(__file__).parent / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
-
-URBAN_JSON = DATA_DIR / "hobli_coordinates_urban.json"
-RURAL_JSON = DATA_DIR / "hobli_coordinates_rural.json"
 METRO_KML = DATA_DIR / "bengaluru_rail_metro_lines.kml"
 METRO_GEOJSON = DATA_DIR / "NammaMetro" / "metro-lines-stations.geojson"
 METRO_QUERY_RADIUS_M = 5000
 
 
-# â”€â”€ Initialise (called once at startup) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Initialise (called once at startup) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 def initialise():
     """Load all coordinate maps and rainfall data, then build region tree."""
-    print("Loading hobli coordinate map ")
-    urban = load_coords_from_json(URBAN_JSON, "BENGALURU URBAN")
-    rural = load_coords_from_json(RURAL_JSON, "BENGALURU RURAL")
+    print("Loading hobli coordinate map")
+    urban_json = DATA_DIR / "hobli_coordinates_urban.json"
+    rural_json = DATA_DIR / "hobli_coordinates_rural.json"
+    urban = load_coords_from_json(urban_json, "BENGALURU URBAN")
+    rural = load_coords_from_json(rural_json, "BENGALURU RURAL")
     HOBLI_COORDS.update(urban)
     HOBLI_COORDS.update(rural)
     print(f"  {len(HOBLI_COORDS)} unique hoblis ({len(urban)} urban, {len(rural)} rural)")
@@ -63,7 +63,7 @@ def _build_regions_tree():
     for key, entries in RAINFALL_DATA.items():
         if not entries:
             continue
-        # Skip hoblis that have no coordinate entry â€” they can't be loaded
+        # Skip hoblis that have no coordinate entry â€" they can't be loaded
         if key not in HOBLI_COORDS:
             continue
         e        = entries[0]
@@ -87,11 +87,53 @@ def _build_regions_tree():
     print(f"  Tree: {len(tree)} districts, {total} hoblis")
 
 
-# â”€â”€ Graph loader (lazy + disk-cached) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Graph loader (lazy + MongoDB-cached) -------------------------------------
+
+def _graphml_to_b64(G) -> str:
+    """Serialise an OSMnx graph to a base64-encoded GraphML string."""
+    with tempfile.NamedTemporaryFile(suffix=".graphml", delete=False) as tmp:
+        tmp_path = tmp.name
+    ox.save_graphml(G, tmp_path)
+    with open(tmp_path, "rb") as f:
+        data = f.read()
+    import os as _os
+    _os.unlink(tmp_path)
+    return base64.b64encode(data).decode("ascii")
+
+
+def _b64_to_graph(b64: str):
+    """Reconstruct an OSMnx graph from a base64-encoded GraphML string."""
+    raw = base64.b64decode(b64)
+    with tempfile.NamedTemporaryFile(suffix=".graphml", delete=False) as tmp:
+        tmp.write(raw)
+        tmp_path = tmp.name
+    G = ox.load_graphml(tmp_path)
+    import os as _os
+    _os.unlink(tmp_path)
+    return G
+
+
+def _features_to_b64(drains, lakes, metro_stations, metro_lines) -> str:
+    """Pickle features dict and base64-encode it."""
+    blob = pickle.dumps({
+        "drains": drains,
+        "lakes": lakes,
+        "metro": metro_stations,
+        "metro_lines": metro_lines,
+    })
+    return base64.b64encode(blob).decode("ascii")
+
+
+def _b64_to_features(b64: str) -> dict:
+    """Decode and unpickle a features blob."""
+    return pickle.loads(base64.b64decode(b64))
+
+
 def get_region(hobli_key: str) -> dict:
     """
-    Return {G, drain_nodes, lake_nodes} for the given normalised hobli key.
-    Downloads from OSMnx on first call, then caches in memory and on disk.
+    Return {G, drain_nodes, lake_nodes, metro_stations, metro_lines} for the
+    given normalised hobli key. Downloads from OSMnx on first call, then
+    persists to MongoDB so any deployment can warm-start from there.
     """
     if hobli_key in REGION_CACHE:
         return REGION_CACHE[hobli_key]
@@ -100,98 +142,75 @@ def get_region(hobli_key: str) -> dict:
     if not coords:
         raise ValueError(f"No coordinates for hobli key '{hobli_key}'")
 
-    lat, lon  = coords["lat"], coords["lon"]
+    lat, lon = coords["lat"], coords["lon"]
     center = (lat, lon)
-    safe_key  = hobli_key.replace("/", "_").replace(" ", "_")
-    graph_f   = CACHE_DIR / f"{safe_key}_graph.graphml"
-    feat_f    = CACHE_DIR / f"{safe_key}_features.pkl"
 
-    # 1. Graph
-    if graph_f.exists():
-        print(f"  [cache] Loading graph: {graph_f.name}")
-        G = ox.load_graphml(str(graph_f))
+    drain_nodes, lake_nodes, metro_stations, metro_lines = [], [], [], []
+    needs_save = False
+
+    # 1. Try MongoDB cache
+    cached = db.get_region_cache(hobli_key)
+    if cached:
+        print(f"  [mongo] Loading graph + features for '{hobli_key}'")
+        G = _b64_to_graph(cached["graphml_b64"])
+        saved = _b64_to_features(cached["features_b64"])
+        drain_nodes    = saved.get("drains", [])
+        lake_nodes     = saved.get("lakes", [])
+        metro_stations = saved.get("metro", [])
+        metro_lines    = saved.get("metro_lines", [])
+
+        # Normalise metro_lines to FeatureCollection
+        if isinstance(metro_lines, list):
+            metro_lines = {"type": "FeatureCollection", "features": metro_lines}
+
+        # Sanitize NaNs from old pickles
+        for m in metro_stations:
+            if isinstance(m, dict):
+                m["name"]   = _sanitize_val(m.get("name"))
+                m["line"]   = _sanitize_val(m.get("line"))
+                m["colour"] = _sanitize_val(m.get("colour"))
+        if isinstance(metro_lines, dict):
+            for feat in metro_lines.get("features", []):
+                if isinstance(feat, dict) and "properties" in feat:
+                    p = feat["properties"]
+                    p["name"]   = _sanitize_val(p.get("name"))
+                    p["line"]   = _sanitize_val(p.get("line"))
+                    p["colour"] = _sanitize_val(p.get("colour"))
     else:
+        # 2. Download from OSMnx
         print(f"  [osmnx] Downloading graph for {coords['original_name']}")
         G = ox.graph_from_point((lat, lon), dist=2000, dist_type="bbox", network_type="drive")
-        ox.save_graphml(G, str(graph_f))
-        print(f"  [osmnx] Saved -> {graph_f.name}")
 
-    # 2. Drains & lakes data (essential for physics)
-    drain_nodes, lake_nodes = [], []
-    metro_stations, metro_lines = [], []
-    needs_update = False
-    
-    if feat_f.exists():
-        print(f"  [cache] Loading features: {feat_f.name}")
-        with open(feat_f, "rb") as f:
-            saved = pickle.load(f)
-            drain_nodes = saved.get("drains", [])
-            lake_nodes  = saved.get("lakes", [])
-            metro_stations = saved.get("metro", [])
-            metro_lines = saved.get("metro_lines", [])
-            #metro_lines = _load_metro_lines_from_geojson(center)
-            
-            # Handle metro_lines format - ensure it's a FeatureCollection
-            if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
-                pass  # Already a FeatureCollection
-            elif isinstance(metro_lines, list):
-                # Convert array to FeatureCollection
-                metro_lines = {
-                    "type": "FeatureCollection",
-                    "features": metro_lines
-                }
-            
-            # Sanitize cached data (in case it contains NaNs from previous versions)
-            for m in metro_stations:
-                if isinstance(m, dict):
-                    m['name'] = _sanitize_val(m.get('name'))
-                    m['line'] = _sanitize_val(m.get('line'))
-                    m['colour'] = _sanitize_val(m.get('colour'))
-            
-            # Sanitize metro lines features
-            if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
-                for line in metro_lines.get("features", []):
-                    if isinstance(line, dict) and 'properties' in line:
-                        p = line['properties']
-                        p['name'] = _sanitize_val(p.get('name'))
-                        p['line'] = _sanitize_val(p.get('line'))
-                        p['colour'] = _sanitize_val(p.get('colour'))
-    else:
         try:
             from gis_terrain_loader import get_gis_hydrology_nodes
             drain_nodes, lake_nodes = get_gis_hydrology_nodes(G, lat, lon)
         except Exception as e:
-            print(f"  [gis/warning] GIS hydrology failed: {e}. Falling back to standard OSM extraction.")
-            center = (lat, lon)
+            print(f"  [gis/warning] GIS hydrology failed: {e}. Falling back to OSM extraction.")
             drain_nodes = _extract_drains(G, center)
             lake_nodes  = _extract_lakes(G, center)
-        needs_update = True
 
-    if needs_update:
-        with open(feat_f, "wb") as f:
-            pickle.dump({
-                "drains": drain_nodes, 
-                "lakes": lake_nodes,
-                "metro": metro_stations,
-                "metro_lines": metro_lines
-            }, f)
-        print(f"  [cache] Features saved -> {feat_f.name}")
-        
+        needs_save = True
+
+    # 3. Graph enrichment (elevation + roughness) — always applied in memory
     try:
         from gis_terrain_loader import enrich_graph_elevation, enrich_graph_roughness
-        # This will download the SRTM DEM for the graph bounds and apply elevation to all nodes
         G = enrich_graph_elevation(G, lat, lon)
-        # Apply Manning's roughness coefficient to edges based on highway tags
         G = enrich_graph_roughness(G)
     except Exception as e:
         print(f"  [gis/warning] Graph enrichment skipped: {e}")
 
+    # 4. Persist to MongoDB if freshly downloaded
+    if needs_save:
+        graphml_b64  = _graphml_to_b64(G)
+        features_b64 = _features_to_b64(drain_nodes, lake_nodes, metro_stations, metro_lines)
+        db.set_region_cache(hobli_key, graphml_b64, features_b64)
+
     entry = {
-        "G": G, 
-        "drain_nodes": drain_nodes, 
-        "lake_nodes": lake_nodes, 
+        "G": G,
+        "drain_nodes": drain_nodes,
+        "lake_nodes": lake_nodes,
         "metro_stations": metro_stations,
-        "metro_lines": metro_lines
+        "metro_lines": metro_lines,
     }
     REGION_CACHE[hobli_key] = entry
     return entry
@@ -200,166 +219,48 @@ def get_region(hobli_key: str) -> dict:
 def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
     if hobli_key not in REGION_CACHE:
         raise ValueError(f"Region '{hobli_key}' must be loaded before extracting metro data.")
-    
-    entry = REGION_CACHE[hobli_key]
+
+    entry  = REGION_CACHE[hobli_key]
     coords = HOBLI_COORDS.get(hobli_key)
     lat, lon = coords["lat"], coords["lon"]
     center = (lat, lon)
     G = entry["G"]
 
-    print(f"  [on-demand] Extracting Metro Network for {hobli_key} (Radius: 4,000m, include_rail={include_rail}) …")
+    print(f"  [on-demand] Extracting Metro Network for {hobli_key} (Radius: 4,000m, include_rail={include_rail})")
 
-    # 1. Extract stations (unchanged)
     metro_stations = _extract_metro_stations(G, center, include_rail=include_rail)
+    metro_lines    = _load_metro_lines_from_geojson(center)
 
-    # 2. Use authoritative GeoJSON for lines – this replaces all OSM line extraction and merging
-    metro_lines = _load_metro_lines_from_geojson(center)
-
-    # 3. Still enrich stations with line information (optional, but keeps station display accurate)
-    #    We need a reference for station enrichment. Use the GeoJSON lines as the reference.
     if metro_lines.get("features"):
-        print(f"  [metro] Using GeoJSON lines for station enrichment ({len(metro_lines['features'])} features)")
-        # For compatibility, we can reuse the existing enrichment functions; they accept FeatureCollection.
+        print(f"  [metro] Enriching stations from GeoJSON ({len(metro_lines['features'])} features)")
         metro_stations = _enrich_station_lines_from_network(metro_stations, metro_lines)
 
-    # Optional: Also apply CSV reference if you want (keep it for station line corrections)
-    csv_label_reference, csv_station_line_map = _extract_namma_metro_reference_from_csv()
+    _, csv_station_line_map = _extract_namma_metro_reference_from_csv()
     metro_stations = _enrich_station_lines_from_dataset(metro_stations, csv_station_line_map)
 
-    # Update memory cache
-    entry["metro_stations"] = metro_stations
-    entry["metro_lines"] = metro_lines
+    # Normalise metro_lines to FeatureCollection
+    if isinstance(metro_lines, list):
+        metro_lines = {"type": "FeatureCollection", "features": metro_lines}
+    elif not isinstance(metro_lines, dict):
+        metro_lines = {"type": "FeatureCollection", "features": []}
 
-    # Update disk cache
-    safe_key = hobli_key.replace("/", "_").replace(" ", "_")
-    feat_f = CACHE_DIR / f"{safe_key}_features.pkl"
-    
-    # Ensure metro_lines is a FeatureCollection before storing
-    metro_lines_to_store = metro_lines
-    if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
-        line_count = len(metro_lines.get("features", []))
-    elif isinstance(metro_lines, list):
-        line_count = len(metro_lines)
-        metro_lines_to_store = {
-            "type": "FeatureCollection",
-            "features": metro_lines
-        }
-    else:
-        line_count = 0
-        metro_lines_to_store = {"type": "FeatureCollection", "features": []}
-    
+    line_count = len(metro_lines.get("features", []))
     print(f"  [on-demand] Storing {len(metro_stations)} stations and {line_count} line segments")
 
-    with open(feat_f, "wb") as f:
-        pickle.dump({
-            "drains": entry.get("drain_nodes", []),
-            "lakes": entry.get("lake_nodes", []),
-            "metro": metro_stations,
-            "metro_lines": metro_lines_to_store
-        }, f)
-    print(f"  [on-demand] Features updated on disk -> {feat_f.name}")
+    # Update in-memory cache
+    entry["metro_stations"] = metro_stations
+    entry["metro_lines"]    = metro_lines
+
+    # Persist updated features to MongoDB
+    features_b64 = _features_to_b64(
+        entry.get("drain_nodes", []),
+        entry.get("lake_nodes", []),
+        metro_stations,
+        metro_lines,
+    )
+    db.update_region_features(hobli_key, features_b64)
 
     return entry
-
-# def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
-#     """
-#     On-demand heavy OSMnx extraction for metro stations and lines.
-#     Updates the regional cache and persistent disk feature file.
-#     """
-#     if hobli_key not in REGION_CACHE:
-#         raise ValueError(f"Region '{hobli_key}' must be loaded before extracting metro data.")
-    
-#     entry = REGION_CACHE[hobli_key]
-    
-#     # We now skip the early return to ensure the new "Smart Sniffer" 
-#     # can repair existing cache files that have missing line/color info.
-
-#     coords = HOBLI_COORDS.get(hobli_key)
-#     lat, lon = coords["lat"], coords["lon"]
-#     center = (lat, lon)
-#     G = entry["G"]
-
-#     print(f"  [on-demand] Extracting Metro Network for {hobli_key} (Radius: 4,000m, include_rail={include_rail}) …")
-#     metro_stations = _extract_metro_stations(G, center, include_rail=include_rail)
-
-#     csv_label_reference, csv_station_line_map = _extract_namma_metro_reference_from_csv()
-#     kml_label_reference = _extract_metro_lines_from_kml(center, include_rail=include_rail)
-
-#     # MERGE CSV (metro lines) + KML (metro + railway lines) for comprehensive coverage
-#     label_reference_features = []
-    
-#     if isinstance(csv_label_reference, dict) and csv_label_reference.get("features"):
-#         label_reference_features.extend(csv_label_reference.get("features", []))
-#         print(f"  [metro] Added {len(csv_label_reference.get('features', []))} CSV metro features")
-    
-#     if isinstance(kml_label_reference, dict) and kml_label_reference.get("features"):
-#         kml_features = kml_label_reference.get("features", [])
-#         label_reference_features.extend(kml_features)
-#         print(f"  [metro] Added {len(kml_features)} KML features")
-#     elif isinstance(kml_label_reference, list) and len(kml_label_reference) > 0:
-#         label_reference_features.extend(kml_label_reference)
-#         print(f"  [metro] Added {len(kml_label_reference)} KML features (as list)")
-    
-#     label_reference = {
-#         "type": "FeatureCollection",
-#         "features": label_reference_features
-#     }
-#     print(f"  [metro] Total label reference features: {len(label_reference_features)}")
-
-#     metro_lines = _extract_metro_lines(center, include_rail=include_rail, label_reference_lines=label_reference)
-#     metro_lines = _merge_full_line_reference_segments(metro_lines, label_reference)
-    
-#     # Log what we have after merge
-#     if isinstance(metro_lines, dict) and metro_lines.get("features"):
-#         total_features = len(metro_lines.get("features", []))
-#         metro_count_lines = sum(1 for f in metro_lines.get("features", []) if f.get("properties", {}).get("transport_type") == "metro")
-#         railway_count_lines = sum(1 for f in metro_lines.get("features", []) if f.get("properties", {}).get("transport_type") == "railway")
-#         print(f"  [metro] After merge: {total_features} total features ({metro_count_lines} metro, {railway_count_lines} railway)")
-    
-#     label_source = label_reference if isinstance(label_reference, dict) and label_reference.get("features") else metro_lines
-#     print(f"  [metro] Enriching {len(metro_stations)} stations with line data from {type(label_source)} source")
-#     metro_stations = _enrich_station_lines_from_network(metro_stations, label_source)
-#     metro_stations = _enrich_station_lines_from_dataset(metro_stations, csv_station_line_map)
-    
-#     # Log enrichment results
-#     metro_count = sum(1 for s in metro_stations if s.get("transport_type") == "metro")
-#     railway_count = sum(1 for s in metro_stations if s.get("transport_type") == "railway")
-#     print(f"  [on-demand] Station enrichment complete: {metro_count} metro, {railway_count} railway stations")
-    
-#     # Update memory cache
-#     entry["metro_stations"] = metro_stations
-#     entry["metro_lines"] = metro_lines
-
-#     # Update disk cache
-#     safe_key = hobli_key.replace("/", "_").replace(" ", "_")
-#     feat_f = CACHE_DIR / f"{safe_key}_features.pkl"
-    
-#     # Ensure metro_lines is a FeatureCollection before storing
-#     metro_lines_to_store = metro_lines
-#     if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
-#         line_count = len(metro_lines.get("features", []))
-#     elif isinstance(metro_lines, list):
-#         line_count = len(metro_lines)
-#         metro_lines_to_store = {
-#             "type": "FeatureCollection",
-#             "features": metro_lines
-#         }
-#     else:
-#         line_count = 0
-#         metro_lines_to_store = {"type": "FeatureCollection", "features": []}
-    
-#     print(f"  [on-demand] Storing {len(metro_stations)} stations and {line_count} line segments")
-    
-#     with open(feat_f, "wb") as f:
-#         pickle.dump({
-#             "drains": entry.get("drain_nodes", []),
-#             "lakes": entry.get("lake_nodes", []),
-#             "metro": metro_stations,
-#             "metro_lines": metro_lines_to_store
-#         }, f)
-#     print(f"  [on-demand] Features updated on disk -> {feat_f.name}")
-    
-#     return entry
 
 
 def _extract_drains(G, center):

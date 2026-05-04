@@ -21,9 +21,9 @@ from mcp.server.fastmcp import FastMCP
 
 # ── Shared context & helpers (DRY: imported from evacuation server & service) ──
 try:
-    from genai.mcp_evacuation_server import _load_state, _STATE_FILE
+    from genai.mcp_evacuation_server import _load_state
 except ImportError:
-    from mcp_evacuation_server import _load_state, _STATE_FILE
+    from mcp_evacuation_server import _load_state
 
 from service import _haversine_distance, _resolve_road_name as _get_road_name_for_node
 
