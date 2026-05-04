@@ -158,21 +158,54 @@ def get_gis_hydrology_nodes(G: nx.MultiDiGraph, center_lat: float, center_lon: f
                 pt = geom.centroid if geom.geom_type != "Point" else geom
                 try:
                     lake_nodes.append(ox.nearest_nodes(G, pt.x, pt.y))
+                    print("LAKE FOUND")
                 except Exception:
                     pass
     except Exception as e:
         print(f"  [gis/warning] Lake query failed: {e}")
 
     try:
-        drains_gdf = ox.features_from_point((center_lat, center_lon), tags=drain_tags, dist=radius_m)
-        if not drains_gdf.empty:
-            for _, row in drains_gdf.iterrows():
-                geom = row.geometry
-                pt = geom.centroid if geom.geom_type != "Point" else geom
+        kml_file = os.path.join(os.path.dirname(__file__), 'data', 'swm_drains.kml')
+        if os.path.exists(kml_file):
+            print(f"  [gis] Found local {kml_file}. Parsing SWM Drains KML...")
+            import xml.etree.ElementTree as ET
+            tree = ET.parse(kml_file)
+            root = tree.getroot()
+            ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+            lons, lats = [], []
+            for coord_elem in root.findall('.//kml:coordinates', ns):
+                coords_text = coord_elem.text.strip()
+                for point_text in coords_text.split():
+                    parts = point_text.split(',')
+                    if len(parts) >= 2:
+                        lons.append(float(parts[0]))
+                        lats.append(float(parts[1]))
+            
+            if lons and lats:
+                print(f"  [gis] Extracted {len(lons)} drain coordinate points. Mapping to nearest graph nodes...")
+                # Subsample by 5 to speed up KDTree query and reduce redundancy
+                lons_sub = lons[::5]
+                lats_sub = lats[::5]
                 try:
-                    drain_nodes.append(ox.nearest_nodes(G, pt.x, pt.y))
-                except Exception:
-                    pass
+                    mapped_nodes = ox.nearest_nodes(G, X=lons_sub, Y=lats_sub)
+                    try:
+                        iterator = iter(mapped_nodes)
+                        drain_nodes.extend([int(n) for n in iterator])
+                    except TypeError:
+                        drain_nodes.append(int(mapped_nodes))
+                    print(f"  [gis] Successfully mapped local drain KML.")
+                except Exception as e:
+                    print(f"  [gis/warning] Failed to map KML drains to nearest nodes: {e}")
+        else:
+            drains_gdf = ox.features_from_point((center_lat, center_lon), tags=drain_tags, dist=radius_m)
+            if not drains_gdf.empty:
+                for _, row in drains_gdf.iterrows():
+                    geom = row.geometry
+                    pt = geom.centroid if geom.geom_type != "Point" else geom
+                    try:
+                        drain_nodes.append(ox.nearest_nodes(G, pt.x, pt.y))
+                    except Exception:
+                        pass
     except Exception as e:
         print(f"  [gis/warning] Drain query failed: {e}")
 
