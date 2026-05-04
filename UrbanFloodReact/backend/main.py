@@ -14,6 +14,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 import logging
 
+# Configure logging EARLY so all module loggers are captured
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s',
+    handlers=[logging.StreamHandler()]
+)
+# Set uvicorn loggers to INFO to capture MongoDB logs
+for logger_name in ['db', 'region_manager', 'shelter_generator', 'gis_terrain_loader', 'service']:
+    logging.getLogger(logger_name).setLevel(logging.INFO)
+
 # Ensure backend directory is in python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -46,7 +56,7 @@ from weather_watcher import router as automation_router, weather_watcher_loop
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("━━ Urban Flood Backend starting ━━")
+    print("== Urban Flood Backend starting ==")
     
     # Force load .env from project root
     env_path = Path(__file__).resolve().parents[2] / ".env"
@@ -66,9 +76,9 @@ async def lifespan(app: FastAPI):
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
     asyncio.create_task(weather_watcher_loop())
-    print("━━ Backend ready — regions lazy-loaded on demand ━━")
+    print("== Backend ready — regions lazy-loaded on demand ==")
     yield
-    print("━━ Backend shutting down ━━")
+    print("== Backend shutting down ==")
 
 
 
@@ -185,7 +195,7 @@ async def mcp_update_state(req: MCPStateUpdate):
 # ── Research: MCP vs Non-MCP A/B comparison ───────────────────────────────────
 class MCPComparisonRequest(BaseModel):
     questions: list = []        # if empty, uses DEFAULT_QUESTIONS
-    summary_data: Optional[dict] = None      # if None, reads from mcp_state.json
+    summary_data: Optional[dict] = None      # if None, reads from MongoDB mcp_state
     evacuation_plan: list = []
     run_judge: bool = True
 
