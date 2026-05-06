@@ -51,10 +51,10 @@ class UrbanFloodSimulator:
         # Reset all to 0
         nx.set_node_attributes(self.G, 0.0, 'water_depth')
         
-        if not self.drain_nodes and not self.lake_nodes:
+        if (self.drain_nodes is None or len(self.drain_nodes) == 0) and (self.lake_nodes is None or len(self.lake_nodes) == 0):
             # Fallback
             elevs = nx.get_node_attributes(self.G, 'elevation')
-            if elevs:
+            if elevs is not None and len(elevs) > 0:
                  sorted_nodes = sorted(elevs, key=elevs.get)
                  self.drain_nodes = sorted_nodes[:10]
             else:
@@ -158,7 +158,7 @@ class UrbanFloodSimulator:
         weighted by degree or land use.
         """
         nodes = list(self.G.nodes())
-        if not nodes: return
+        if nodes is None or len(nodes) == 0: return
         
         per_node = total_pop // len(nodes)
         rem = total_pop % len(nodes)
