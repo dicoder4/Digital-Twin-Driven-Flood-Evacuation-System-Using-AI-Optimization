@@ -11,6 +11,7 @@ import { ShieldCheck, AlertTriangle, Clock, Users, Building2, MapPin, ChevronRig
 import { PanelOfExperts } from './PanelOfExperts';
 import { EvacuationChat } from './EvacuationChat';
 import { AlgoAnalysisPopup } from './AlgoAnalysisPopup';
+import { API_URL } from '../config';
 
 
 const ALGO_COLORS = {
@@ -202,7 +203,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         setLastAnalysisWasDeep(deepAnalysis);
         setAnalysisProgress('Preparing flood simulation…');
 
-        const url = new URL('http://localhost:8000/simulate-analysis');
+        const url = new URL(`${API_URL}/simulate-analysis`);
         url.searchParams.append('hobli', locationName);
         url.searchParams.append('use_traffic', showTraffic);
         // Pass simulation params so analysis matches the user's current scenario
