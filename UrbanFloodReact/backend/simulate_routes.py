@@ -194,8 +194,11 @@ async def simulate_start(req: SimulateStartRequest):
         from shelter_integration import get_shelter_candidates, rank_shelters_by_distance
 
         impassable_depth = IMPASSABLE_DEPTH_MAP.get(req.speed_mode, 0.25)
-        path = astar_route(G, src_node, dst_node, impassable_depth)
-        if path is None:
+        
+        # Check if a safe path exists first (to trigger shelter fallback if needed)
+        safe_path = astar_route(G, src_node, dst_node, impassable_depth)
+        
+        if safe_path is None:
             logger.warning(f"[SIMULATE START] No passable route to destination. Finding safe shelters...")
 
             # Get current hobli for shelter lookup
@@ -247,8 +250,16 @@ async def simulate_start(req: SimulateStartRequest):
                     "distance_m": sum(G[best_path[i]][best_path[i+1]]["length"] for i in range(len(best_path)-1)),
                 },
                 "alternative_shelters": ranked_shelters[1:4],
+                "route_geojson": build_route_geojson(G, best_path),
                 "session_id": session_id,
             }
+        
+        # A safe path exists! However, to provide a realistic navigation experience 
+        # where the GPS dynamically detects floods while driving, we set the initial 
+        # route to the naive shortest path. The simulation's 500m "radar" will then 
+        # trigger the detour dynamically when it approaches the flooded segment!
+        path = astar_route(G, src_node, dst_node, impassable_depth=100.0)
+
         logger.info(f"[SIMULATE START] Primary route found: {len(path)} nodes")
 
         # 9. Find alternative routes (FORCE minimum 2 alternatives)
@@ -585,59 +596,85 @@ async def simulate_tick(req: SimulateTickRequest):
         should_reroute_bool, changed_hobli = should_reroute(old_rainfall, new_rainfall, session.active_hoblis)
         
         impassable_depth = IMPASSABLE_DEPTH_MAP.get(session.speed_mode, 0.25)
-        current_summary = route_summary(session.G, session.path_nodes, impassable_depth)
         
-        if should_reroute_bool or not current_summary["safe"]:
-            logger.info(f"[SIMULATE TICK] REROUTE TRIGGERED (Rainfall changed: {should_reroute_bool}, Path Flooded: {not current_summary['safe']})")
+        # 1. Recompute physics ONLY if rainfall changed
+        if should_reroute_bool:
+            logger.info(f"[SIMULATE TICK] Rainfall changed in hobli: {changed_hobli}, recomputing flood physics...")
+            rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
+            import networkx as nx
+            g_copy = session.G.copy()
+            hobli_for_node = assign_hoblis_to_nodes(g_copy, session.hobli_coords)
+            g_copy = compute_flood(g_copy, rainfall_mm_hour, hobli_for_node)
+            session.G = g_copy
             
-            if should_reroute_bool:
-                # Re-run flood physics
-                logger.debug("[SIMULATE TICK] Recomputing flood physics...")
-                rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
-    
-                # Create a copy of the graph for recomputation
-                import networkx as nx
-                g_copy = session.G.copy()
-                hobli_for_node = assign_hoblis_to_nodes(g_copy, session.hobli_coords)
-                g_copy = compute_flood(g_copy, rainfall_mm_hour, hobli_for_node)
-                session.G = g_copy
+        # 2. Check distance to next flooded segment on the CURRENT path
+        distance_to_flood = float('inf')
+        accumulated_dist = 0.0
+        
+        for i in range(session.position.current_edge_idx, len(session.path_nodes) - 1):
+            u = session.path_nodes[i]
+            v = session.path_nodes[i+1]
+            if not session.G.has_edge(u, v):
+                continue
+                
+            edge_data = session.G[u][v]
+            if isinstance(edge_data, dict) and 0 in edge_data:
+                edge_data = edge_data[0] # Handle MultiDiGraph edge case if present
+                
+            depth = edge_data.get("water_depth", 0.0)
+            if depth >= impassable_depth:
+                distance_to_flood = accumulated_dist
+                break
+                
+            edge_len = edge_data.get("length", 0.0)
+            if i == session.position.current_edge_idx:
+                # We are partially through the current edge
+                accumulated_dist += edge_len * (1.0 - session.position.edge_progress)
             else:
-                g_copy = session.G
-
+                accumulated_dist += edge_len
+                
+        # 3. Trigger reroute if we are approaching a flood (e.g. within 500m)
+        approaching_flood = (distance_to_flood <= 500.0)
+        
+        if approaching_flood:
             # Route from current position to destination
-            logger.debug(f"[SIMULATE TICK] Computing new route from node {session.position.current_node()}...")
             current_node = session.position.current_node()
             dst_node = session.path_nodes[-1]
-            new_path = astar_route(g_copy, current_node, dst_node, impassable_depth)
+            
+            # Use strict=False during simulation so we find the *safest* route even if all routes have some flooding
+            new_path = astar_route(session.G, current_node, dst_node, impassable_depth, strict=False)
 
             # Check if path changed (compare with remainder of current path)
             current_remainder = session.path_nodes[session.position.current_edge_idx:]
             
             if new_path and new_path != current_remainder:
-                # Save old route to history (max 5)
+                logger.info(f"[SIMULATE TICK] REROUTE EXECUTED (Approaching flooded road: {distance_to_flood:.1f}m ahead)")
+                # Calculate max depth of original route before abandoning it
+                if session.original_route_max_depth is None:
+                    old_summary = route_summary(session.G, current_remainder, impassable_depth)
+                    session.original_route_max_depth = old_summary["max_flood_depth_m"]
+
+                # Save ONLY the abandoned branch to history (dashed grey line)
                 session.route_history.append({
-                    "geojson": build_route_geojson(session.G, session.path_nodes),
+                    "geojson": build_route_geojson(session.G, current_remainder),
                     "tick": session.tick
                 })
                 if len(session.route_history) > 5:
                     session.route_history = session.route_history[-5:]
 
-                # Update session
-                session.G = G_copy
-                session.path_nodes = new_path
-                session.position = PersonPosition(
-                    path_nodes=new_path,
-                    G=G_copy,
-                    speed_kph=session.speed_kph,
-                    tick_mins=session.tick_mins,
-                    current_edge_idx=0,
-                    edge_progress=0.0
-                )
+                # Update session path: keep traveled history, attach new optimal path
+                traveled_nodes = session.path_nodes[:session.position.current_edge_idx]
+                combined_path = traveled_nodes + new_path
+                session.path_nodes = combined_path
+                
+                # Position is now relative to the combined path, current_edge_idx stays exactly the same!
+                session.position.path_nodes = combined_path
+                session.position.G = session.G
 
                 rerouted = True
-                reroute_reason = f"Rainfall increased in {changed_hobli}"
-                new_route_geojson = build_route_geojson(G_copy, new_path)
-                new_steps = generate_steps(G_copy, new_path)
+                reroute_reason = f"Flooded road {int(distance_to_flood)}m ahead"
+                new_route_geojson = build_route_geojson(session.G, session.path_nodes)
+                new_steps = generate_steps(session.G, session.path_nodes)
 
         # 4. Update tick and heatmap
         session.tick += 1
@@ -660,6 +697,7 @@ async def simulate_tick(req: SimulateTickRequest):
             "reroute_reason": reroute_reason,
             "route_geojson": new_route_geojson or build_route_geojson(session.G, session.path_nodes),
             "route_history_geojson": [r["geojson"] for r in session.route_history],
+            "original_route_max_depth": session.original_route_max_depth,
             "steps": new_steps or generate_steps(session.G, session.path_nodes),
             "summary": summary,
             "arrived": arrived,

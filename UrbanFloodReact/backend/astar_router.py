@@ -7,7 +7,7 @@ import networkx as nx
 import math
 
 
-def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.25) -> list[int] | None:
+def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.25, strict: bool = True) -> list[int] | None:
     """
     Returns ordered list of node IDs from src to dst,
     or None if no passable path exists.
@@ -15,12 +15,17 @@ def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.2
     """
     def cost(u, v, data):
         depth = data.get("water_depth", 0.0)
-        if depth >= impassable_depth:
-            return float("inf")
         travel_min = (data["length"] / 1000.0) / data["speed_kph"] * 60.0
-        # Flood penalty: prefer less flooded routes but don't block passable ones
-        # 0.0m depth: +0 min, 0.5m depth: +1.5 min, 1.0m depth: +5 min
-        flood_penalty = (depth ** 2) * 5.0
+        
+        if depth >= impassable_depth:
+            if strict:
+                return float("inf")
+            # If not strict, apply massive penalty but allow passage as last resort
+            flood_penalty = 10000.0 + (depth * 1000.0)
+        else:
+            # Flood penalty: prefer less flooded routes
+            flood_penalty = (depth ** 2) * 5.0
+            
         return travel_min + flood_penalty
 
     def heuristic(u, v):

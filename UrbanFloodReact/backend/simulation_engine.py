@@ -93,6 +93,7 @@ class SimulationSession:
     scenario_date: str = ""
     scenario_month: str = ""
     last_accessed: float = 0.0
+    original_route_max_depth: float | None = None
 
 
 # ── Rainfall scenario picking and evolution ────────────────────────────────

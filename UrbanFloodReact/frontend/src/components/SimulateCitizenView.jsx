@@ -102,6 +102,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const [notifications, setNotifications] = useState([]);
   const [maxFloodIntensity, setMaxFloodIntensity] = useState(0);
   const [shelterEvacuation, setShelterEvacuation] = useState(null);
+  const [originalRouteMaxDepth, setOriginalRouteMaxDepth] = useState(null);
 
   // Config
   const [speedMode, setSpeedMode] = useState('car');
@@ -469,7 +470,16 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
         setPersonPos(res.person_position);
         setRouteData(prev => prev ? { ...prev, route_geojson: res.route_geojson } : prev);
 
-        const newHeatmap = toHeatmapFeatures(res.rainfall_heatmap);
+        if (res.route_history_geojson) {
+          setRouteHistory(res.route_history_geojson.map(g => ({ geojson: g })));
+        }
+
+        if (res.original_route_max_depth !== undefined && res.original_route_max_depth !== null) {
+          setOriginalRouteMaxDepth(res.original_route_max_depth);
+        }
+
+        // We removed the heatmap UI, so we just calculate max flood intensity but don't draw it
+        const newHeatmap = res.rainfall_heatmap || [];
         setHeatmap(newHeatmap);
 
         // Track max flood intensity
@@ -509,7 +519,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: sessionId }),
         });
-      } catch {}
+      } catch { }
     }
     setSessionId(null);
     setPhase('SELECT_START');
@@ -526,6 +536,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     setError(null);
     setNotifications([]);
     setMaxFloodIntensity(0);
+    setOriginalRouteMaxDepth(null);
   };
 
   return (
@@ -759,6 +770,38 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 </div>
               </Marker>
             )}
+            {/* Map Legend */}
+            <div style={{
+              position: 'absolute',
+              bottom: '24px',
+              left: '24px',
+              background: 'white',
+              padding: '12px',
+              borderRadius: '8px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              zIndex: 10,
+              fontSize: '12px',
+              color: '#374151',
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>Route Legend</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <div style={{ width: '20px', height: '4px', background: '#4285F4', borderRadius: '2px' }} />
+                <span>Safe Passage</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <div style={{ width: '20px', height: '4px', background: '#f59e0b', borderRadius: '2px' }} />
+                <span>Moderate Flood Risk</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <div style={{ width: '20px', height: '4px', background: '#dc2626', borderRadius: '2px' }} />
+                <span>High Flood Risk</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '20px', height: '0', borderTop: '3px dashed #9ca3af' }} />
+                <span>Alternate Route</span>
+              </div>
+            </div>
+
           </Map>
 
           {/* Rain overlay effect */}
@@ -788,9 +831,9 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 type={n.type}
                 icon={
                   n.type === 'warning' ? AlertCircle :
-                  n.type === 'error' ? AlertCircle :
-                  n.type === 'success' ? MapPin :
-                  Cloud
+                    n.type === 'error' ? AlertCircle :
+                      n.type === 'success' ? MapPin :
+                        Cloud
                 }
               />
             ))}
@@ -1215,6 +1258,20 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     <span>{stats.max_flood_depth_m.toFixed(2)}m {stats.max_flood_depth_m > 1.5 ? '🚫' : stats.max_flood_depth_m > 0.5 ? '⚠️' : '✅'}</span>
                   </div>
 
+                  {originalRouteMaxDepth != null && (
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      color: '#6b7280',
+                      fontWeight: 'bold',
+                      fontSize: '0.8rem',
+                      marginBottom: '0.5rem'
+                    }}>
+                      <span>🚫 Abandoned Route Flood:</span>
+                      <span>{originalRouteMaxDepth.toFixed(2)}m</span>
+                    </div>
+                  )}
+
                   {/* Flood impact note */}
                   <div style={{ fontSize: '0.75rem', color: '#6b7280', paddingTop: '0.5rem', borderTop: '1px solid #e5e7eb', marginTop: '0.5rem' }}>
                     {stats.max_flood_depth_m > 1.5 && '⚠️ IMPASSABLE - Depth > 1.5m'}
@@ -1286,6 +1343,12 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     <span>💧 Max Flood Depth:</span>
                     <span style={{ fontWeight: '600', color: stats.max_flood_depth_m > 0.5 ? '#dc2626' : '#16a34a' }}>{stats.max_flood_depth_m.toFixed(2)} m</span>
                   </div>
+                  {originalRouteMaxDepth != null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <span>🚫 Abandoned Route Flood:</span>
+                      <span style={{ fontWeight: '600', color: '#6b7280' }}>{originalRouteMaxDepth.toFixed(2)} m</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                     <span>🛡️ Route Safety:</span>
                     <span style={{ fontWeight: '600', color: stats.safe ? '#16a34a' : '#dc2626' }}>{stats.safe ? '✅ SAFE' : '⚠️ FLOODED'}</span>
