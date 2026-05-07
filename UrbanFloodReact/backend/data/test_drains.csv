@@ -1,0 +1,72 @@
+sensor_id,drain_id,location_name,latitude,longitude,measure_type,timestamp,water_level_cm,flow_index,rainfall_mm,battery_v,status,alert_sent
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 09:55:00,35,0.4,,3.7,normal,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:00:00,42,0.5,,3.7,normal,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:05:00,48,0.6,,3.7,normal,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:10:00,62,0.9,,3.6,warning,1
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:15:00,78,1.2,,3.5,critical,1
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:20:00,71,1.1,,3.6,warning,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:25:00,60,0.8,,3.7,warning,
+BDA_P1_S1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,water_level,2026-07-15 10:30:00,48,0.6,,3.7,normal,
+
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 09:55:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:00:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:05:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:10:00,,,,3.8,,,0
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:15:00,,,,3.8,warning,1
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:20:00,,,,3.8,critical,1
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:25:00,,,,3.8,warning,
+BDA_P1_R1,P101,Rajakaluve_Indiranagar,12.872967,77.570815,rain,2026-07-15 10:30:00,,,,3.8,normal,
+
+BDA_S2_S1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,water_level,2026-07-15 10:00:00,28,0.3,,3.8,normal,
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:00:00,,,,3.8,,,0
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:05:00,,,,3.8,,,0
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:10:00,,,,3.8,,,0
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:15:00,,,,3.8,warning,
+BDA_S2_R1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,rain,2026-07-15 10:20:00,,,,3.8,critical,
+BDA_S2_S1,S205,KRPUrban_SanjayNagar,12.880951,77.571893,water_level,2026-07-15 10:20:00,40,0.5,,3.7,normal,
+
+BDA_S3_S1,S312,Sarjapur_Sect43,12.9524,77.671953,water_level,2026-07-15 10:00:00,32,0.4,,3.7,normal,
+BDA_S3_S1,S312,Sarjapur_Sect43,12.9524,77.671953,water_level,2026-07-15 10:15:00,38,0.5,,3.7,normal,
+BDA_S3_S1,S312,Sarjapur_Sect43,12.9524,77.671953,water_level,2026-07-15 10:30:00,35,0.4,,3.7,normal,
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 09:55:00,30,0.3,,3.8,normal,
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:00:00,38,0.45,,3.8,normal,
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:05:00,52,0.65,,3.7,normal,
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:10:00,67,0.95,,3.7,warning,1
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:15:00,85,1.3,,3.6,critical,1
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:20:00,79,1.15,,3.6,warning,
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:25:00,62,0.85,,3.7,warning,
+BDA_BG1_S1,B101,Begur_MainRajakaluve,12.927904,77.627242,water_level,2026-07-15 10:30:00,45,0.55,,3.7,normal,
+
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 09:55:00,,,,3.9,,,0
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:00:00,,,,3.9,,,0
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:05:00,,,,3.9,,,0
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:10:00,,,,3.9,,,0
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:15:00,,,,3.9,warning,1
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:20:00,,,,3.9,critical,1
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:25:00,,,,3.9,warning,
+BDA_BG1_R1,B101,Begur_MainRajakaluve,12.927904,77.627242,rain,2026-07-15 10:30:00,,,,3.9,normal,
+
+BDA_BG2_S1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,water_level,2026-07-15 10:00:00,25,0.28,,3.8,normal,
+BDA_BG2_S1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,water_level,2026-07-15 10:10:00,34,0.4,,3.8,normal,
+BDA_BG2_S1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,water_level,2026-07-15 10:20:00,58,0.75,,3.7,warning,1
+BDA_BG2_S1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,water_level,2026-07-15 10:30:00,42,0.52,,3.7,normal,
+BDA_BG2_R1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,rain,2026-07-15 10:00:00,,,,3.8,,,0
+BDA_BG2_R1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,rain,2026-07-15 10:10:00,,,,3.8,,,0
+BDA_BG2_R1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,rain,2026-07-15 10:20:00,,,,3.8,warning,1
+BDA_BG2_R1,B205,Hulimavu_Rajakaluve,12.922014,77.631012,rain,2026-07-15 10:30:00,,,,3.8,normal,
+
+BDA_BG3_S1,B312,Begur_BTMLayout_Jn,12.932781,77.623950,water_level,2026-07-15 10:00:00,20,0.22,,3.9,normal,
+BDA_BG3_S1,B312,Begur_BTMLayout_Jn,12.932781,77.623950,water_level,2026-07-15 10:15:00,29,0.35,,3.9,normal,
+BDA_BG3_S1,B312,Begur_BTMLayout_Jn,12.932781,77.623950,water_level,2026-07-15 10:30:00,24,0.28,,3.9,normal,
+BDA_BG3_R1,B312,Begur_BTMLayout_Jn,12.932781,77.623950,rain,2026-07-15 10:00:00,,,,3.9,,,0
+BDA_BG3_R1,B312,Begur_BTMLayout_Jn,12.932781,77.623950,rain,2026-07-15 10:15:00,,,,3.9,,,0
+BDA_BG3_R1,B312,Begur_BTMLayout_Jn,12.932781,77.623950,rain,2026-07-15 10:30:00,,,,3.9,normal,
+
+BDA_BG4_S1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,water_level,2026-07-15 10:00:00,33,0.38,,3.7,normal,
+BDA_BG4_S1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,water_level,2026-07-15 10:10:00,48,0.6,,3.7,normal,
+BDA_BG4_S1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,water_level,2026-07-15 10:20:00,71,1.05,,3.6,warning,1
+BDA_BG4_S1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,water_level,2026-07-15 10:30:00,55,0.72,,3.7,normal,
+BDA_BG4_R1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,rain,2026-07-15 10:00:00,,,,3.7,,,0
+BDA_BG4_R1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,rain,2026-07-15 10:10:00,,,,3.7,,,0
+BDA_BG4_R1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,rain,2026-07-15 10:20:00,,,,3.7,warning,1
+BDA_BG4_R1,B418,Arekere_Gate_Kaluwe,12.915230,77.625500,rain,2026-07-15 10:30:00,,,,3.7,normal,

@@ -16,11 +16,15 @@ import os
 import json
 import base64
 import logging
+import warnings
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure, OperationFailure
+
+# Suppress MongoDB boolean check warning
+warnings.filterwarnings("ignore", message=".*Database objects do not implement truth value testing.*")
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +244,7 @@ def get_resource_definitions() -> dict:
         raise ConnectionError("MongoDB not available")
     
     doc = db["resource_definitions"].find_one({"_id": "definitions"})
-    if not doc or "data" not in doc:
+    if doc is None or "data" not in doc:
         raise ValueError("No resource definitions in Mongo")
     
     logger.info("[MONGO] resource_definitions: fetched")
@@ -303,7 +307,7 @@ def get_metro_lines_geojson() -> dict:
         raise ConnectionError("MongoDB not available")
 
     doc = db["metro_lines_geojson"].find_one({"_id": "metro_lines"})
-    if not doc or "data" not in doc:
+    if doc is None or "data" not in doc:
         raise ValueError("No metro lines GeoJSON in Mongo")
 
     logger.info("[MONGO] metro_lines_geojson: fetched")
@@ -366,7 +370,7 @@ def get_shelter_cache(hobli_key: str) -> list | None:
         logger.warning("[MONGO] shelter_cache: DB unavailable — cache miss for '%s'", hobli_key)
         return None
     doc = db["shelter_cache"].find_one({"_id": hobli_key})
-    if doc and "candidates" in doc:
+    if doc is not None and "candidates" in doc:
         logger.info("[MONGO] shelter_cache HIT  — %d shelters loaded from MongoDB for '%s'",
                     len(doc["candidates"]), hobli_key)
         return doc["candidates"]
@@ -397,7 +401,7 @@ def get_dem_cache(dem_key: str) -> bytes | None:
         logger.warning("[MONGO] dem_cache: DB unavailable — cache miss for '%s'", dem_key)
         return None
     doc = db["dem_cache"].find_one({"_id": dem_key})
-    if doc and "data_b64" in doc:
+    if doc is not None and "data_b64" in doc:
         raw = base64.b64decode(doc["data_b64"])
         logger.info("[MONGO] dem_cache HIT  — %d KB DEM loaded from MongoDB for '%s'",
                     len(raw) // 1024, dem_key)

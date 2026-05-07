@@ -13,6 +13,15 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+import warnings
+
+# Suppress MongoDB boolean check warning at all levels
+warnings.filterwarnings("ignore", message=".*Database objects do not implement truth value testing.*")
+warnings.simplefilter("ignore", DeprecationWarning)
+
+class MongoWarningFilter(logging.Filter):
+    def filter(self, record):
+        return "Database objects do not implement truth value testing" not in record.getMessage()
 
 # Configure logging EARLY so all module loggers are captured
 logging.basicConfig(
@@ -20,9 +29,16 @@ logging.basicConfig(
     format='%(levelname)s:%(name)s:%(message)s',
     handlers=[logging.StreamHandler()]
 )
+
+# Add filter to all handlers
+for handler in logging.root.handlers:
+    handler.addFilter(MongoWarningFilter())
+
 # Set uvicorn loggers to INFO to capture MongoDB logs
 for logger_name in ['db', 'region_manager', 'shelter_generator', 'gis_terrain_loader', 'service']:
-    logging.getLogger(logger_name).setLevel(logging.INFO)
+    logger_obj = logging.getLogger(logger_name)
+    logger_obj.setLevel(logging.INFO)
+    logger_obj.addFilter(MongoWarningFilter())
 
 # Ensure backend directory is in python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -95,6 +111,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
                    "http://localhost:5174", "http://127.0.0.1:5174",
+                   "http://localhost:5175", "http://127.0.0.1:5175",
+                   "http://localhost:5176", "http://127.0.0.1:5176",
                    "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -103,10 +121,14 @@ app.add_middleware(
 
 from auth_routes import router as auth_router
 from notification_routes import router as notification_router
+from citizen_routes import citizen_router
+from simulate_routes import simulate_router
 
 app.include_router(automation_router)
 app.include_router(auth_router)
 app.include_router(notification_router)
+app.include_router(citizen_router)
+app.include_router(simulate_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
