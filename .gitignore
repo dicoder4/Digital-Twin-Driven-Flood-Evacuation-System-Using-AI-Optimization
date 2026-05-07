@@ -21,3 +21,18 @@ UrbanFloodReact/frontend/package.json
 .claude/sessions/
 .claude/tmp/
 
+# Documentation files (generated, not tracked)
+BUG_FIX.md
+COMPLETE_SUMMARY.md
+LOGIC_SUMMARY.txt
+NEW_FEATURES.md
+QUICKSTART.txt
+RESEARCH_README.md
+SPEED_LOGIC_AND_PHYSICS.md
+TESTING_RESULTS.md
+CITIZEN_IMPLEMENTATION_COMPLETE.md
+paper/HOW_TO_COMPILE.md
+paper/figures/generate_figures.py
+paper/main.tex
+paper/references.bib
+
