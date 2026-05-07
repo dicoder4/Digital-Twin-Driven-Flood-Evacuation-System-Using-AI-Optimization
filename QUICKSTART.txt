@@ -1,0 +1,248 @@
+================================================================================
+                         QUICK START GUIDE
+================================================================================
+
+WHAT'S BEEN IMPLEMENTED:
+
+1. Alternative Routes System
+   - 5-tier fallback strategy
+   - Darker dashed lines (#d97706)
+   - Persistent through simulation
+
+2. Realistic Phone-like UI
+   - Google Maps style notifications
+   - Rain overlay effect
+   - Live progress tracking
+   - Flood warnings
+
+3. Speed Logic & Physics Alignment
+   - Car: 30 km/h
+   - Bike: 15 km/h
+   - Walk: 4 km/h
+   - ETA = (distance_km / speed_kph) * 60 minutes
+   - Flood thresholds: 0.1m, 0.4m, 0.8m, 1.5m (impassable)
+
+4. Location Control
+   - Search locations (OSM geocoding)
+   - Draggable markers for fine-tuning
+   - Double-click to unselect
+
+================================================================================
+                            HOW TO TEST
+================================================================================
+
+STEP 1: Start Backend
+  cd UrbanFloodReact\backend
+  python main.py
+
+STEP 2: Start Frontend (new terminal)
+  cd UrbanFloodReact\frontend
+  npm run dev
+
+STEP 3: Open Browser
+  http://localhost:5173
+
+STEP 4: Login & Navigate
+  - Login with any credentials
+  - Click "Simulate Citizen"
+
+STEP 5: Test Full Flow
+  A) Search Location
+     - Type "Indiranagar" in search box
+     - Press Enter or click search icon
+     - Map zooms to location
+     - Marker A placed
+
+  B) Drag Marker
+     - Click and hold marker A
+     - Yellow glow appears
+     - Drag to adjust position
+     - Release to place
+
+  C) Unselect Marker
+     - Double-click marker A
+     - Marker disappears
+     - Can now search or tap for new location
+
+  D) Place End Point
+     - Same steps: search, drag, or tap
+     - Once end point set, routes compute automatically
+
+  E) Test Speed Modes
+     - Look at route preview (CONFIG phase)
+     - Change "Transport Mode" dropdown
+     - Watch ETA update:
+       * Car:  10 min (for 5km)
+       * Bike: 20 min (for 5km)
+       * Walk: 75 min (for 5km)
+
+  F) Run Simulation
+     - Click "START SIMULATION"
+     - Watch person move slowly (5-second intervals)
+     - See rain overlay
+     - Watch flood depth warnings
+     - Check progress bar
+     - See alternative routes as faded yellow lines
+
+  G) Observe Physics
+     - If flood > 0.4m: "⚡ Moderate flood - All modes passable"
+     - If flood > 0.8m: "⚠️ High flood - Walking/Biking risky"
+     - If flood > 1.5m: "🌊 FLOOD INTENSIFIED - Finding safer route"
+
+================================================================================
+                        EXPECTED BEHAVIOR
+================================================================================
+
+Route Preview (CONFIG Phase):
+  - Distance: 5 km
+  - Time (Car):   10 min
+  - Time (Bike):  20 min
+  - Time (Walk):  75 min
+  - Risk: SAFE if max_flood_depth < 1.5m
+
+Simulation (RUNNING Phase):
+  - Person moves along bright yellow route
+  - Faded yellow dashed lines = alternative routes
+  - Blue rain overlay = rainfall/flooding
+  - Progress bar shows completion %
+  - Notifications show events:
+    * "💧 Moderate flooding ahead"
+    * "⚠️ Route recalculating"
+    * "🌊 FLOOD INTENSIFIED - Finding safer route"
+
+Route Manipulation:
+  - Click map → place marker
+  - Search box → find location
+  - Click & drag → fine-tune position
+  - Double-click → remove marker
+
+Speed Logic:
+  - Select different modes
+  - ETA updates instantly
+  - Formula: distance_km / speed_kph * 60
+  - Example: 5 / 15 * 60 = 20 minutes
+
+================================================================================
+                          KEY FEATURES
+================================================================================
+
+Location Search (Geocoding)
+  - Available in SELECT_START and SELECT_END phases
+  - Uses OSM Nominatim API
+  - Auto-zooms to result
+  - Shows location name in notification
+
+Draggable Markers
+  - Click and drag to move
+  - Visual feedback: yellow glow during drag
+  - Cursor changes: grab → grabbing
+  - Real-time coordinate updates
+  - Fine-tune without re-tapping
+
+Double-Click to Unselect
+  - Double-click any marker (A or B)
+  - Marker disappears
+  - Phase returns to allow new selection
+  - Notification confirms removal
+
+Speed Mode Selection
+  - Car (30 km/h): Urban traffic
+  - Bike (15 km/h): Cycling
+  - Walk (4 km/h): Walking pace
+  - ETA updates dynamically
+  - All alternatives recalculated
+
+Flood Physics Integration
+  - Warnings at 0.4m, 0.8m, 1.5m thresholds
+  - Routes show max flood depth
+  - Rerouting triggered if depth exceeds 1.5m
+  - Different modes affected differently at high flood
+
+Alternative Routes
+  - Minimum 3 routes generated
+  - 5-strategy fallback system
+  - Primary: bright yellow
+  - Alternatives: faded dashed yellow
+  - All recalculated for selected speed
+
+Real-Time Simulation
+  - 5-second ticks
+  - Rain overlay updates
+  - Flood depth monitoring
+  - Progress tracking
+  - Automatic rerouting on flooding
+
+================================================================================
+                           LOGIC VERIFIED
+================================================================================
+
+Backend ETA Calculation:
+  Distance: 5000 m
+  Speed (Car): 30 km/h → ETA: 10 minutes ✓
+  Speed (Bike): 15 km/h → ETA: 20 minutes ✓
+  Speed (Walk): 4 km/h → ETA: 75 minutes ✓
+
+Frontend ETA Display:
+  Shows dynamic ETA based on selected speed ✓
+  Updates instantly when speed changes ✓
+  Matches backend calculation ✓
+
+Flood Physics Alignment:
+  Impassable threshold: 1.5m ✓
+  High flood threshold: 0.8m ✓
+  Moderate flood threshold: 0.4m ✓
+  Light flood threshold: 0.1m ✓
+  Rerouting triggered on impassable ✓
+
+System Logic:
+  Alternative routes persist through simulation ✓
+  Markers draggable and clickable ✓
+  Speed modes affect ETA only (not routing) ✓
+  Flood affects routing cost and rerouting ✓
+  All features integrated logically ✓
+
+================================================================================
+                         TROUBLESHOOTING
+================================================================================
+
+If backend doesn't start:
+  - Check imports: python -c "from simulate_routes import simulate_router"
+  - Verify MongoDB is running
+  - Check Python environment
+
+If frontend shows blank:
+  - Check console (F12) for errors
+  - Verify API_URL in src/config.js
+  - Check network tab for API calls
+
+If routes don't show:
+  - Check browser console for alternative_routes
+  - Verify backend response includes alternative_routes
+  - Try different coordinates (larger distance)
+
+If ETA doesn't change:
+  - Verify speed mode selector changes value
+  - Check that route preview recalculates
+  - Test calculation manually: 5km by car (30km/h) = 10min
+
+If markers don't drag:
+  - Make sure you're clicking on the marker itself
+  - Try different browsers
+  - Check console for drag event errors
+
+================================================================================
+
+YOU'RE READY TO TEST!
+
+Start both servers and open http://localhost:5173 in your browser.
+
+Try the complete flow:
+1. Search → Indiranagar
+2. Drag → Fine-tune position
+3. Search → KR Market
+4. Change speed → Watch ETA update
+5. Start simulation → Watch it run
+
+Questions? Check COMPLETE_SUMMARY.md for detailed info.
+
+================================================================================

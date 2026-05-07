@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail, ArrowRight } from 'lucide-react';
+import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail, ArrowRight, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { t } from '../translations';
@@ -147,7 +147,8 @@ const LoginPage = () => {
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '1.25rem' }}>
               <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} /><span style={{ padding: '0 14px', color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('sandbox_access', lang)}</span><div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
+<<<<<<< HEAD
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
               <button type="button" onClick={() => handleDemoLogin('authority')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #fed7aa', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                 <div style={{ background: '#fff7ed', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><ShieldAlert size={18} color="#f97316" /></div>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#9a3412' }}>{t('authority_role', lang)}</span>
@@ -164,7 +165,7 @@ const LoginPage = () => {
                 <span style={{ fontSize: '0.7rem', color: '#15803d', marginTop: '2px' }}>Navigate to safety</span>
               </button>
               <button type="button" onClick={() => handleDemoLogin('simulate')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #e9d5ff', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
-                <div style={{ background: '#faf5ff', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}>⚡</div>
+                <div style={{ background: '#faf5ff', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><Zap size={18} color="#a855f7" /></div>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#6b21a8' }}>Simulate</span>
                 <span style={{ fontSize: '0.7rem', color: '#7e22ce', marginTop: '2px' }}>Test flood routing</span>
               </button>

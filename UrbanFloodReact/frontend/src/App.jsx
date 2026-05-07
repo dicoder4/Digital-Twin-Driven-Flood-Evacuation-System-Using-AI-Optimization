@@ -39,7 +39,7 @@ import SimulateCitizenView from './components/SimulateCitizenView';
 import './App.css';
 
 export default function App() {
-  const { user, logout } = useAuth();
+  const { user, logout, isSimulate, isCitizen } = useAuth();
   const { lang, toggle: toggleLang } = useLanguage();
 
   // ── Map viewport ─────────────────────────────────────────────
@@ -130,6 +130,14 @@ export default function App() {
   // ── Hooks ─────────────────────────────────────────────────────
   const regions = useRegions();
   const sim = useSimulation();
+
+  if (isSimulate) {
+    return <SimulateCitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
+
+  if (isCitizen) {
+    return <CitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
 
   // Recompute shelter safety on every flood update, then override with backend source of truth
   const sheltersWithSafety = useMemo(() => {
