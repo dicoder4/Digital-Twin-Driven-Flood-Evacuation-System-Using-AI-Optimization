@@ -322,6 +322,29 @@ const translations = {
     hobli_kengeri:          { en: "Kengeri",                                    kn: "ಕೆಂಗೇರಿ" },
     hobli_varthur:          { en: "Varthur",                                    kn: "ವರ್ತೂರು" },
     hobli_yeshwanthpura:    { en: "Yeshwanthpura",                              kn: "ಯಶವಂತಪುರ" },
+
+    // ── Citizen Navigation ───────────────────────────────────────────────────
+    citizen_title:          { en: "Flood Navigation",                            kn: "ಪ್ರವಾಹ ನ್ಯಾವಿಗೇಶನ್" },
+    finding_location:       { en: "Finding your location...",                    kn: "ಸ್ಥಳ ಪತ್ತೆಹಚ್ಚಲಾಗುತ್ತಿದೆ..." },
+    find_route:             { en: "Enter Destination",                           kn: "ಗಮ್ಯಸ್ಥಾನ ನಮೂದಿಸಿ" },
+    nearest_shelter:        { en: "Nearest Safe Shelter",                        kn: "ಸಮೀಪದ ಸುರಕ್ಷಿತ ಆಶ್ರಯ" },
+    tap_on_map:             { en: "Tap to select on map",                        kn: "ನಕ್ಷೆಯಲ್ಲಿ ಟ್ಯಾಪ್ ಮಾಡಿ" },
+    calculating_route:      { en: "Calculating safe route...",                   kn: "ಸುರಕ್ಷಿತ ಮಾರ್ಗ ಲೆಕ್ಕಿಸಲಾಗುತ್ತಿದೆ..." },
+    step_of:                { en: "Step {n} of {total}",                         kn: "ಹಂತ {n} / {total}" },
+    cancel_route:           { en: "Cancel Route",                                kn: "ಮಾರ್ಗ ರದ್ದುಮಾಡಿ" },
+    arrived:                { en: "You have arrived",                            kn: "ನೀವು ತಲುಪಿದ್ದೀರಿ" },
+    shelter_arrived:        { en: "You are safe at {name}",                      kn: "{name} ನಲ್ಲಿ ನೀವು ಸುರಕ್ಷಿತ" },
+    all_flooded:            { en: "All routes flooded. Call 112.",               kn: "ಎಲ್ಲ ಮಾರ್ಗ ಮುಳುಗಿದೆ. 112 ಕರೆ ಮಾಡಿ." },
+    route_updated:          { en: "Route updated — flood changed",               kn: "ಮಾರ್ಗ ನವೀಕರಿಸಲಾಗಿದೆ" },
+    gps_denied:             { en: "Enable GPS to continue",                      kn: "GPS ಆನ್ ಮಾಡಿ" },
+    flood_risk_low:         { en: "Low Flood Risk",                              kn: "ಕಡಿಮೆ ಪ್ರವಾಹ ಅಪಾಯ" },
+    flood_risk_medium:      { en: "Medium Flood Risk",                           kn: "ಮಧ್ಯಮ ಪ್ರವಾಹ ಅಪಾಯ" },
+    flood_risk_high:        { en: "High Flood Risk — Caution",                   kn: "ಹೆಚ್ಚಿನ ಪ್ರವಾಹ ಅಪಾಯ — ಎಚ್ಚರ" },
+    finding_shelter:        { en: "Finding nearest shelter...",                  kn: "ಸಮೀಪದ ಆಶ್ರಯ ಹುಡುಕಲಾಗುತ್ತಿದೆ..." },
+    prev:                   { en: "← Prev",                                      kn: "← ಹಿಂದಿನ" },
+    next:                   { en: "Next Step →",                                 kn: "ಮುಂದಿನ →" },
+    search_destination:     { en: "Search destination...",                       kn: "ಗಮ್ಯಸ್ಥಾನ ಹುಡುಕಿ..." },
+    no_data_banner:         { en: "Live flood data unavailable",                 kn: "ಲೈವ್ ಡೇಟಾ ಲಭ್ಯವಿಲ್ಲ" },
 };
 
 export function t(key, lang) {

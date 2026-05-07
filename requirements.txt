@@ -30,6 +30,7 @@ requests
 # Utility
 haversine
 pymongo
+motor
 
 # Testing
 pytest
