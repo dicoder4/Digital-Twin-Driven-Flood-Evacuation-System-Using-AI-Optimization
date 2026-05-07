@@ -254,11 +254,10 @@ async def simulate_start(req: SimulateStartRequest):
                 "session_id": session_id,
             }
         
-        # A safe path exists! However, to provide a realistic navigation experience 
-        # where the GPS dynamically detects floods while driving, we set the initial 
-        # route to the naive shortest path. The simulation's 500m "radar" will then 
-        # trigger the detour dynamically when it approaches the flooded segment!
-        path = astar_route(G, src_node, dst_node, impassable_depth=100.0)
+        # A safe path exists! We start with the optimal flood-aware route immediately 
+        # (Google Maps style). The simulation's 500m "radar" will still trigger a detour 
+        # dynamically if the flood worsens and the route becomes impassable during the drive!
+        path = safe_path
 
         logger.info(f"[SIMULATE START] Primary route found: {len(path)} nodes")
 

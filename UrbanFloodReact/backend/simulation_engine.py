@@ -259,7 +259,8 @@ def evolve_rainfall(
 
     if mode == "intensify":
         for hobli, mm in current_snapshot.items():
-            new_snapshot[hobli] = min(mm * 1.05, 5.0)
+            # Cap at 0.8 mm/tick (~230 mm/24h) to avoid unrealistic 3m floods
+            new_snapshot[hobli] = min(mm * 1.05, 0.8)
 
     elif mode == "dissipate":
         for hobli, mm in current_snapshot.items():
@@ -268,14 +269,24 @@ def evolve_rainfall(
     elif mode == "move":
         storm_center = _compute_storm_center(current_snapshot, hobli_coords)
         if storm_center:
-            move_lat = 0.002 * tick
-            move_lon = 0.002 * tick
+            # Move the storm center NE at a constant rate (~100m per tick)
+            move_lat = 0.001
+            move_lon = 0.001
             new_center = (storm_center[0] + move_lat, storm_center[1] + move_lon)
+            
+            # Find the peak rainfall to maintain storm intensity without exploding
+            max_rain = max(current_snapshot.values()) if current_snapshot else 0.3
+            max_rain = max(0.1, min(max_rain, 0.8))  # clamp to reasonable bounds
+            
             for hobli, (hlat, hlon) in hobli_coords.items():
                 dist_to_new = _haversine_dist(hlat, hlon, *new_center)
-                intensity = max(0, 1 - dist_to_new / 10000)
+                # 8km radius for the storm cell
+                intensity = max(0.0, 1.0 - dist_to_new / 8000.0)
+                target_rain = intensity * max_rain
+                
                 base = current_snapshot.get(hobli, 0)
-                new_snapshot[hobli] = base * 0.7 + intensity * 2.0
+                # Smooth transition towards the moving storm center
+                new_snapshot[hobli] = base * 0.8 + target_rain * 0.2
         else:
             new_snapshot = dict(current_snapshot)
 
