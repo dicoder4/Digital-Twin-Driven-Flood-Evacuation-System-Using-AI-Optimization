@@ -7,10 +7,7 @@ import networkx as nx
 import math
 
 
-IMPASSABLE_DEPTH = 1.5
-
-
-def astar_route(G: nx.DiGraph, src: int, dst: int) -> list[int] | None:
+def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.25) -> list[int] | None:
     """
     Returns ordered list of node IDs from src to dst,
     or None if no passable path exists.
@@ -18,7 +15,7 @@ def astar_route(G: nx.DiGraph, src: int, dst: int) -> list[int] | None:
     """
     def cost(u, v, data):
         depth = data.get("water_depth", 0.0)
-        if depth >= IMPASSABLE_DEPTH:
+        if depth >= impassable_depth:
             return float("inf")
         travel_min = (data["length"] / 1000.0) / data["speed_kph"] * 60.0
         # Flood penalty: prefer less flooded routes but don't block passable ones
@@ -105,7 +102,7 @@ def generate_steps(G: nx.DiGraph, path: list[int], street_names: dict = None) ->
     return _merge_steps(steps)
 
 
-def route_summary(G: nx.DiGraph, path: list[int]) -> dict:
+def route_summary(G: nx.DiGraph, path: list[int], impassable_depth: float = 0.25) -> dict:
     """Computes total distance, time, and max flood depth for route."""
     total_dist = sum(G[path[i]][path[i + 1]]["length"] for i in range(len(path) - 1))
     total_time = sum(
@@ -125,7 +122,7 @@ def route_summary(G: nx.DiGraph, path: list[int]) -> dict:
         "eta_minutes": round(total_time),
         "max_flood_depth_m": round(max_depth, 2),
         "flooded_segments": flooded_segments,
-        "safe": max_depth < IMPASSABLE_DEPTH,
+        "safe": max_depth < impassable_depth,
     }
 
 

@@ -86,6 +86,7 @@ class SimulationSession:
     tick: int = 0
     evolution_mode: str = "random"
     speed_kph: float = 30.0
+    speed_mode: str = "car"
     tick_mins: float = 5.0
     dst_lat: float = 0.0
     dst_lon: float = 0.0

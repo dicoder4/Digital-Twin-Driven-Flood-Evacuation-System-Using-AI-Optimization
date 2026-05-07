@@ -60,6 +60,13 @@ SPEED_MAP = {
     "walk": 4,      # Walk: 4 km/h (normal walking pace)
 }
 
+IMPASSABLE_DEPTH_MAP = {
+    "car": 0.25,      # Lowered to 0.25m for stricter car rerouting
+    "bike": 0.15,     # 0.15m max for bikes
+    "walk": 0.5,      # 0.5m max for walking (knee/waist deep)
+    "emergency": 1.0  # High clearance vehicles
+}
+
 
 def calculate_eta_minutes(distance_m: float, speed_kph: float) -> int:
     """
@@ -186,7 +193,8 @@ async def simulate_start(req: SimulateStartRequest):
         import networkx as nx
         from shelter_integration import get_shelter_candidates, rank_shelters_by_distance
 
-        path = astar_route(G, src_node, dst_node)
+        impassable_depth = IMPASSABLE_DEPTH_MAP.get(req.speed_mode, 0.25)
+        path = astar_route(G, src_node, dst_node, impassable_depth)
         if path is None:
             logger.warning(f"[SIMULATE START] No passable route to destination. Finding safe shelters...")
 
@@ -214,7 +222,7 @@ async def simulate_start(req: SimulateStartRequest):
                     logger.warning(f"Could not snap shelter '{shelter['name']}' to road network")
                     continue
 
-                shelter_path = astar_route(G, src_node, shelter_node)
+                shelter_path = astar_route(G, src_node, shelter_node, impassable_depth)
                 if shelter_path is not None:
                     best_shelter = shelter
                     best_path = shelter_path
@@ -262,7 +270,7 @@ async def simulate_start(req: SimulateStartRequest):
         # Define flood-aware cost function (must match astar_router.py)
         def flood_aware_cost(u, v, data):
             depth = data.get("water_depth", 0.0)
-            if depth >= 1.5:  # IMPASSABLE_DEPTH
+            if depth >= impassable_depth:  # Dynamic impassable depth
                 return float("inf")
             travel_min = (data["length"] / 1000.0) / data.get("speed_kph", 30) * 60.0
             # Flood penalty: prefer less flooded routes but don't block passable ones
@@ -331,8 +339,8 @@ async def simulate_start(req: SimulateStartRequest):
                         break
                     if mid_node not in path_set and mid_node != src_node and mid_node != dst_node:
                         try:
-                            alt1 = astar_route(G, src_node, mid_node)
-                            alt2 = astar_route(G, mid_node, dst_node)
+                            alt1 = astar_route(G, src_node, mid_node, impassable_depth)
+                            alt2 = astar_route(G, mid_node, dst_node, impassable_depth)
                             if alt1 and alt2:
                                 alt_path = alt1[:-1] + alt2
                                 if len(alternative_paths) < 3:
@@ -358,7 +366,7 @@ async def simulate_start(req: SimulateStartRequest):
                             removed_edge = (path[remove_idx], path[remove_idx + 1])
                             try:
                                 G_copy.remove_edge(*removed_edge)
-                                alt_path = astar_route(G_copy, src_node, dst_node)
+                                alt_path = astar_route(G_copy, src_node, dst_node, impassable_depth)
                                 if alt_path and len(alternative_paths) < 3:
                                     add_path(alt_path, f"Strategy 4 (removed edge {removed_edge})")
                             except:
@@ -386,7 +394,7 @@ async def simulate_start(req: SimulateStartRequest):
         logger.debug(f"[SIMULATE START] Speed mode: {req.speed_mode} ({speed_kph} km/h)")
 
         # Calculate summary with proper ETA based on speed mode
-        base_summary = route_summary(G, path)
+        base_summary = route_summary(G, path, impassable_depth)
         summary = {
             "total_distance_m": base_summary["total_distance_m"],
             "eta_minutes": calculate_eta_minutes(base_summary["total_distance_m"], speed_kph),
@@ -442,6 +450,7 @@ async def simulate_start(req: SimulateStartRequest):
             tick=0,
             evolution_mode=req.evolution_mode,
             speed_kph=speed_kph,
+            speed_mode=req.speed_mode,
             tick_mins=req.tick_mins,
             dst_lat=req.dst_lat,
             dst_lon=req.dst_lon,
@@ -460,7 +469,7 @@ async def simulate_start(req: SimulateStartRequest):
         # Create summaries for all alternatives
         alt_summaries_with_paths = []
         for alt_path in alternative_paths:
-            alt_base_summary = route_summary(G, alt_path)
+            alt_base_summary = route_summary(G, alt_path, impassable_depth)
             alt_summary = {
                 "total_distance_m": alt_base_summary["total_distance_m"],
                 "eta_minutes": calculate_eta_minutes(alt_base_summary["total_distance_m"], speed_kph),
@@ -491,7 +500,7 @@ async def simulate_start(req: SimulateStartRequest):
         logger.info(f"[SIMULATE START] Alternative routes built: {len(alternative_routes)}")
 
         # Decide: use primary or best alternative based on flood conditions
-        primary_base = route_summary(G, path)
+        primary_base = route_summary(G, path, impassable_depth)
         if best_alt and best_alt["max_flood_depth_m"] < primary_base["max_flood_depth_m"] and best_alt["safe"]:
             logger.info(f"[SIMULATE START] Switching to safer alternative route (flood: {primary_base['max_flood_depth_m']:.2f}m → {best_alt['max_flood_depth_m']:.2f}m)")
             # Don't actually switch the route in the response, just inform frontend
@@ -574,25 +583,37 @@ async def simulate_tick(req: SimulateTickRequest):
         new_steps = None
 
         should_reroute_bool, changed_hobli = should_reroute(old_rainfall, new_rainfall, session.active_hoblis)
-        if should_reroute_bool:
-            logger.info(f"[SIMULATE TICK] REROUTE TRIGGERED by hobli: {changed_hobli}")
-            # Re-run flood physics
-            logger.debug("[SIMULATE TICK] Recomputing flood physics...")
-            rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
-
-            # Create a copy of the graph for recomputation
-            import networkx as nx
-            g_copy = session.G.copy()
-            hobli_for_node = assign_hoblis_to_nodes(g_copy, session.hobli_coords)
-            g_copy = compute_flood(g_copy, rainfall_mm_hour, hobli_for_node)
+        
+        impassable_depth = IMPASSABLE_DEPTH_MAP.get(session.speed_mode, 0.25)
+        current_summary = route_summary(session.G, session.path_nodes, impassable_depth)
+        
+        if should_reroute_bool or not current_summary["safe"]:
+            logger.info(f"[SIMULATE TICK] REROUTE TRIGGERED (Rainfall changed: {should_reroute_bool}, Path Flooded: {not current_summary['safe']})")
+            
+            if should_reroute_bool:
+                # Re-run flood physics
+                logger.debug("[SIMULATE TICK] Recomputing flood physics...")
+                rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
+    
+                # Create a copy of the graph for recomputation
+                import networkx as nx
+                g_copy = session.G.copy()
+                hobli_for_node = assign_hoblis_to_nodes(g_copy, session.hobli_coords)
+                g_copy = compute_flood(g_copy, rainfall_mm_hour, hobli_for_node)
+                session.G = g_copy
+            else:
+                g_copy = session.G
 
             # Route from current position to destination
             logger.debug(f"[SIMULATE TICK] Computing new route from node {session.position.current_node()}...")
             current_node = session.position.current_node()
             dst_node = session.path_nodes[-1]
-            new_path = astar_route(g_copy, current_node, dst_node)
+            new_path = astar_route(g_copy, current_node, dst_node, impassable_depth)
 
-            if new_path and new_path != session.path_nodes:
+            # Check if path changed (compare with remainder of current path)
+            current_remainder = session.path_nodes[session.position.current_edge_idx:]
+            
+            if new_path and new_path != current_remainder:
                 # Save old route to history (max 5)
                 session.route_history.append({
                     "geojson": build_route_geojson(session.G, session.path_nodes),
@@ -621,7 +642,7 @@ async def simulate_tick(req: SimulateTickRequest):
         # 4. Update tick and heatmap
         session.tick += 1
         heatmap = build_rainfall_heatmap(session.rainfall, session.hobli_coords)
-        summary = route_summary(session.G, session.path_nodes)
+        summary = route_summary(session.G, session.path_nodes, IMPASSABLE_DEPTH_MAP.get(session.speed_mode, 0.25))
 
         # 5. Check arrival
         arrived = session.position.is_arrived()

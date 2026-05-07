@@ -572,31 +572,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           >
             <NavigationControl position="top-right" />
 
-            {/* Rainfall heatmap */}
-            {heatmap != null && heatmap.length > 0 && (
-              <Source id="rainfall" type="geojson" data={{ type: 'FeatureCollection', features: heatmap }}>
-                <Layer
-                  id="rainfall-layer"
-                  type="heatmap"
-                  paint={{
-                    'heatmap-weight': ['interpolate', ['linear'], ['get', 'intensity'], 0, 0, 1, 1],
-                    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 10, 1, 15, 3],
-                    'heatmap-color': [
-                      'interpolate',
-                      ['linear'],
-                      ['heatmap-density'],
-                      0, 'rgba(0,0,255,0)',
-                      0.2, 'rgba(100,150,255,0.3)',
-                      0.5, 'rgba(255,165,0,0.5)',
-                      0.8, 'rgba(255,50,0,0.7)',
-                      1.0, 'rgba(139,0,0,0.9)'
-                    ],
-                    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 10, 30, 15, 80],
-                    'heatmap-opacity': 0.65,
-                  }}
-                />
-              </Source>
-            )}
+
 
             {/* ── Flood corridor overlay — shows all flooded roads in the area ── */}
             {floodOverlay != null && floodOverlay.features && floodOverlay.features.length > 0 && (
