@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 from math import radians, cos, sin, sqrt, atan2
 import networkx as nx
+import logging
 from db import _get_db
+
+logger = logging.getLogger(__name__)
 
 
 # ── Server-side session store ─────────────────────────────────────────────

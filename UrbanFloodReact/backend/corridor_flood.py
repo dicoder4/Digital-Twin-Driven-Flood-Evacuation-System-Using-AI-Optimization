@@ -31,7 +31,14 @@ def compute_flood(
         lake_factor = 3.0 if G.nodes[u].get("is_lake") else 1.0
         drain_factor = 0.2 if G.nodes[v].get("is_drain") else 1.0
 
-        depth = (avg_rain / 1000.0) * downhill_factor * lake_factor * drain_factor
+        # Hydraulic depth model:
+        # avg_rain is in mm/hour. For urban flooding, runoff accumulates on
+        # impervious surfaces. A realistic steady-state depth uses:
+        #   depth = (rain_mm_hr / 1000) * runoff_coeff * accumulation_factor
+        # where runoff_coeff ~ 0.9 (urban impervious) and accumulation_factor
+        # accounts for drainage basin convergence (~10-20x in low areas).
+        RUNOFF_ACCUMULATION = 15.0
+        depth = (avg_rain / 1000.0) * RUNOFF_ACCUMULATION * downhill_factor * lake_factor * drain_factor
         depth = round(min(depth, 3.0), 3)
 
         if depth < 0.1:

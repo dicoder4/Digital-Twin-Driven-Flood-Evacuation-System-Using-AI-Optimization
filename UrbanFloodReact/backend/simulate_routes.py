@@ -94,7 +94,7 @@ async def simulate_start(req: SimulateStartRequest):
         # 1. Fetch corridor
         logger.info("[SIMULATE START] Step 1: Fetching corridor data...")
         edges, nodes, _ = await fetch_corridor(
-            req.src_lat, req.src_lon, req.dst_lat, req.dst_lon
+            req.src_lat, req.src_lon, req.dst_lat, req.dst_lon, buffer_km=2.0
         )
         if edges is None or (isinstance(edges, list) and len(edges) == 0):
             logger.error("[SIMULATE START] No road data found for corridor")
@@ -134,12 +134,48 @@ async def simulate_start(req: SimulateStartRequest):
         hobli_for_node = assign_hoblis_to_nodes(G, hobli_coords)
         logger.info(f"[SIMULATE START] Hoblis assigned to {len(hobli_for_node)} nodes")
 
+        # 6.5 Bridge rainfall keys → actual hobli names
+        # The rainfall_snapshot keys (from CSV "Hobli" column or synthetic names)
+        # often don't match the hobli_coords keys used by assign_hoblis_to_nodes.
+        # We remap: for each actual hobli used by nodes, find the nearest rainfall
+        # source point and assign its value. This ensures compute_flood gets data.
+        actual_hoblis_used = set(hobli_for_node.values())
+        rainfall_keys_match = actual_hoblis_used & set(rainfall_snapshot.keys())
+
+        if len(rainfall_keys_match) < len(actual_hoblis_used) * 0.5:
+            # Most hoblis don't match → need to remap
+            logger.info(f"[SIMULATE START] Rainfall key mismatch: {len(rainfall_keys_match)}/{len(actual_hoblis_used)} hoblis matched. Remapping...")
+
+            # Compute average rainfall from snapshot as baseline
+            rain_values = [v for v in rainfall_snapshot.values() if v > 0]
+            avg_rain = sum(rain_values) / len(rain_values) if rain_values else 0.0
+
+            # For each actual hobli used by nodes, assign rainfall with spatial variation
+            import random as _rng
+            remapped_rainfall = {}
+            for hobli_name in actual_hoblis_used:
+                if hobli_name in rainfall_snapshot:
+                    remapped_rainfall[hobli_name] = rainfall_snapshot[hobli_name]
+                else:
+                    # Apply random spatial variation (±30%) around the average
+                    variation = _rng.uniform(0.7, 1.3)
+                    remapped_rainfall[hobli_name] = avg_rain * variation
+
+            rainfall_snapshot = remapped_rainfall
+            logger.info(f"[SIMULATE START] Remapped rainfall to {len(remapped_rainfall)} actual hoblis (avg={avg_rain:.4f} mm/tick)")
+
         # 7. Compute flood with scenario rainfall (converted to mm/hour)
         logger.info("[SIMULATE START] Step 7: Computing flood physics with rainfall...")
         rainfall_mm_hour = scenario_to_flood_input(rainfall_snapshot, req.tick_mins)
         logger.debug("[SIMULATE START] Rainfall converted to mm/hour scale")
+        # Log sample rainfall values for debugging
+        sample_hoblis = list(rainfall_mm_hour.items())[:5]
+        logger.info(f"[SIMULATE START] Rainfall mm/hour sample: {sample_hoblis}")
         G = compute_flood(G, rainfall_mm_hour, hobli_for_node)
-        logger.info("[SIMULATE START] Flood physics computed")
+        # Log max flood depth on the graph
+        max_depth_on_graph = max((d.get("water_depth", 0) for _, _, d in G.edges(data=True)), default=0)
+        flooded_edge_count = sum(1 for _, _, d in G.edges(data=True) if d.get("water_depth", 0) > 0.1)
+        logger.info(f"[SIMULATE START] Flood physics computed: max_depth={max_depth_on_graph:.3f}m, flooded_edges={flooded_edge_count}/{G.number_of_edges()}")
 
         # 8. Create session ID early (needed for shelter evacuation response)
         session_id = str(uuid.uuid4())
@@ -246,6 +282,26 @@ async def simulate_start(req: SimulateStartRequest):
         except Exception as e:
             logger.warning(f"[SIMULATE START] Strategy 1 failed: {e}")
 
+        # Strategy 1.5: Penalize primary route edges to force diverse alternatives
+        if len(alternative_paths) < 3:
+            logger.info("[SIMULATE START] Strategy 1.5: Computing diversity-penalized alternatives...")
+            try:
+                G_penalized = G.copy()
+                primary_edges = set(zip(path[:-1], path[1:]))
+                for u_e, v_e in primary_edges:
+                    if G_penalized.has_edge(u_e, v_e):
+                        G_penalized[u_e][v_e]["length"] = G_penalized[u_e][v_e]["length"] * 5.0
+                pen_count = 0
+                for i, alt_path in enumerate(nx.shortest_simple_paths(G_penalized, src_node, dst_node, weight='length')):
+                    pen_count += 1
+                    if i >= 6:
+                        break
+                    if len(alternative_paths) < 3 and add_path(alt_path, "Strategy 1.5"):
+                        pass
+                logger.info(f"[SIMULATE START] Strategy 1.5: Explored {pen_count} penalized paths")
+            except Exception as e:
+                logger.warning(f"[SIMULATE START] Strategy 1.5 failed: {e}")
+
         # Strategy 2: If < 2, try flood-aware K-shortest paths
         if len(alternative_paths) < 2:
             logger.info("[SIMULATE START] Strategy 2: Computing flood-aware K-shortest paths...")
@@ -339,8 +395,33 @@ async def simulate_start(req: SimulateStartRequest):
             "safe": base_summary["safe"],
         }
         active_hoblis = list({hobli_for_node.get(n, "unknown") for n in path})
-        heatmap = build_rainfall_heatmap(rainfall_snapshot, hobli_coords)
+        # Use mm/hour values for heatmap (not mm/tick which are too small to visualize)
+        heatmap = build_rainfall_heatmap(rainfall_mm_hour, hobli_coords, max_rainfall_mm=100.0)
         logger.debug(f"[SIMULATE START] Route summary: distance={summary['total_distance_m']}m, ETA={summary['eta_minutes']}min ({speed_kph}km/h), max_depth={summary['max_flood_depth_m']}m")
+
+        # Build flood overlay GeoJSON (flooded corridor edges for map visualization)
+        flood_features = []
+        for u, v, data in G.edges(data=True):
+            wd = data.get("water_depth", 0)
+            if wd > 0.05:
+                coords = data.get("geometry", [
+                    [G.nodes[u]["lon"], G.nodes[u]["lat"]],
+                    [G.nodes[v]["lon"], G.nodes[v]["lat"]],
+                ])
+                flood_features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": coords},
+                    "properties": {
+                        "water_depth": round(wd, 3),
+                        "flood_risk": data.get("flood_risk", "low"),
+                    }
+                })
+        # Cap at 2000 features for performance, prioritizing deepest floods
+        if len(flood_features) > 2000:
+            flood_features.sort(key=lambda f: f["properties"]["water_depth"], reverse=True)
+            flood_features = flood_features[:2000]
+        flood_overlay = {"type": "FeatureCollection", "features": flood_features}
+        logger.info(f"[SIMULATE START] Flood overlay: {len(flood_features)} flooded road segments")
 
         # 11. Create session (session_id already created earlier)
         logger.info("[SIMULATE START] Step 11: Creating simulation session...")
@@ -428,6 +509,7 @@ async def simulate_start(req: SimulateStartRequest):
             "session_id": session_id,
             "route_geojson": build_route_geojson(G, path),
             "alternative_routes": alternative_routes,
+            "flood_overlay": flood_overlay,
             "steps": generate_steps(G, path),
             "initial_rainfall": rainfall_snapshot,
             "rainfall_heatmap": heatmap,

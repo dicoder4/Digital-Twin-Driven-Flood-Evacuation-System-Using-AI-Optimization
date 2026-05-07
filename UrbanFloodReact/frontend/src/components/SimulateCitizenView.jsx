@@ -91,6 +91,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const [endPoint, setEndPoint] = useState(null);
   const [routeData, setRouteData] = useState(null);
   const [alternativeRoutes, setAlternativeRoutes] = useState([]);
+  const [floodOverlay, setFloodOverlay] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [personPos, setPersonPos] = useState(null);
   const [heatmap, setHeatmap] = useState([]);
@@ -352,7 +353,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           intensity: 'random',
           month: null,
           evolution_mode: 'random',
-          tick_mins: 5.0,
+          tick_mins: 0.2,
         }),
       }).then(r => r.json());
 
@@ -377,6 +378,9 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
       console.log('Alternative routes received:', alts.length, alts);
       setAlternativeRoutes(alts);
       setSessionId(res.session_id);
+      if (res.rainfall_heatmap) setHeatmap(toHeatmapFeatures(res.rainfall_heatmap));
+      if (res.flood_overlay) setFloodOverlay(res.flood_overlay);
+      if (res.summary) setStats(res.summary);
       addNotification(`✅ Found ${alts.length + 1} routes (${res.summary.total_distance_m}m)`, 'success');
       setPhase('CONFIG');
     } catch (err) {
@@ -399,8 +403,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
       // If ETA is 10 min, show 70-80 ticks in 7-8 secs = ~90ms per tick
       // So for backend: use tick_mins that matches this speed
       // For 5km at 30km/h = 10 min ETA, we want: 10min / 70ticks = 8.5 sec per tick (backend)
-      const tickDurationMs = 110; // 110ms per frontend tick = 7.7 seconds for 70 ticks
-      const tickMins = 0.2; // Backend: each 110ms represents 0.2 minutes (12 seconds real time)
+      const tickDurationMs = 250; // 250ms per frontend tick — slower, more realistic pace
+      const tickMins = 0.2; // Backend: each 250ms represents 0.2 minutes (12 seconds real time)
 
       const res = await fetch(`${API_URL}/simulate/start`, {
         method: 'POST',
@@ -432,6 +436,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
       setAlternativeRoutes(alts);
       setPersonPos(res.person_position);
       setHeatmap(toHeatmapFeatures(res.rainfall_heatmap));
+      if (res.flood_overlay) setFloodOverlay(res.flood_overlay);
       setStats(res.summary);
       setTick(0);
       addNotification(`🚗 Starting evacuation navigation`, 'success');
@@ -511,6 +516,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     setStartPoint(null);
     setEndPoint(null);
     setRouteData(null);
+    setAlternativeRoutes([]);
+    setFloodOverlay(null);
     setPersonPos(null);
     setHeatmap([]);
     setRouteHistory([]);
@@ -572,48 +579,105 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   id="rainfall-layer"
                   type="heatmap"
                   paint={{
-                    'heatmap-weight': 1,
-                    'heatmap-intensity': 1,
+                    'heatmap-weight': ['interpolate', ['linear'], ['get', 'intensity'], 0, 0, 1, 1],
+                    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 10, 1, 15, 3],
                     'heatmap-color': [
                       'interpolate',
                       ['linear'],
                       ['heatmap-density'],
-                      0, 'rgba(0, 0, 255, 0)',
-                      0.3, '#87ceeb',
-                      0.6, '#1e90ff',
-                      1, '#00008b'
+                      0, 'rgba(0,0,255,0)',
+                      0.2, 'rgba(100,150,255,0.3)',
+                      0.5, 'rgba(255,165,0,0.5)',
+                      0.8, 'rgba(255,50,0,0.7)',
+                      1.0, 'rgba(139,0,0,0.9)'
                     ],
-                    'heatmap-radius': 15,
-                    'heatmap-opacity': 0.7
+                    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 10, 30, 15, 80],
+                    'heatmap-opacity': 0.65,
                   }}
                 />
               </Source>
             )}
 
-            {/* Alternative routes — darker dashed yellow */}
-            {alternativeRoutes != null && alternativeRoutes.map((alt, idx) => (
-              <Source key={`alt-route-${idx}`} id={`alt-route-${idx}`} type="geojson" data={alt.geojson}>
+            {/* ── Flood corridor overlay — shows all flooded roads in the area ── */}
+            {floodOverlay != null && floodOverlay.features && floodOverlay.features.length > 0 && (
+              <Source id="flood-corridor" type="geojson" data={floodOverlay}>
                 <Layer
-                  id={`alt-route-line-${idx}`}
+                  id="flood-corridor-line"
                   type="line"
                   paint={{
-                    'line-color': '#d97706',
-                    'line-width': 2.5,
-                    'line-opacity': 0.6,
-                    'line-dasharray': [5, 5],
+                    'line-color': [
+                      'match',
+                      ['get', 'flood_risk'],
+                      'high', '#dc2626',
+                      'medium', '#f59e0b',
+                      'low', '#60a5fa',
+                      '#93c5fd'
+                    ],
+                    'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 16, 5],
+                    'line-opacity': 0.45,
+                  }}
+                />
+              </Source>
+            )}
+
+            {/* ── Route history — faded grey past routes (reroute trail) ── */}
+            {routeHistory.map((r, i) => (
+              <Source key={`history-${i}`} id={`history-${i}`} type="geojson" data={r.geojson}>
+                <Layer
+                  id={`history-line-${i}`}
+                  type="line"
+                  paint={{
+                    'line-color': '#9ca3af',
+                    'line-width': 2,
+                    'line-opacity': 0.2,
+                    'line-dasharray': [4, 3],
                   }}
                 />
               </Source>
             ))}
 
-            {/* Primary route — bright yellow */}
+            {/* ── Alternative routes — grey ghost lines, CONFIG phase only ── */}
+            {phase === 'CONFIG' && alternativeRoutes != null && alternativeRoutes.map((alt, idx) => (
+              <Source key={`alt-route-${idx}`} id={`alt-route-${idx}`} type="geojson" data={alt.geojson}>
+                <Layer
+                  id={`alt-route-line-${idx}`}
+                  type="line"
+                  paint={{
+                    'line-color': '#9ca3af',
+                    'line-width': 3,
+                    'line-opacity': 0.5,
+                    'line-dasharray': [6, 4],
+                  }}
+                />
+              </Source>
+            ))}
+
+            {/* ── Primary route — Google Maps blue with flood-risk segments ── */}
             {routeData != null && routeData.route_geojson != null && (
               <Source id="route" type="geojson" data={routeData.route_geojson}>
+                {/* Glow / shadow */}
+                <Layer
+                  id="route-glow"
+                  type="line"
+                  paint={{
+                    'line-color': '#4285F4',
+                    'line-width': 10,
+                    'line-opacity': 0.15,
+                    'line-blur': 4,
+                  }}
+                />
+                {/* Main line — blue for safe, coloured for flooded segments */}
                 <Layer
                   id="route-line"
                   type="line"
                   paint={{
-                    'line-color': '#fbbf24',
+                    'line-color': [
+                      'match',
+                      ['get', 'flood_risk'],
+                      'high', '#dc2626',
+                      'medium', '#f59e0b',
+                      '#4285F4'
+                    ],
                     'line-width': 5,
                     'line-opacity': 0.95,
                   }}
@@ -892,6 +956,40 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                       ⚠️ Passes through {routeData.summary.flooded_segments} flooded segment(s)
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Route legend — Google Maps style */}
+              {alternativeRoutes != null && alternativeRoutes.length > 0 && (
+                <div style={{
+                  background: '#f8fafc',
+                  padding: '0.75rem',
+                  borderRadius: '0.75rem',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '0.8rem',
+                }}>
+                  <div style={{ fontWeight: '700', marginBottom: '0.5rem', color: '#374151' }}>
+                    🗺️ {1 + alternativeRoutes.length} Routes Found
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                    <div style={{ width: '24px', height: '4px', background: '#4285F4', borderRadius: '2px' }} />
+                    <span><strong>Best route</strong> — {(routeData.summary.total_distance_m / 1000).toFixed(1)} km, ~{Math.round((routeData.summary.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60)} min</span>
+                  </div>
+                  {alternativeRoutes.map((alt, idx) => {
+                    const primaryEta = Math.round((routeData.summary.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60);
+                    const altEta = Math.round((alt.summary.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60);
+                    const diff = altEta - primaryEta;
+                    return (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                        <div style={{ width: '24px', height: '3px', background: '#9ca3af', borderRadius: '2px' }} />
+                        <span style={{ color: '#6b7280' }}>
+                          Alt {idx + 1} — {(alt.summary.total_distance_m / 1000).toFixed(1)} km
+                          {diff > 0 ? ` (+${diff} min)` : diff < 0 ? ` (${diff} min)` : ''}
+                          {!alt.summary.safe && ' ⚠️'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
