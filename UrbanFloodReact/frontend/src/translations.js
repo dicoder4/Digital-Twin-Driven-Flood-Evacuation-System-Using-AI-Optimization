@@ -226,6 +226,8 @@ const translations = {
     dra_command:            { en: "DRA Command Panel",                          kn: "DRA ಕಮಾಂಡ್ ಪ್ಯಾನೆಲ್" },
     researcher_role:        { en: "Researcher Role",                            kn: "ಸಂಶೋಧಕ ಪಾತ್ರ" },
     full_sim_lab:           { en: "Full Simulation Lab",                        kn: "ಸಂಪೂರ್ಣ ಸಿಮ್ಯುಲೇಶನ್ ಲ್ಯಾಬ್" },
+    simulate_role:          { en: "Simulate Role",                              kn: "ಸಿಮ್ಯುಲೇಟ್ ಪಾತ್ರ" },
+    citizen_lab:            { en: "Citizen Simulation Lab",                     kn: "ನಾಗರಿಕ ಸಿಮ್ಯುಲೇಶನ್ ಲ್ಯಾಬ್" },
     footer_copy:            { en: "© 2026 Digital Twin Flood Evacuation",       kn: "© 2026 ಡಿಜಿಟಲ್ ಟ್ವಿನ್ ಪ್ರವಾಹ ಸ್ಥಳಾಂತರ" },
     feature_hifi:           { en: "High-Fidelity Digital Twin",                 kn: "ಉನ್ನತ-ನಿಷ್ಠೆ ಡಿಜಿಟಲ್ ಟ್ವಿನ್" },
     feature_hifi_desc:      { en: "Urban road networks & elevation models via OSM and SRTM, rendered with MapLibre.", kn: "OSM ಮತ್ತು SRTM ಮೂಲಕ ನಗರ ರಸ್ತೆ ಜಾಲ ಮತ್ತು ಎತ್ತರದ ಮಾದರಿಗಳು." },
