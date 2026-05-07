@@ -21,3 +21,4 @@ pyproj
 fiona
 pymongo 
 dnspython
+matplotlib
