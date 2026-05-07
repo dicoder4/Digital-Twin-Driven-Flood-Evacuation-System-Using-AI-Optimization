@@ -34,6 +34,8 @@ import { PublicTransportAgent } from './components/PublicTransportAgent';
 import { useAuth } from './context/AuthContext';
 import { useLanguage } from './context/LanguageContext';
 import { t } from './translations';
+import CitizenView from './components/CitizenView';
+import SimulateCitizenView from './components/SimulateCitizenView';
 import './App.css';
 
 export default function App() {
@@ -463,6 +465,16 @@ export default function App() {
   }, [isDraMode, regionLoaded, loadedHobli, populationCount, shelterCandidates.length]);
 
   // ── Render ────────────────────────────────────────────────────
+  const isCitizenMode = user?.role === 'citizen';
+  if (isCitizenMode) {
+    return <CitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
+
+  const isSimulateMode = user?.role === 'simulate';
+  if (isSimulateMode) {
+    return <SimulateCitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
+
   return (
     <div className="app-container" style={{ '--sidebar-w': `${sidebarWidth}px` }}>
       {/* ─── Sidebar ───────────────────────────────────────── */}

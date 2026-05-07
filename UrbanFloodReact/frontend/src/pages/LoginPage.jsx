@@ -4,6 +4,7 @@ import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { t } from '../translations';
+import { API_URL } from '../config';
 
 const labelStyle = { display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' };
 const inputStyle = { width: '100%', padding: '11px 16px', fontSize: '0.9rem', border: '2px solid #e2e8f0', borderRadius: '10px', outline: 'none', color: '#1e293b', transition: 'border-color 0.2s', background: 'white', boxSizing: 'border-box' };
@@ -46,7 +47,7 @@ const LoginPage = () => {
     const endpoint = isRegistering ? 'register' : 'login';
     const payload = isRegistering ? formData : { username: formData.username, password: formData.password };
     try {
-      const response = await fetch(`http://localhost:8000/auth/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const response = await fetch(`${API_URL}/auth/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail || `${isRegistering ? 'Registration' : 'Login'} failed`); }
       const responseData = await response.json(); login(responseData.user); navigate('/');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
@@ -55,7 +56,7 @@ const LoginPage = () => {
   const handleDemoLogin = async (role) => {
     setError(null); setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/auth/demo-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+      const response = await fetch(`${API_URL}/auth/demo-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
       if (!response.ok) throw new Error('Demo login failed');
       const responseData = await response.json(); login(responseData.user); navigate('/');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
@@ -118,7 +119,7 @@ const LoginPage = () => {
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {isRegistering && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('account_type', lang)}</label><select name="role" value={formData.role} onChange={handleInputChange} style={inputStyle}><option value="authority">{t('dra_option', lang)}</option><option value="researcher">{t('researcher_option', lang)}</option></select></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('account_type', lang)}</label><select name="role" value={formData.role} onChange={handleInputChange} style={inputStyle}><option value="authority">{t('dra_option', lang)}</option><option value="researcher">{t('researcher_option', lang)}</option><option value="citizen">Citizen — Flood Navigation</option></select></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('choose_username', lang)}</label><input type="text" name="username" required value={formData.username} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_username', lang)} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('full_name', lang)}</label><input type="text" name="name" required value={formData.name} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_full_name', lang)} /></div>
                 <div><label style={labelStyle}>{t('email', lang)}</label><input type="email" name="email" required value={formData.email} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_email', lang)} /></div>
@@ -146,7 +147,7 @@ const LoginPage = () => {
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '1.25rem' }}>
               <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} /><span style={{ padding: '0 14px', color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('sandbox_access', lang)}</span><div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
               <button type="button" onClick={() => handleDemoLogin('authority')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #fed7aa', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                 <div style={{ background: '#fff7ed', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><ShieldAlert size={18} color="#f97316" /></div>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#9a3412' }}>{t('authority_role', lang)}</span>
@@ -156,6 +157,16 @@ const LoginPage = () => {
                 <div style={{ background: '#f5f3ff', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><Navigation size={18} color="#7c3aed" /></div>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#5b21b6' }}>{t('researcher_role', lang)}</span>
                 <span style={{ fontSize: '0.7rem', color: '#6d28d9', marginTop: '2px' }}>{t('full_sim_lab', lang)}</span>
+              </button>
+              <button type="button" onClick={() => handleDemoLogin('citizen')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #bbf7d0', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div style={{ background: '#f0fdf4', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><Navigation size={18} color="#16a34a" /></div>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>Citizen</span>
+                <span style={{ fontSize: '0.7rem', color: '#15803d', marginTop: '2px' }}>Navigate to safety</span>
+              </button>
+              <button type="button" onClick={() => handleDemoLogin('simulate')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #e9d5ff', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div style={{ background: '#faf5ff', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}>⚡</div>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#6b21a8' }}>Simulate</span>
+                <span style={{ fontSize: '0.7rem', color: '#7e22ce', marginTop: '2px' }}>Test flood routing</span>
               </button>
             </div>
           </div>
