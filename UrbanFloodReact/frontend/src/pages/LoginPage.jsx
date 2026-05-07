@@ -147,7 +147,6 @@ const LoginPage = () => {
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '1.25rem' }}>
               <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} /><span style={{ padding: '0 14px', color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('sandbox_access', lang)}</span><div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             </div>
-<<<<<<< HEAD
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
               <button type="button" onClick={() => handleDemoLogin('authority')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #fed7aa', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                 <div style={{ background: '#fff7ed', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><ShieldAlert size={18} color="#f97316" /></div>
