@@ -826,9 +826,16 @@ async def simulate_tick(req: SimulateTickRequest):
         session.tick += 1
         heatmap = build_rainfall_heatmap(session.rainfall, session.hobli_coords)
         
-        # Calculate summary for the REMAINING path
-        remaining_path = session.path_nodes[session.position.current_edge_idx:]
-        summary = route_summary(session.G, remaining_path, impassable_depth)
+        # Calculate summary for the remaining/full path
+        if session.position.is_arrived():
+            # Upon arrival, return the total journey summary (full path)
+            summary = route_summary(session.G, session.path_nodes, impassable_depth)
+            # Add total time taken (tick * 0.2 min)
+            summary["total_time_taken_min"] = round(session.tick * 0.2)
+        else:
+            # During transit, return the summary for the remaining path
+            remaining_path = session.path_nodes[session.position.current_edge_idx:]
+            summary = route_summary(session.G, remaining_path, impassable_depth)
 
         # ── 9. Check arrival ───────────────────────────────────────────────
         arrived = session.position.is_arrived()

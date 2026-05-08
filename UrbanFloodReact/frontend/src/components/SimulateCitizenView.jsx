@@ -122,8 +122,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
   // Speed reference (must match backend SPEED_MAP)
   const SPEED_CONFIG = {
-    car: { label: '🚗 Car (30 km/h)', speed_kph: 30 },
-    bike: { label: '🚴 Bike (15 km/h)', speed_kph: 15 },
+    car: { label: '🚗 Car (40 km/h)', speed_kph: 40 },
+    bike: { label: '🚴 Bike (30 km/h)', speed_kph: 30 },
     walk: { label: '🚶 Walking (4 km/h)', speed_kph: 4 },
   };
 
@@ -132,8 +132,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const notificationTimeoutRef = useRef(null);
   const markerStartRef = useRef({ lat: 0, lon: 0 });
 
-  useEffect(() => () => { 
-    if (tickTimerRef.current) clearInterval(tickTimerRef.current); 
+  useEffect(() => () => {
+    if (tickTimerRef.current) clearInterval(tickTimerRef.current);
     if (watchId) navigator.geolocation.clearWatch(watchId);
   }, [watchId]);
 
@@ -172,7 +172,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
   const startGpsTracking = () => {
     if (watchId) navigator.geolocation.clearWatch(watchId);
-    
+
     const id = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lon } = pos.coords;
@@ -533,16 +533,16 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
     tickTimerRef.current = setInterval(async () => {
       try {
-          const body = { session_id: sid };
-          if (navMode === 'realtime' && gpsCoords) {
-            body.current_lat = gpsCoords.lat;
-            body.current_lon = gpsCoords.lon;
-          }
-          const res = await fetch(`${API_URL}/simulate/tick`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          }).then(r => r.json());
+        const body = { session_id: sid };
+        if (navMode === 'realtime' && gpsCoords) {
+          body.current_lat = gpsCoords.lat;
+          body.current_lon = gpsCoords.lon;
+        }
+        const res = await fetch(`${API_URL}/simulate/tick`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }).then(r => r.json());
 
         if (res.status === 'error') {
           setPhase('COMPLETE');
@@ -950,13 +950,13 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           position: 'relative',
         }}>
           {/* Floating Notifications Container */}
-          <div style={{ 
-            position: 'absolute', 
-            top: '1rem', 
-            left: '1rem', 
-            right: '1rem', 
+          <div style={{
+            position: 'absolute',
+            top: '1rem',
+            left: '1rem',
+            right: '1rem',
             zIndex: 100,
-            pointerEvents: 'none' 
+            pointerEvents: 'none'
           }}>
             {notifications.map(n => (
               <div key={n.id} style={{ pointerEvents: 'auto' }}>
@@ -1018,11 +1018,11 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
           {/* Rainfall Source Toggle (only for Real-Time) */}
           {navMode === 'realtime' && (
-            <div style={{ 
-              display: 'flex', 
-              gap: '0.5rem', 
-              background: '#fffbeb', 
-              padding: '0.5rem', 
+            <div style={{
+              display: 'flex',
+              gap: '0.5rem',
+              background: '#fffbeb',
+              padding: '0.5rem',
               borderRadius: '0.75rem',
               border: '1px solid #fde68a',
               animation: 'fadeIn 0.3s ease-out'
@@ -1251,8 +1251,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     cursor: 'pointer',
                   }}
                 >
-                  <option value="car">🚗 Car (30 km/h)</option>
-                  <option value="bike">🚴 Bike (15 km/h)</option>
+                  <option value="car">🚗 Car (40 km/h)</option>
+                  <option value="bike">🚴 Bike (30 km/h)</option>
                   <option value="walk">🚶 Walking (4 km/h)</option>
                 </select>
               </div>
@@ -1453,7 +1453,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   {(() => {
                     const actualEta = Math.round((stats.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60);
                     const totalDist = routeData?.summary?.total_distance_m || 1;
-                    const progress = navMode === 'realtime' 
+                    const progress = navMode === 'realtime'
                       ? Math.round(Math.min(99, (1 - (stats.total_distance_m / totalDist)) * 100))
                       : Math.round(Math.min(100, (tick * 0.2 / (tick * 0.2 + actualEta)) * 100));
                     return (
@@ -1463,11 +1463,11 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                           <span style={{ fontWeight: 'bold', color: navMode === 'realtime' ? '#10b981' : '#4f46e5' }}>{progress}%</span>
                         </div>
                         <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden', marginBottom: '1rem' }}>
-                          <div style={{ 
-                            height: '100%', 
-                            background: navMode === 'realtime' ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #4f46e5, #7c3aed)', 
-                            width: `${progress}%`, 
-                            transition: 'width 0.1s linear' 
+                          <div style={{
+                            height: '100%',
+                            background: navMode === 'realtime' ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #4f46e5, #7c3aed)',
+                            width: `${progress}%`,
+                            transition: 'width 0.1s linear'
                           }} />
                         </div>
                       </>
@@ -1631,8 +1631,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                         }}
                       >
                         <span style={{ color: '#94a3b8', flexShrink: 0, width: '28px' }}>T{entry.tick}</span>
-                        <span style={{ 
-                          width: '6px', height: '6px', borderRadius: '50%', 
+                        <span style={{
+                          width: '6px', height: '6px', borderRadius: '50%',
                           background: statusColor, flexShrink: 0, marginTop: '4px'
                         }} />
                         <span style={{ color: statusColor, flex: 1, lineHeight: '1.4' }}>
@@ -1693,7 +1693,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                     <span>⏱️ Time Taken:</span>
-                    <span style={{ fontWeight: '600', color: '#4f46e5' }}>{stats.eta_minutes} min</span>
+                    <span style={{ fontWeight: '600', color: '#4f46e5' }}>{stats.total_time_taken_min ?? stats.eta_minutes} min</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                     <span>🚗 Speed Mode:</span>
