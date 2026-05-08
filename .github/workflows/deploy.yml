@@ -1,0 +1,91 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: major-project-deployment
+  REGION: asia-south1
+  BACKEND_SERVICE: urbanflood-backend
+  FRONTEND_SERVICE: urbanflood-frontend
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    # Only deploy backend if backend files changed
+    if: |
+      contains(github.event.head_commit.modified, 'UrbanFloodReact/backend/') ||
+      contains(github.event.head_commit.added, 'UrbanFloodReact/backend/') ||
+      github.event.head_commit.message == 'deploy all'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Backend to Cloud Run
+        run: |
+          cd UrbanFloodReact/backend
+          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
+            --source . \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --session-affinity \
+            --set-env-vars "\
+          MONGO_URI=${{ secrets.MONGO_URI }},\
+          TOMTOM_API_KEY=${{ secrets.TOMTOM_API_KEY }},\
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},\
+          GROQ_API_KEY=${{ secrets.GROQ_API_KEY }},\
+          OPENTOPOGRAPHY_API_KEY=${{ secrets.OPENTOPOGRAPHY_API_KEY }},\
+          ALERT_EMAIL=${{ secrets.ALERT_EMAIL }},\
+          ALERT_PASSWORD=${{ secrets.ALERT_PASSWORD }},\
+          SMTP_SERVER=smtp.gmail.com,\
+          SMTP_PORT=587,\
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}"
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    # Only deploy frontend if frontend files changed
+    if: |
+      contains(github.event.head_commit.modified, 'UrbanFloodReact/frontend/') ||
+      contains(github.event.head_commit.added, 'UrbanFloodReact/frontend/') ||
+      github.event.head_commit.message == 'deploy all'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Frontend to Cloud Run
+        run: |
+          cd UrbanFloodReact/frontend
+          gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
+            --source . \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated
