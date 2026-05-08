@@ -196,7 +196,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
 
             const isAuthority = user?.role === 'authority';
             const endpoint = isAuthority ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
-            const url = `http://localhost:8000${endpoint}`;
+            const url = `${API_URL}${endpoint}`;
 
             const payload = {
                 user_data: user || { name: 'Guest', role: 'guest' },
@@ -341,7 +341,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         setScenarioMetrics(null);
         setScenarioProgress('Preparing scenario simulations…');
 
-        const url = new URL('http://localhost:8000/simulate-scenario-analysis');
+        const url = new URL(`${API_URL}/simulate-scenario-analysis`);
         url.searchParams.append('hobli', locationName);
         url.searchParams.append('use_traffic', showTraffic);
         if (simulationParams.steps != null) url.searchParams.append('steps', simulationParams.steps);

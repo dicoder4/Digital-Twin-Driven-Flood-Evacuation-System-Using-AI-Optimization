@@ -4,6 +4,7 @@ import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { t } from '../translations';
+import { API_URL } from '../config';
 
 const labelStyle = { display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '6px' };
 const inputStyle = { width: '100%', padding: '11px 16px', fontSize: '0.9rem', border: '2px solid #e2e8f0', borderRadius: '10px', outline: 'none', color: '#1e293b', transition: 'border-color 0.2s', background: 'white', boxSizing: 'border-box' };
@@ -46,7 +47,7 @@ const LoginPage = () => {
     const endpoint = isRegistering ? 'register' : 'login';
     const payload = isRegistering ? formData : { username: formData.username, password: formData.password };
     try {
-      const response = await fetch(`http://localhost:8000/auth/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const response = await fetch(`${API_URL}/auth/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail || `${isRegistering ? 'Registration' : 'Login'} failed`); }
       const responseData = await response.json(); login(responseData.user); navigate('/');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
@@ -55,7 +56,7 @@ const LoginPage = () => {
   const handleDemoLogin = async (role) => {
     setError(null); setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/auth/demo-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+      const response = await fetch(`${API_URL}/auth/demo-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
       if (!response.ok) throw new Error('Demo login failed');
       const responseData = await response.json(); login(responseData.user); navigate('/');
     } catch (err) { setError(err.message); } finally { setLoading(false); }
