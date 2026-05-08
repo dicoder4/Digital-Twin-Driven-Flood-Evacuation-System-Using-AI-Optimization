@@ -11,15 +11,30 @@ env:
   FRONTEND_SERVICE: urbanflood-frontend
 
 jobs:
+  # Step 1: Detect which parts of the codebase changed
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'UrbanFloodReact/backend/**'
+            frontend:
+              - 'UrbanFloodReact/frontend/**'
+
+  # Step 2: Deploy backend if backend files changed
   deploy-backend:
     name: Deploy Backend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    # Only deploy backend if backend files changed
-    if: |
-      contains(github.event.head_commit.modified, 'UrbanFloodReact/backend/') ||
-      contains(github.event.head_commit.added, 'UrbanFloodReact/backend/') ||
-      github.event.head_commit.message == 'deploy all'
-
     permissions:
       contents: read
       id-token: write
@@ -57,15 +72,12 @@ jobs:
           SMTP_PORT=587,\
           GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}"
 
+  # Step 3: Deploy frontend if frontend files changed
   deploy-frontend:
     name: Deploy Frontend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    # Only deploy frontend if frontend files changed
-    if: |
-      contains(github.event.head_commit.modified, 'UrbanFloodReact/frontend/') ||
-      contains(github.event.head_commit.added, 'UrbanFloodReact/frontend/') ||
-      github.event.head_commit.message == 'deploy all'
-
     permissions:
       contents: read
       id-token: write
