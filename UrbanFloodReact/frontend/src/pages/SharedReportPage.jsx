@@ -25,9 +25,17 @@ export default function SharedReportPage() {
             try {
                 const res = await axios.get(`${API_URL}/api/notifications/shared-report/${reportId}`);
                 setReport(res.data);
-                if (res.data.map_state?.evacuation_plan?.length > 0) {
+                if (res.data.map_state?.shelter_reports?.length > 0) {
+                    const firstShelter = res.data.map_state.shelter_reports[0];
+                    if (firstShelter.lat && firstShelter.lon) {
+                        setSelectedShelterId(firstShelter.id);
+                        setViewState(v => ({ ...v, latitude: firstShelter.lat, longitude: firstShelter.lon, zoom: 14 }));
+                    }
+                } else if (res.data.map_state?.evacuation_plan?.length > 0) {
                     const firstStep = res.data.map_state.evacuation_plan[0];
-                    setViewState(v => ({ ...v, latitude: firstStep.lat, longitude: firstStep.lon, zoom: 14 }));
+                    if (firstStep.lat && firstStep.lon) {
+                        setViewState(v => ({ ...v, latitude: firstStep.lat, longitude: firstStep.lon, zoom: 14 }));
+                    }
                 }
             } catch (err) {
                 setError(err.response?.data?.detail || "Report not found or has expired.");
@@ -79,8 +87,12 @@ export default function SharedReportPage() {
         );
     }
 
-    const { map_state, evacuation_data, simulation_params, ai_report, researcher, authority, timestamp, location } = report;
-    const selectedShelter = selectedShelterId ? map_state.evacuation_plan?.find(s => s.id === selectedShelterId) : null;
+    const { map_state, evacuation_data = {}, simulation_params, ai_report, researcher, authority, timestamp, location } = report;
+    const shelterList = map_state.shelter_reports || [];
+    const selectedShelter = selectedShelterId ? shelterList.find(s => s.id === selectedShelterId) : null;
+    const evacuatedCount = evacuation_data.evacuated_count ?? evacuation_data.total_evacuated ?? 0;
+    const totalAtRisk = evacuation_data.total_at_risk ?? evacuation_data.total_at_risk_initial ?? 0;
+    const successRate = evacuation_data.success_rate_pct ?? (totalAtRisk ? ((evacuatedCount / totalAtRisk) * 100) : 0);
 
     return (
         <div className="flex h-screen overflow-hidden bg-slate-950">
@@ -106,11 +118,11 @@ export default function SharedReportPage() {
                     <div className="grid grid-cols-2 gap-3 mb-8">
                         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                             <div className="text-[10px] font-bold text-blue-600 uppercase mb-1">{t('evacuated', lang)}</div>
-                            <div className="text-2xl font-black text-blue-900 tracking-tighter">{evacuation_data.evacuated_count?.toLocaleString()}</div>
+                            <div className="text-2xl font-black text-blue-900 tracking-tighter">{evacuatedCount.toLocaleString()}</div>
                         </div>
                         <div className="bg-red-50/50 p-4 rounded-xl border border-red-100">
                             <div className="text-[10px] font-bold text-red-600 uppercase mb-1">{t('success_rate', lang)}</div>
-                            <div className="text-2xl font-black text-red-900 tracking-tighter">{((evacuation_data.evacuated_count / evacuation_data.total_at_risk) * 100).toFixed(1)}%</div>
+                            <div className="text-2xl font-black text-red-900 tracking-tighter">{successRate.toFixed(1)}%</div>
                         </div>
                     </div>
 
@@ -132,30 +144,35 @@ export default function SharedReportPage() {
                             <Building2 size={12} /> {t('active_safe_centers', lang)}
                         </h3>
                         <div className="space-y-2">
-                            {map_state.evacuation_plan.map(s => (
-                                <button
-                                    key={s.id}
-                                    onClick={() => {
-                                        setSelectedShelterId(s.id);
-                                        setViewState(v => ({ ...v, latitude: s.lat, longitude: s.lon, zoom: 15 }));
-                                    }}
-                                    className={`w-full text-left p-3 rounded-xl border transition-all ${
-                                        selectedShelterId === s.id 
-                                        ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 translate-x-1' 
-                                        : 'bg-white border-slate-100 text-slate-700 hover:border-slate-300'
-                                    }`}
-                                >
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="text-xs font-bold truncate pr-2">{s.name}</span>
-                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${selectedShelterId === s.id ? 'bg-blue-500' : 'bg-slate-100 text-slate-500'}`}>
-                                            {((s.count / s.capacity) * 100).toFixed(0)}%
-                                        </span>
-                                    </div>
-                                    <div className={`text-[10px] ${selectedShelterId === s.id ? 'text-blue-100' : 'text-slate-400'}`}>
-                                        {s.count.toLocaleString()} / {s.capacity.toLocaleString()} evacuated
-                                    </div>
-                                </button>
-                            ))}
+                            {shelterList.map(s => {
+                                const occ = s.occupancy ?? 0;
+                                const cap = s.capacity ?? 1;
+                                const pct = cap > 0 ? Math.round((occ / cap) * 100) : 0;
+                                return (
+                                    <button
+                                        key={s.id}
+                                        onClick={() => {
+                                            setSelectedShelterId(s.id);
+                                            if (s.lat && s.lon) setViewState(v => ({ ...v, latitude: s.lat, longitude: s.lon, zoom: 15 }));
+                                        }}
+                                        className={`w-full text-left p-3 rounded-xl border transition-all ${
+                                            selectedShelterId === s.id 
+                                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 translate-x-1' 
+                                            : 'bg-white border-slate-100 text-slate-700 hover:border-slate-300'
+                                        }`}
+                                    >
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-xs font-bold truncate pr-2">{s.name || s.id}</span>
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${selectedShelterId === s.id ? 'bg-blue-500' : 'bg-slate-100 text-slate-500'}`}>
+                                                {pct}%
+                                            </span>
+                                        </div>
+                                        <div className={`text-[10px] ${selectedShelterId === s.id ? 'text-blue-100' : 'text-slate-400'}`}>
+                                            {occ.toLocaleString()} / {cap.toLocaleString()} evacuated
+                                        </div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -167,16 +184,17 @@ export default function SharedReportPage() {
             </aside>
 
             {/* Main Map */}
-            <main className="flex-1 relative">
+            <main className="flex-1 relative flex flex-col">
                 <FloodMap
                     viewState={viewState}
                     onMove={setViewState}
+                    baseRoadsData={map_state.roads_geojson}
                     floodData={map_state.flood_geojson}
-                    roadsData={map_state.roads_geojson}
                     riskRoadsData={map_state.roads_geojson}
                     loadedHobli={location}
                     evacuationPlan={map_state.evacuation_plan}
                     simulationDone={true}
+                    shelters={shelterList}
                     selectedShelter={selectedShelter}
                     trafficRoadsData={map_state.traffic_geojson}
                     showTraffic={!!map_state.traffic_geojson}

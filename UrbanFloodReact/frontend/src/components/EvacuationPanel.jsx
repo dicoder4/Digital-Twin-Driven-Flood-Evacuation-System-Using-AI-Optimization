@@ -186,24 +186,35 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
     const handleNotifyActions = async (targetSummary, targetPlan) => {
         setNotifyLoading(true);
         try {
-            // Use existing html2canvas logic if map exists, else null
-            let mapBase64 = null;
-            const mapEl = document.querySelector('.map-container') || document.querySelector('.maplibregl-map');
-            if (mapEl) {
-                const canvas = await html2canvas(mapEl, { useCORS: true, backgroundColor: null });
-                mapBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-            }
-
             const isAuthority = user?.role === 'authority';
             const endpoint = isAuthority ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
             const url = `${API_URL}${endpoint}`;
 
+            const totalEvacuated = Number(targetSummary?.total_evacuated ?? 0);
+            const totalAtRiskRemaining = Number(targetSummary?.total_at_risk_remaining ?? 0);
+            const totalAtRiskInitial = Number(targetSummary?.total_at_risk_initial ?? (totalEvacuated + totalAtRiskRemaining));
+            const evacuatedCount = Number(targetSummary?.evacuated_count ?? totalEvacuated);
+            const totalAtRisk = Number(targetSummary?.total_at_risk ?? totalAtRiskInitial);
+            const successRatePct = Number(
+                targetSummary?.success_rate_pct
+                ?? (totalAtRisk > 0 ? (evacuatedCount / totalAtRisk) * 100 : 0)
+            );
+
             const payload = {
                 user_data: user || { name: 'Guest', role: 'guest' },
                 researcher_data: user || { name: 'Guest', role: 'guest' },
-                evacuation_data: { ...targetSummary, algorithm: targetSummary.algorithm || 'AI Computed' },
+                evacuation_data: {
+                    ...targetSummary,
+                    algorithm: targetSummary.algorithm || 'AI Computed',
+                    total_evacuated: totalEvacuated,
+                    evacuated_count: evacuatedCount,
+                    total_at_risk_remaining: totalAtRiskRemaining,
+                    total_at_risk_initial: totalAtRiskInitial,
+                    total_at_risk: totalAtRisk,
+                    success_rate_pct: successRatePct,
+                },
                 location_data: { location_name: locationName, lat: 12.9716, lon: 77.5946 },
-                map_image_base64: mapBase64,
+                map_image_base64: null,
                 ai_report: isAuthority ? 'Emergency Mass SOS Broadcast Initiated.' : 'Please review evacuation metrics.',
                 map_state: {
                     flood_geojson: floodData,
@@ -213,6 +224,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                     metro_stations: metroStations,
                     bus_manifest: busManifest,
                     evacuation_plan: targetPlan,
+                    shelter_reports: targetSummary.shelter_reports || [],
                 },
                 simulation_params: simulationParams,
                 frontend_base_url: window.location.origin
