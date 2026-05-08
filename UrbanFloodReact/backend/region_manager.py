@@ -1,4 +1,4 @@
-﻿"""
+"""
 region_manager.py
 â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 Owns all mutable server state:
@@ -226,6 +226,25 @@ def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
     center = (lat, lon)
     G = entry["G"]
 
+    # ── Check if metro data already exists in cache (loaded from MongoDB) ──
+    existing_metro = entry.get("metro_stations", [])
+    existing_lines = entry.get("metro_lines", {})
+    has_cached_metro = (
+        len(existing_metro) > 0
+        or (isinstance(existing_lines, dict) and len(existing_lines.get("features", [])) > 0)
+    )
+
+    if has_cached_metro:
+        print(f"  [on-demand] Metro data already cached for {hobli_key} "
+              f"({len(existing_metro)} stations) — skipping Overpass queries")
+        # Still enrich from local CSV reference (no network calls)
+        _, csv_station_line_map = _extract_namma_metro_reference_from_csv()
+        entry["metro_stations"] = _enrich_station_lines_from_dataset(
+            existing_metro, csv_station_line_map
+        )
+        return entry
+
+    # ── No cached metro data — query Overpass (first-time load only) ──────
     print(f"  [on-demand] Extracting Metro Network for {hobli_key} (Radius: 4,000m, include_rail={include_rail})")
 
     metro_stations = _extract_metro_stations(G, center, include_rail=include_rail)

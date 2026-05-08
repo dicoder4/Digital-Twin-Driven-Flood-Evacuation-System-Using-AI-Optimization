@@ -286,17 +286,36 @@ async def process_load_region(hobli_name: str):
         loop = asyncio.get_event_loop()
         # 1) Offload CPU-bound graph loading to executor
         await loop.run_in_executor(None, get_region, key)
-        # 2) Metro extraction happens only when user clicks "Load Network"
-        from region_manager import extract_metro_data
-        metro_entry = await loop.run_in_executor(None, extract_metro_data, key, True)
+    except ConnectionError as e:
+        # Overpass API unreachable — clear message for the user
+        print(f"[ERROR] Overpass API unreachable for '{key}': {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"This region hasn't been cached yet and the map data server "
+                   f"is temporarily unreachable. Please try again in a few minutes, "
+                   f"or contact the administrator to pre-cache this region."
+        )
     except Exception as e:
-        print(f"[ERROR] Metro extraction failed: {e}")
+        print(f"[ERROR] Graph loading failed: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to load graph: {e}")
 
-    metro_lines = metro_entry.get("metro_lines", {})
-    metro_stations = metro_entry.get("metro_stations", [])
+    # 2) Metro extraction — non-fatal; if Overpass is unreachable the region
+    #    still loads with its road network and cached data.
+    metro_lines = {"type": "FeatureCollection", "features": []}
+    metro_stations = []
+    try:
+        from region_manager import extract_metro_data, REGION_CACHE as _RC
+        metro_entry = await loop.run_in_executor(None, extract_metro_data, key, True)
+        metro_lines = metro_entry.get("metro_lines", metro_lines)
+        metro_stations = metro_entry.get("metro_stations", metro_stations)
+    except Exception as e:
+        print(f"[WARN] Metro extraction failed (non-fatal, returning region without metro): {e}")
+        # Try to get whatever is already in the in-memory cache
+        cached_entry = _RC.get(key, {}) if '_RC' in dir() else {}
+        metro_stations = cached_entry.get("metro_stations", [])
+        metro_lines = cached_entry.get("metro_lines", metro_lines)
     
     # Ensure metro_lines is a FeatureCollection
     if isinstance(metro_lines, dict) and metro_lines.get("type") == "FeatureCollection":
