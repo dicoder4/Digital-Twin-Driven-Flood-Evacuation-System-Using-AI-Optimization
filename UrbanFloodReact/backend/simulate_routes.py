@@ -44,10 +44,14 @@ class SimulateStartRequest(BaseModel):
     month: str | None = None
     evolution_mode: str = "random"
     tick_mins: float = 5.0
+    mode: str = "simulated"  # "simulated" or "realtime"
+    rainfall_source: str = "simulated"  # "simulated" or "ksndmc"
 
 
 class SimulateTickRequest(BaseModel):
     session_id: str
+    current_lat: float | None = None
+    current_lon: float | None = None
 
 
 class SimulateResetRequest(BaseModel):
@@ -130,10 +134,30 @@ async def simulate_start(req: SimulateStartRequest):
             return {"status": "error", "message": "Hobli data not available."}
         logger.info(f"[SIMULATE START] Hobli coords loaded: {len(hobli_coords)} hoblis")
 
-        # 5. Pick rainfall scenario
-        logger.info(f"[SIMULATE START] Step 5: Picking rainfall scenario (month={req.month}, intensity={req.intensity})...")
-        rainfall_snapshot, scenario_date, scenario_month = await pick_scenario(req.month, req.intensity)
-        logger.info(f"[SIMULATE START] Scenario selected: date={scenario_date}, month={scenario_month}, hoblis={len(rainfall_snapshot)}")
+        # 5. Pick rainfall scenario or fetch live rainfall
+        rainfall_snapshot = {}
+        scenario_date = "live"
+        scenario_month = "live"
+
+        if req.mode == "realtime" and req.rainfall_source == "ksndmc":
+            logger.info("[SIMULATE START] Step 5: Fetching live KSNDMC rainfall...")
+            from rainfall_service import fetch_rainfall, assign_wards_to_nodes
+            rainfall_mm, ward_centroids = await fetch_rainfall()
+            
+            # Use ward_for_node instead of hobli_for_node for KSNDMC data
+            ward_for_node = assign_wards_to_nodes(
+                list(G.nodes()), 
+                {n: (G.nodes[n]['lat'], G.nodes[n]['lon']) for n in G.nodes()}, 
+                ward_centroids
+            )
+            # KSNDMC rain values are used as mm/hour as per user feedback
+            rainfall_snapshot = rainfall_mm
+            hobli_for_node = ward_for_node # Re-assign for compute_flood
+            logger.info(f"[SIMULATE START] Live rainfall fetched for {len(rainfall_snapshot)} wards")
+        else:
+            logger.info(f"[SIMULATE START] Step 5: Picking rainfall scenario (month={req.month}, intensity={req.intensity})...")
+            rainfall_snapshot, scenario_date, scenario_month = await pick_scenario(req.month, req.intensity)
+            logger.info(f"[SIMULATE START] Scenario selected: date={scenario_date}, month={scenario_month}, hoblis={len(rainfall_snapshot)}")
         logger.debug(f"[SIMULATE START] Rainfall snapshot: {rainfall_snapshot}")
 
         # 6. Assign hoblis to nodes
@@ -466,7 +490,9 @@ async def simulate_start(req: SimulateStartRequest):
             dst_lon=req.dst_lon,
             scenario_date=scenario_date,
             scenario_month=scenario_month,
-            last_accessed=time.time()
+            last_accessed=time.time(),
+            mode=req.mode,
+            rainfall_source=req.rainfall_source
         )
         SIMULATE_SESSIONS[session_id] = session
         logger.info(f"[SIMULATE START] Session created: session_id={session_id}")
@@ -554,8 +580,8 @@ async def simulate_start(req: SimulateStartRequest):
 
 @simulate_router.post("/tick")
 async def simulate_tick(req: SimulateTickRequest):
-    """Advance simulation by one tick."""
-    logger.debug(f"[SIMULATE TICK] Tick requested for session_id={req.session_id}")
+    """Advance simulation by one tick — evolves rainfall, recomputes flood physics, reroutes if needed."""
+    logger.info(f"[SIMULATE TICK] ═══════════ Tick requested for session={req.session_id[:8]}... ═══════════")
     cleanup_stale_sessions()
 
     if req.session_id not in SIMULATE_SESSIONS:
@@ -564,96 +590,159 @@ async def simulate_tick(req: SimulateTickRequest):
 
     session = SIMULATE_SESSIONS[req.session_id]
     session.last_accessed = time.time()
-    logger.debug(f"[SIMULATE TICK] Session {req.session_id} loaded. Tick={session.tick}")
+    logger.info(f"[SIMULATE TICK] Session loaded | tick={session.tick} | mode={session.evolution_mode} | edge_idx={session.position.current_edge_idx}/{len(session.path_nodes)-1}")
 
     try:
-        # 1. Advance person
-        logger.debug("[SIMULATE TICK] Step 1: Advancing person position...")
-        session.position.advance()
-        person_lat, person_lon = session.position._interpolate_position()
-        logger.debug(f"[SIMULATE TICK] Person moved to ({person_lat}, {person_lon})")
+        import networkx as nx
 
-        # 2. Evolve rainfall
-        logger.debug("[SIMULATE TICK] Step 2: Evolving rainfall scenario...")
+        # ── 1. Advance person position ─────────────────────────────────────
+        if session.mode == "realtime" and req.current_lat is not None and req.current_lon is not None:
+            # Update position based on real GPS coordinates
+            person_lat, person_lon = req.current_lat, req.current_lon
+            # Snap to nearest node on the path to keep navigation logic working
+            from corridor_graph import snap_to_node
+            # We don't want to re-snap the whole path, just find where we are
+            # For simplicity, we'll keep the current_edge_idx logic but update it if the user is far ahead
+            # But for a true "Google Maps" feel, we should probably just find the nearest node on the current path
+            
+            # Simple approach: update the PersonPosition object with new coords
+            # But PersonPosition is designed for path interpolation. 
+            # Let's just use the provided lat/lon directly for the response.
+            logger.info(f"[SIMULATE TICK] 📍 Real-time GPS: ({person_lat:.5f}, {person_lon:.5f})")
+            
+            # Update session position's current node to the nearest on path
+            min_dist = float('inf')
+            nearest_idx = session.position.current_edge_idx
+            for i, nid in enumerate(session.path_nodes):
+                n = session.G.nodes[nid]
+                dist = ((n['lat'] - person_lat)**2 + (n['lon'] - person_lon)**2)**0.5
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest_idx = i
+            
+            session.position.current_edge_idx = min(nearest_idx, len(session.path_nodes) - 2)
+            session.position.edge_progress = 0.0 # reset progress on edge for simplicity
+        else:
+            session.position.advance()
+            person_lat, person_lon = session.position._interpolate_position()
+            logger.info(f"[SIMULATE TICK] 🚗 Person at ({person_lat:.5f}, {person_lon:.5f}) | edge {session.position.current_edge_idx}/{len(session.path_nodes)-1} | progress={session.position.edge_progress:.2f}")
+
+        # ── 2. Evolve rainfall ─────────────────────────────────────────────
         old_rainfall = dict(session.rainfall)
-        new_rainfall = evolve_rainfall(
-            session.rainfall,
-            session.hobli_coords,
-            session.tick,
-            session.evolution_mode
-        )
+        
+        if session.mode == "realtime" and session.rainfall_source == "ksndmc":
+            logger.info("[SIMULATE TICK] Fetching fresh KSNDMC rainfall...")
+            from rainfall_service import fetch_rainfall
+            new_rainfall, _ = await fetch_rainfall()
+        else:
+            new_rainfall = evolve_rainfall(
+                session.rainfall,
+                session.hobli_coords,
+                session.tick,
+                session.evolution_mode
+            )
         session.rainfall = new_rainfall
-        logger.debug(f"[SIMULATE TICK] Rainfall evolved. Changed hoblis: {len([h for h in old_rainfall if old_rainfall[h] != new_rainfall.get(h)])}")
 
-        # 3. Check reroute
-        logger.debug("[SIMULATE TICK] Step 3: Checking reroute condition...")
+        # Compute rainfall statistics for logging and frontend
+        old_avg = sum(old_rainfall.values()) / max(len(old_rainfall), 1)
+        new_avg = sum(new_rainfall.values()) / max(len(new_rainfall), 1)
+        new_max = max(new_rainfall.values()) if new_rainfall else 0
+        rain_mm_hr_avg = new_avg * (60.0 / session.tick_mins)  # Convert mm/tick to mm/hr
+        rain_mm_hr_max = new_max * (60.0 / session.tick_mins)
+
+        # Track which hoblis changed significantly
+        changed_hoblis = []
+        for h in new_rainfall:
+            old_val = old_rainfall.get(h, 0)
+            new_val = new_rainfall.get(h, 0)
+            if abs(new_val - old_val) > 0.0001:
+                changed_hoblis.append(h)
+
+        logger.info(
+            f"[SIMULATE TICK] 🌧️ Rainfall: avg={rain_mm_hr_avg:.1f}mm/hr max={rain_mm_hr_max:.1f}mm/hr | "
+            f"Δavg={((new_avg - old_avg) / max(old_avg, 0.0001)) * 100:+.1f}% | "
+            f"changed_hoblis={len(changed_hoblis)}"
+        )
+
+        # ── 3. ALWAYS recompute flood physics (rainfall evolves every tick) ──
+        should_reroute_bool, changed_hobli = should_reroute(old_rainfall, new_rainfall, session.active_hoblis)
+
+        impassable_depth = IMPASSABLE_DEPTH_MAP.get(session.speed_mode, 0.25)
+
+        # Always recompute flood physics — this is the key fix.
+        # In a real system, we'd be continuously querying rain gauges.
+        rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
+        hobli_for_node = assign_hoblis_to_nodes(session.G, session.hobli_coords)
+        session.G = compute_flood(session.G, rainfall_mm_hour, hobli_for_node)
+
+        # Log flood state after recomputation
+        max_depth_on_graph = max((d.get("water_depth", 0) for _, _, d in session.G.edges(data=True)), default=0)
+        flooded_edge_count = sum(1 for _, _, d in session.G.edges(data=True) if d.get("water_depth", 0) > 0.05)
+        impassable_edge_count = sum(1 for _, _, d in session.G.edges(data=True) if d.get("water_depth", 0) >= impassable_depth)
+        logger.info(
+            f"[SIMULATE TICK] 💧 Flood recomputed: max_depth={max_depth_on_graph:.3f}m | "
+            f"flooded_edges={flooded_edge_count}/{session.G.number_of_edges()} | "
+            f"impassable_edges={impassable_edge_count}"
+        )
+
+        # ── 4. Check distance to next flooded segment on CURRENT path ──────
         rerouted = False
         reroute_reason = None
         new_route_geojson = None
         new_steps = None
-
-        should_reroute_bool, changed_hobli = should_reroute(old_rainfall, new_rainfall, session.active_hoblis)
-        
-        impassable_depth = IMPASSABLE_DEPTH_MAP.get(session.speed_mode, 0.25)
-        
-        # 1. Recompute physics ONLY if rainfall changed
-        if should_reroute_bool:
-            logger.info(f"[SIMULATE TICK] Rainfall changed in hobli: {changed_hobli}, recomputing flood physics...")
-            rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
-            import networkx as nx
-            g_copy = session.G.copy()
-            hobli_for_node = assign_hoblis_to_nodes(g_copy, session.hobli_coords)
-            g_copy = compute_flood(g_copy, rainfall_mm_hour, hobli_for_node)
-            session.G = g_copy
-            
-        # 2. Check distance to next flooded segment on the CURRENT path
         distance_to_flood = float('inf')
         accumulated_dist = 0.0
-        
+        flood_ahead_depth = 0.0
+
         for i in range(session.position.current_edge_idx, len(session.path_nodes) - 1):
             u = session.path_nodes[i]
             v = session.path_nodes[i+1]
             if not session.G.has_edge(u, v):
                 continue
-                
+
             edge_data = session.G[u][v]
             if isinstance(edge_data, dict) and 0 in edge_data:
-                edge_data = edge_data[0] # Handle MultiDiGraph edge case if present
-                
+                edge_data = edge_data[0]
+
             depth = edge_data.get("water_depth", 0.0)
             if depth >= impassable_depth:
                 distance_to_flood = accumulated_dist
+                flood_ahead_depth = depth
                 break
-                
+
             edge_len = edge_data.get("length", 0.0)
             if i == session.position.current_edge_idx:
-                # We are partially through the current edge
                 accumulated_dist += edge_len * (1.0 - session.position.edge_progress)
             else:
                 accumulated_dist += edge_len
-                
-        # 3. Trigger reroute if we are approaching a flood (e.g. within 500m)
+
+        if distance_to_flood < float('inf'):
+            logger.info(
+                f"[SIMULATE TICK] ⚠️ Flooded road detected {distance_to_flood:.0f}m ahead | "
+                f"depth={flood_ahead_depth:.3f}m (impassable={impassable_depth}m)"
+            )
+        else:
+            logger.debug("[SIMULATE TICK] ✅ No impassable flood on current path")
+
+        # ── 5. Trigger reroute if approaching flood (within 500m) ──────────
         approaching_flood = (distance_to_flood <= 500.0)
-        
+
         if approaching_flood:
-            # Route from current position to destination
             current_node = session.position.current_node()
             dst_node = session.path_nodes[-1]
-            
-            # Use strict=False during simulation so we find the *safest* route even if all routes have some flooding
             new_path = astar_route(session.G, current_node, dst_node, impassable_depth, strict=False)
-
-            # Check if path changed (compare with remainder of current path)
             current_remainder = session.path_nodes[session.position.current_edge_idx:]
-            
+
             if new_path and new_path != current_remainder:
-                logger.info(f"[SIMULATE TICK] REROUTE EXECUTED (Approaching flooded road: {distance_to_flood:.1f}m ahead)")
-                # Calculate max depth of original route before abandoning it
+                logger.info(
+                    f"[SIMULATE TICK] 🔄 REROUTE TRIGGERED! Flooded road {int(distance_to_flood)}m ahead "
+                    f"(depth={flood_ahead_depth:.2f}m) | new_path={len(new_path)} nodes vs old={len(current_remainder)} nodes"
+                )
+
                 if session.original_route_max_depth is None:
                     old_summary = route_summary(session.G, current_remainder, impassable_depth)
                     session.original_route_max_depth = old_summary["max_flood_depth_m"]
 
-                # Save ONLY the abandoned branch to history (dashed grey line)
                 session.route_history.append({
                     "geojson": build_route_geojson(session.G, current_remainder),
                     "tick": session.tick
@@ -661,30 +750,93 @@ async def simulate_tick(req: SimulateTickRequest):
                 if len(session.route_history) > 5:
                     session.route_history = session.route_history[-5:]
 
-                # Update session path: keep traveled history, attach new optimal path
                 traveled_nodes = session.path_nodes[:session.position.current_edge_idx]
                 combined_path = traveled_nodes + new_path
                 session.path_nodes = combined_path
-                
-                # Position is now relative to the combined path, current_edge_idx stays exactly the same!
                 session.position.path_nodes = combined_path
                 session.position.G = session.G
 
                 rerouted = True
-                reroute_reason = f"Flooded road {int(distance_to_flood)}m ahead"
+                reroute_reason = f"Flooded road {int(distance_to_flood)}m ahead ({flood_ahead_depth:.2f}m deep)"
                 new_route_geojson = build_route_geojson(session.G, session.path_nodes)
                 new_steps = generate_steps(session.G, session.path_nodes)
+            else:
+                logger.info("[SIMULATE TICK] ⚠️ Approaching flood but no better route found")
 
-        # 4. Update tick and heatmap
+        # ── 6. Build flood overlay for frontend map ────────────────────────
+        flood_features = []
+        for u, v, data in session.G.edges(data=True):
+            wd = data.get("water_depth", 0)
+            if wd > 0.05:
+                coords = data.get("geometry", [
+                    [session.G.nodes[u]["lon"], session.G.nodes[u]["lat"]],
+                    [session.G.nodes[v]["lon"], session.G.nodes[v]["lat"]],
+                ])
+                flood_features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": coords},
+                    "properties": {
+                        "water_depth": round(wd, 3),
+                        "flood_risk": data.get("flood_risk", "low"),
+                    }
+                })
+        if len(flood_features) > 2000:
+            flood_features.sort(key=lambda f: f["properties"]["water_depth"], reverse=True)
+            flood_features = flood_features[:2000]
+        flood_overlay = {"type": "FeatureCollection", "features": flood_features}
+
+        # ── 7. Build rainfall log for frontend ─────────────────────────────
+        # Determine flood status
+        if rerouted:
+            flood_status = "rerouting"
+        elif impassable_edge_count > 0:
+            flood_status = "critical"
+        elif flooded_edge_count > 10:
+            flood_status = "building"
+        else:
+            flood_status = "none"
+
+        # Build human-readable log message
+        if rerouted:
+            log_message = f"🔄 REROUTING — {reroute_reason}"
+        elif rain_mm_hr_avg > 50:
+            log_message = f"🌊 Heavy rain: {rain_mm_hr_avg:.0f}mm/hr"
+        elif rain_mm_hr_avg > 20:
+            log_message = f"⛈️ Moderate rain: {rain_mm_hr_avg:.0f}mm/hr — {flooded_edge_count} roads flooding"
+        elif rain_mm_hr_avg > 5:
+            log_message = f"🌧️ Light rain: {rain_mm_hr_avg:.0f}mm/hr"
+        else:
+            log_message = f"🌤️ Minimal rain: {rain_mm_hr_avg:.1f}mm/hr"
+
+        rainfall_log = {
+            "tick": session.tick,
+            "avg_rainfall_mm_hr": round(rain_mm_hr_avg, 1),
+            "max_rainfall_mm_hr": round(rain_mm_hr_max, 1),
+            "max_flood_depth_m": round(max_depth_on_graph, 3),
+            "flooded_roads": flooded_edge_count,
+            "impassable_roads": impassable_edge_count,
+            "flood_status": flood_status,
+            "message": log_message,
+            "evolution_mode": session.evolution_mode,
+        }
+
+        logger.info(f"[SIMULATE TICK] 📊 Log: {log_message}")
+
+        # ── 8. Update tick, heatmap, summary ───────────────────────────────
         session.tick += 1
         heatmap = build_rainfall_heatmap(session.rainfall, session.hobli_coords)
-        summary = route_summary(session.G, session.path_nodes, IMPASSABLE_DEPTH_MAP.get(session.speed_mode, 0.25))
+        
+        # Calculate summary for the REMAINING path
+        remaining_path = session.path_nodes[session.position.current_edge_idx:]
+        summary = route_summary(session.G, remaining_path, impassable_depth)
 
-        # 5. Check arrival
+        # ── 9. Check arrival ───────────────────────────────────────────────
         arrived = session.position.is_arrived()
         if arrived:
-            # Cleanup session
+            logger.info(f"[SIMULATE TICK] 🏁 ARRIVED at destination after {session.tick} ticks!")
             del SIMULATE_SESSIONS[req.session_id]
+        else:
+            logger.info(f"[SIMULATE TICK] ═══════════ Tick {session.tick} complete ═══════════")
 
         return {
             "session_id": req.session_id,
@@ -697,12 +849,17 @@ async def simulate_tick(req: SimulateTickRequest):
             "route_geojson": new_route_geojson or build_route_geojson(session.G, session.path_nodes),
             "route_history_geojson": [r["geojson"] for r in session.route_history],
             "original_route_max_depth": session.original_route_max_depth,
+            "flood_overlay": flood_overlay,
+            "rainfall_log": rainfall_log,
             "steps": new_steps or generate_steps(session.G, session.path_nodes),
             "summary": summary,
             "arrived": arrived,
         }
 
     except Exception as e:
+        import traceback
+        logger.error(f"[SIMULATE TICK] EXCEPTION: {type(e).__name__}: {str(e)}")
+        logger.error(f"[SIMULATE TICK] Traceback: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 

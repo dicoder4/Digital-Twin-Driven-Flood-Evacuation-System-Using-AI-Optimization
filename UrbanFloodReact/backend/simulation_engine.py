@@ -94,6 +94,8 @@ class SimulationSession:
     scenario_month: str = ""
     last_accessed: float = 0.0
     original_route_max_depth: float | None = None
+    mode: str = "simulated"  # "simulated" or "realtime"
+    rainfall_source: str = "simulated"  # "simulated" or "ksndmc"
 
 
 # ── Rainfall scenario picking and evolution ────────────────────────────────
@@ -257,6 +259,8 @@ def evolve_rainfall(
     """Evolve rainfall by one tick according to mode."""
     new_snapshot = {}
 
+    old_avg = sum(current_snapshot.values()) / max(len(current_snapshot), 1)
+
     if mode == "intensify":
         for hobli, mm in current_snapshot.items():
             # Cap at 0.8 mm/tick (~230 mm/24h) to avoid unrealistic 3m floods
@@ -298,6 +302,13 @@ def evolve_rainfall(
     else:
         new_snapshot = dict(current_snapshot)
 
+    new_avg = sum(new_snapshot.values()) / max(len(new_snapshot), 1)
+    logger.info(
+        f"[EVOLVE RAINFALL] tick={tick} mode={mode} | "
+        f"avg_mm_tick: {old_avg:.6f} → {new_avg:.6f} (Δ={new_avg - old_avg:+.6f}) | "
+        f"hoblis={len(new_snapshot)}"
+    )
+
     return new_snapshot
 
 
@@ -330,15 +341,36 @@ def should_reroute(
     old_snapshot: Dict[str, float],
     new_snapshot: Dict[str, float],
     active_hoblis: List[str],
-    threshold_mm: float = 0.5
+    threshold_mm: float = 0.0005
 ) -> Tuple[bool, Optional[str]]:
-    """Check if rainfall changed enough to trigger reroute."""
+    """Check if rainfall changed enough to trigger flood recomputation.
+    
+    The threshold is in mm/tick units. For heavy rain at ~0.03 mm/tick,
+    intensify mode changes by 5% per tick = ~0.0015 mm/tick delta.
+    Default 0.0005 catches all meaningful changes.
+    """
+    max_delta = 0.0
+    max_hobli = None
     for hobli in active_hoblis:
         old = old_snapshot.get(hobli, 0)
         new = new_snapshot.get(hobli, 0)
-        if abs(new - old) >= threshold_mm:
-            return True, hobli
-    return False, None
+        delta = abs(new - old)
+        if delta > max_delta:
+            max_delta = delta
+            max_hobli = hobli
+    
+    triggered = max_delta >= threshold_mm
+    if triggered:
+        logger.info(
+            f"[SHOULD_REROUTE] YES — hobli='{max_hobli}' delta={max_delta:.6f}mm/tick "
+            f"(threshold={threshold_mm})"
+        )
+    else:
+        logger.debug(
+            f"[SHOULD_REROUTE] NO — max_delta={max_delta:.6f}mm/tick "
+            f"(threshold={threshold_mm})"
+        )
+    return triggered, max_hobli
 
 
 def build_rainfall_heatmap(

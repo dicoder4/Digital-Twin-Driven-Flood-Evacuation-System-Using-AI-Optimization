@@ -103,6 +103,9 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const [maxFloodIntensity, setMaxFloodIntensity] = useState(0);
   const [shelterEvacuation, setShelterEvacuation] = useState(null);
   const [originalRouteMaxDepth, setOriginalRouteMaxDepth] = useState(null);
+  const [rainfallLog, setRainfallLog] = useState([]);
+  const [isRerouting, setIsRerouting] = useState(false);
+  const [rerouteCount, setRerouteCount] = useState(0);
 
   // Config
   const [speedMode, setSpeedMode] = useState('car');
@@ -110,6 +113,10 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const [evolutionMode, setEvolutionMode] = useState('random');
   const [month, setMonth] = useState('random');
   const [searchQuery, setSearchQuery] = useState('');
+  const [navMode, setNavMode] = useState('simulated'); // 'simulated' or 'realtime'
+  const [rainfallSource, setRainfallSource] = useState('live'); // 'live' or 'simulated'
+  const [watchId, setWatchId] = useState(null);
+  const [gpsCoords, setGpsCoords] = useState(null);
   const [draggedMarker, setDraggedMarker] = useState(null);
   const clickCountRef = useRef({ start: 0, end: 0, startTime: 0, endTime: 0 });
 
@@ -125,7 +132,66 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const notificationTimeoutRef = useRef(null);
   const markerStartRef = useRef({ lat: 0, lon: 0 });
 
-  useEffect(() => () => { if (tickTimerRef.current) clearInterval(tickTimerRef.current); }, []);
+  useEffect(() => () => { 
+    if (tickTimerRef.current) clearInterval(tickTimerRef.current); 
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+  }, [watchId]);
+
+  // Auto-detect location when switching to real-time mode
+  useEffect(() => {
+    if (navMode === 'realtime') {
+      detectCurrentLocation();
+    } else {
+      stopGpsTracking();
+    }
+  }, [navMode]);
+
+  const detectCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      addNotification('❌ Geolocation not supported', 'error');
+      return;
+    }
+
+    addNotification('📡 Detecting current location...', 'info');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        setStartPoint({ lat, lon });
+        setGpsCoords({ lat, lon });
+        setViewState(prev => ({ ...prev, latitude: lat, longitude: lon, zoom: 15 }));
+        setPhase('SELECT_END');
+        addNotification('📍 Location detected!', 'success');
+      },
+      (err) => {
+        addNotification('❌ Could not detect location', 'error');
+        console.error(err);
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
+  const startGpsTracking = () => {
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        setGpsCoords({ lat, lon });
+        // In real-time, the car marker follows the GPS
+        setPersonPos({ lat, lon });
+      },
+      (err) => console.error(err),
+      { enableHighAccuracy: true }
+    );
+    setWatchId(id);
+  };
+
+  const stopGpsTracking = () => {
+    if (watchId) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+    }
+  };
 
   // Auto-compute routes when both points are set
   useEffect(() => {
@@ -213,6 +279,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 month: null,
                 evolution_mode: 'random',
                 tick_mins: tickMins,
+                mode: navMode,
+                rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
               }),
             }).then(r => r.json());
 
@@ -312,6 +380,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           month: month === 'random' ? null : month,
           evolution_mode: evolutionMode,
           tick_mins: 5.0,
+          mode: navMode,
+          rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
         }),
       }).then(r => r.json());
 
@@ -355,6 +425,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           month: null,
           evolution_mode: 'random',
           tick_mins: 0.2,
+          mode: navMode,
+          rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
         }),
       }).then(r => r.json());
 
@@ -397,6 +469,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     setError(null);
     setNotifications([]);
     setMaxFloodIntensity(0);
+    setRainfallLog([]);
+    setRerouteCount(0);
     addNotification('⏱️ Simulation starting...', 'info');
 
     try {
@@ -420,6 +494,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           month: month === 'random' ? null : month,
           evolution_mode: evolutionMode,
           tick_mins: tickMins,
+          mode: navMode,
+          rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
         }),
       }).then(r => r.json());
 
@@ -440,7 +516,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
       if (res.flood_overlay) setFloodOverlay(res.flood_overlay);
       setStats(res.summary);
       setTick(0);
-      addNotification(`🚗 Starting evacuation navigation`, 'success');
+      addNotification(`🚗 Starting ${navMode === 'realtime' ? 'real-time journey' : 'evacuation navigation'}`, 'success');
+      if (navMode === 'realtime') startGpsTracking();
       startTickLoop(res.session_id, tickDurationMs);
     } catch (err) {
       setError(err.message);
@@ -454,11 +531,16 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
     tickTimerRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`${API_URL}/simulate/tick`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sid }),
-        }).then(r => r.json());
+          const body = { session_id: sid };
+          if (navMode === 'realtime' && gpsCoords) {
+            body.current_lat = gpsCoords.lat;
+            body.current_lon = gpsCoords.lon;
+          }
+          const res = await fetch(`${API_URL}/simulate/tick`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }).then(r => r.json());
 
         if (res.status === 'error') {
           setPhase('COMPLETE');
@@ -478,25 +560,61 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           setOriginalRouteMaxDepth(res.original_route_max_depth);
         }
 
+        // Update flood overlay from tick response (shows floods spreading on map)
+        if (res.flood_overlay) {
+          setFloodOverlay(res.flood_overlay);
+        }
+
+        // Accumulate rainfall log entries for live panel
+        if (res.rainfall_log) {
+          const logEntry = res.rainfall_log;
+          console.log(
+            `[Tick ${logEntry.tick}] ${logEntry.message} | ` +
+            `avg=${logEntry.avg_rainfall_mm_hr}mm/hr max=${logEntry.max_rainfall_mm_hr}mm/hr | ` +
+            `flood_depth=${logEntry.max_flood_depth_m}m roads=${logEntry.flooded_roads} impassable=${logEntry.impassable_roads}`
+          );
+          setRainfallLog(prev => {
+            const next = [...prev, logEntry];
+            return next.length > 50 ? next.slice(-50) : next; // Keep last 50 entries
+          });
+        }
+
         // We removed the heatmap UI, so we just calculate max flood intensity but don't draw it
         const newHeatmap = res.rainfall_heatmap || [];
         setHeatmap(newHeatmap);
 
         // Track max flood intensity
-        const maxIntensity = Math.max(...(newHeatmap.map(h => h.properties.intensity) || [0]));
+        const maxIntensity = Math.max(...(newHeatmap.map(h => h.properties?.intensity ?? h.intensity ?? 0) || [0]));
         setMaxFloodIntensity(maxIntensity);
 
         setStats(res.summary);
 
-        // Show realistic notifications
+        // Handle rerouting with visible animation
         if (res.rerouted && res.reroute_reason) {
-          addNotification(`⚠️ Route recalculating: ${res.reroute_reason}`, 'warning');
+          console.log(`%c[REROUTE] ${res.reroute_reason}`, 'color: #dc2626; font-weight: bold; font-size: 14px;');
+          setIsRerouting(true);
+          setRerouteCount(prev => prev + 1);
+          addNotification(`🔄 REROUTING: ${res.reroute_reason}`, 'warning');
+
+          // Pause the tick loop briefly so the user can SEE the reroute
+          clearInterval(tickTimerRef.current);
+          setTimeout(() => {
+            setIsRerouting(false);
+            addNotification('✅ New route calculated — resuming navigation', 'success');
+            // Resume with the same tick interval
+            startTickLoop(sid, tickDurationMs);
+          }, 1500); // 1.5 second pause for reroute visibility
+          return; // Don't process further — we'll resume after the pause
         }
 
-        if (res.summary.max_flood_depth_m > 0.8) {
-          addNotification('🌊 FLOOD INTENSIFIED - Finding safer route', 'error');
-        } else if (res.summary.max_flood_depth_m > 0.4) {
-          addNotification('💧 Moderate flooding ahead', 'warning');
+        // Flood status notifications (less frequent to avoid spam)
+        if (res.rainfall_log) {
+          const log = res.rainfall_log;
+          if (log.flood_status === 'critical' && log.tick % 5 === 0) {
+            addNotification(`🌊 ${log.impassable_roads} roads now impassable!`, 'error');
+          } else if (log.flood_status === 'building' && log.tick % 8 === 0) {
+            addNotification(`💧 Flooding increasing: ${log.flooded_roads} roads affected`, 'warning');
+          }
         }
 
         if (res.arrived) {
@@ -522,6 +640,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
       } catch { }
     }
     setSessionId(null);
+    stopGpsTracking();
     setPhase('SELECT_START');
     setStartPoint(null);
     setEndPoint(null);
@@ -537,6 +656,9 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     setNotifications([]);
     setMaxFloodIntensity(0);
     setOriginalRouteMaxDepth(null);
+    setRainfallLog([]);
+    setIsRerouting(false);
+    setRerouteCount(0);
   };
 
   return (
@@ -756,17 +878,19 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 <div style={{
                   width: '36px',
                   height: '36px',
-                  background: 'white',
+                  background: navMode === 'realtime' ? '#3b82f6' : 'white',
                   borderRadius: '50%',
-                  border: '3px solid #3b82f6',
-                  boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.3)',
+                  border: '3px solid white',
+                  boxShadow: navMode === 'realtime' ? '0 0 15px rgba(59, 130, 246, 0.6)' : '0 0 0 4px rgba(59, 130, 246, 0.3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '18px',
                   animation: 'pulse 2s infinite',
                 }}>
-                  🚗
+                  {navMode === 'realtime' ? (
+                    <div style={{ width: '12px', height: '12px', background: 'white', borderRadius: '50%' }} />
+                  ) : '🚗'}
                 </div>
               </Marker>
             )}
@@ -840,6 +964,95 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           </div>
 
           <h2 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '700', color: '#1f2937' }}>Navigation</h2>
+
+          {/* Mode Toggle */}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={() => setNavMode('simulated')}
+              style={{
+                flex: 1,
+                padding: '0.6rem',
+                borderRadius: '0.75rem',
+                border: 'none',
+                background: navMode === 'simulated' ? '#4f46e5' : '#f3f4f6',
+                color: navMode === 'simulated' ? 'white' : '#374151',
+                fontWeight: 'bold',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: navMode === 'simulated' ? '0 2px 8px rgba(79, 70, 229, 0.4)' : 'none'
+              }}
+            >
+              🎮 Simulated
+            </button>
+            <button
+              onClick={() => setNavMode('realtime')}
+              style={{
+                flex: 1,
+                padding: '0.6rem',
+                borderRadius: '0.75rem',
+                border: 'none',
+                background: navMode === 'realtime' ? '#4f46e5' : '#f3f4f6',
+                color: navMode === 'realtime' ? 'white' : '#374151',
+                fontWeight: 'bold',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: navMode === 'realtime' ? '0 2px 8px rgba(79, 70, 229, 0.4)' : 'none'
+              }}
+            >
+              📍 Real-Time
+            </button>
+          </div>
+
+          {/* Rainfall Source Toggle (only for Real-Time) */}
+          {navMode === 'realtime' && (
+            <div style={{ 
+              display: 'flex', 
+              gap: '0.5rem', 
+              background: '#fffbeb', 
+              padding: '0.5rem', 
+              borderRadius: '0.75rem',
+              border: '1px solid #fde68a',
+              animation: 'fadeIn 0.3s ease-out'
+            }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#92400e', alignSelf: 'center', paddingLeft: '0.25rem' }}>Rain:</span>
+              <button
+                onClick={() => setRainfallSource('live')}
+                style={{
+                  flex: 1,
+                  padding: '0.4rem',
+                  borderRadius: '0.5rem',
+                  border: 'none',
+                  background: rainfallSource === 'live' ? '#d97706' : 'white',
+                  color: rainfallSource === 'live' ? 'white' : '#92400e',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: rainfallSource === 'live' ? '0 1px 4px rgba(217, 119, 6, 0.3)' : 'none'
+                }}
+              >
+                📡 KSNDMC
+              </button>
+              <button
+                onClick={() => setRainfallSource('simulated')}
+                style={{
+                  flex: 1,
+                  padding: '0.4rem',
+                  borderRadius: '0.5rem',
+                  border: 'none',
+                  background: rainfallSource === 'simulated' ? '#d97706' : 'white',
+                  color: rainfallSource === 'simulated' ? 'white' : '#92400e',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: rainfallSource === 'simulated' ? '0 1px 4px rgba(217, 119, 6, 0.3)' : 'none'
+                }}
+              >
+                🧪 Inject
+              </button>
+            </div>
+          )}
 
           {error && (
             <NotificationBanner message={error} type="error" icon={AlertCircle} />
@@ -1033,49 +1246,57 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 </select>
               </div>
 
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Rainfall Intensity</label>
-                <select
-                  value={intensity}
-                  onChange={(e) => setIntensity(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #d1d5db',
-                    fontSize: '0.875rem',
-                    background: 'white',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="random">🎲 Random</option>
-                  <option value="light">🌧️ Light (50mm)</option>
-                  <option value="moderate">⛈️ Moderate (100mm)</option>
-                  <option value="heavy">🌊 Heavy (150mm)</option>
-                </select>
-              </div>
+              {navMode === 'simulated' || (navMode === 'realtime' && rainfallSource === 'simulated') ? (
+                <>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Rainfall Intensity</label>
+                    <select
+                      value={intensity}
+                      onChange={(e) => setIntensity(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        borderRadius: '0.5rem',
+                        border: '1px solid #d1d5db',
+                        fontSize: '0.875rem',
+                        background: 'white',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="random">🎲 Random</option>
+                      <option value="light">🌧️ Light (50mm)</option>
+                      <option value="moderate">⛈️ Moderate (100mm)</option>
+                      <option value="heavy">🌊 Heavy (150mm)</option>
+                    </select>
+                  </div>
 
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Evolution Mode</label>
-                <select
-                  value={evolutionMode}
-                  onChange={(e) => setEvolutionMode(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '0.5rem',
-                    border: '1px solid #d1d5db',
-                    fontSize: '0.875rem',
-                    background: 'white',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="random">🎲 Random</option>
-                  <option value="intensify">⬆️ Intensify</option>
-                  <option value="dissipate">⬇️ Dissipate</option>
-                  <option value="move">➡️ Move</option>
-                </select>
-              </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Evolution Mode</label>
+                    <select
+                      value={evolutionMode}
+                      onChange={(e) => setEvolutionMode(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        borderRadius: '0.5rem',
+                        border: '1px solid #d1d5db',
+                        fontSize: '0.875rem',
+                        background: 'white',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="random">🎲 Random</option>
+                      <option value="intensify">⬆️ Intensify</option>
+                      <option value="dissipate">⬇️ Dissipate</option>
+                      <option value="move">➡️ Move</option>
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <div style={{ background: '#ecfdf5', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #6ee7b7', fontSize: '0.85rem', color: '#065f46' }}>
+                  📡 <strong>Live Rainfall Active</strong>: Tracking KSNDMC data in real-time. Intensity is based on current weather reports.
+                </div>
+              )}
 
               <button
                 onClick={handleStartSimulation}
@@ -1091,11 +1312,12 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   fontSize: '0.95rem',
                   boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)',
                   transition: 'all 0.2s',
+                  marginTop: '0.5rem'
                 }}
                 onMouseOver={(e) => e.target.style.background = '#4338ca'}
                 onMouseOut={(e) => e.target.style.background = '#4f46e5'}
               >
-                ▶️ START SIMULATION
+                {navMode === 'realtime' ? '▶️ START JOURNEY' : '▶️ START SIMULATION'}
               </button>
             </>
           )}
@@ -1199,18 +1421,18 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
               {/* Elapsed time matching vehicle movement */}
               <div style={{
-                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                background: navMode === 'realtime' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
                 color: 'white',
                 padding: '1.25rem',
                 borderRadius: '0.75rem',
                 textAlign: 'center',
-                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)',
+                boxShadow: navMode === 'realtime' ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 12px rgba(79, 70, 229, 0.3)',
               }}>
                 <div style={{ fontSize: '3rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                  {Math.round(tick * 0.2)}'
+                  {navMode === 'realtime' ? 'LIVE' : `${Math.round(tick * 0.2)}'`}
                 </div>
                 <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>
-                  Elapsed Time (of {stats ? Math.round((stats.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60) : 0} min)
+                  {navMode === 'realtime' ? 'Real-Time Navigation Active' : `Elapsed Time (of ${stats ? Math.round((stats.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60) : 0} min)`}
                 </div>
               </div>
 
@@ -1219,15 +1441,23 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   {/* Progress bar with actual elapsed time - using current speed mode ETA */}
                   {(() => {
                     const actualEta = Math.round((stats.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60);
-                    const progress = Math.round(Math.min(100, (tick * 0.2 / actualEta) * 100));
+                    const totalDist = routeData?.summary?.total_distance_m || 1;
+                    const progress = navMode === 'realtime' 
+                      ? Math.round(Math.min(99, (1 - (stats.total_distance_m / totalDist)) * 100))
+                      : Math.round(Math.min(100, (tick * 0.2 / (tick * 0.2 + actualEta)) * 100));
                     return (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                          <span style={{ fontWeight: '600' }}>📍 Progress</span>
-                          <span style={{ fontWeight: 'bold', color: '#4f46e5' }}>{progress}%</span>
+                          <span style={{ fontWeight: '600' }}>📍 {navMode === 'realtime' ? 'Journey Progress' : 'Simulation Progress'}</span>
+                          <span style={{ fontWeight: 'bold', color: navMode === 'realtime' ? '#10b981' : '#4f46e5' }}>{progress}%</span>
                         </div>
                         <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden', marginBottom: '1rem' }}>
-                          <div style={{ height: '100%', background: 'linear-gradient(90deg, #4f46e5, #7c3aed)', width: `${progress}%`, transition: 'width 0.1s linear' }} />
+                          <div style={{ 
+                            height: '100%', 
+                            background: navMode === 'realtime' ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #4f46e5, #7c3aed)', 
+                            width: `${progress}%`, 
+                            transition: 'width 0.1s linear' 
+                          }} />
                         </div>
                       </>
                     );
@@ -1282,6 +1512,126 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   </div>
                 </div>
               )}
+
+              {/* ── Rerouting Animation Banner ── */}
+              {isRerouting && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #1d4ed8 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s infinite',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '0.75rem',
+                  textAlign: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '1rem',
+                  boxShadow: '0 4px 16px rgba(59, 130, 246, 0.5)',
+                }}>
+                  <div style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>🔄</div>
+                  <div>Rerouting...</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '400', opacity: 0.8, marginTop: '0.25rem' }}>
+                    Finding safer path around flooded road
+                  </div>
+                </div>
+              )}
+
+              {/* ── Reroute Count Badge ── */}
+              {rerouteCount > 0 && !isRerouting && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 0.75rem',
+                  background: '#fef3c7',
+                  border: '1px solid #fcd34d',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.8rem',
+                  color: '#92400e',
+                }}>
+                  <span>🔄</span>
+                  <span><strong>{rerouteCount}</strong> reroute{rerouteCount > 1 ? 's' : ''} so far</span>
+                </div>
+              )}
+
+              {/* ── Live Rainfall & Flood Log ── */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '0.75rem',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '0.6rem 0.75rem',
+                  background: '#1e293b',
+                  color: '#94a3b8',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <span>📡 LIVE UPDATES</span>
+                  <span style={{ fontFamily: 'monospace', color: '#67e8f9' }}>
+                    {rainfallLog.length > 0 ? `${rainfallLog[rainfallLog.length - 1].avg_rainfall_mm_hr}mm/hr` : '--'}
+                  </span>
+                </div>
+                <div
+                  id="rainfall-log-scroll"
+                  style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    padding: '0.25rem',
+                  }}
+                  ref={el => {
+                    if (el) el.scrollTop = el.scrollHeight;
+                  }}
+                >
+                  {rainfallLog.length === 0 && (
+                    <div style={{ padding: '0.5rem', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
+                      Waiting for simulation data...
+                    </div>
+                  )}
+                  {rainfallLog.map((entry, idx) => {
+                    const statusColor = {
+                      none: '#6b7280',
+                      building: '#d97706',
+                      critical: '#dc2626',
+                      rerouting: '#7c3aed',
+                    }[entry.flood_status] || '#6b7280';
+                    const statusBg = {
+                      none: 'transparent',
+                      building: '#fffbeb',
+                      critical: '#fef2f2',
+                      rerouting: '#f5f3ff',
+                    }[entry.flood_status] || 'transparent';
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: '0.35rem 0.5rem',
+                          fontSize: '0.7rem',
+                          fontFamily: 'monospace',
+                          borderBottom: '1px solid #f1f5f9',
+                          background: statusBg,
+                          display: 'flex',
+                          gap: '0.4rem',
+                          alignItems: 'baseline',
+                          animation: idx === rainfallLog.length - 1 ? 'fadeIn 0.3s ease-out' : 'none',
+                        }}
+                      >
+                        <span style={{ color: '#94a3b8', flexShrink: 0, width: '28px' }}>T{entry.tick}</span>
+                        <span style={{ 
+                          width: '6px', height: '6px', borderRadius: '50%', 
+                          background: statusColor, flexShrink: 0, marginTop: '4px'
+                        }} />
+                        <span style={{ color: statusColor, flex: 1, lineHeight: '1.4' }}>
+                          {entry.message}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
               <button
                 onClick={handleReset}
@@ -1399,6 +1749,14 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
         @keyframes rainPulse {
           0%, 100% { opacity: 0; }
           50% { opacity: 0.4; }
+        }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(5px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         ::-webkit-scrollbar {
           width: 6px;
