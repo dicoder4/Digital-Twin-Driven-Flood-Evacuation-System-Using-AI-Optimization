@@ -16,6 +16,7 @@ import { t } from '../translations';
 import html2canvas from 'html2canvas';
 import { ScenarioAnalysisPopup } from './ScenarioAnalysisPopup';
 import { McpComparisonPopup } from './McpComparisonPopup';
+import { API_URL } from '../config';
 
 
 const ALGO_COLORS = {
@@ -195,7 +196,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
 
             const isAuthority = user?.role === 'authority';
             const endpoint = isAuthority ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
-            const url = `http://localhost:8000${endpoint}`;
+            const url = `${API_URL}${endpoint}`;
 
             const payload = {
                 user_data: user || { name: 'Guest', role: 'guest' },
@@ -271,7 +272,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         setLastAnalysisWasDeep(deepAnalysis);
         setAnalysisProgress('Preparing flood simulation…');
 
-        const url = new URL('http://localhost:8000/simulate-analysis');
+        const url = new URL(`${API_URL}/simulate-analysis`);
         url.searchParams.append('hobli', locationName);
         url.searchParams.append('use_traffic', showTraffic);
         // Pass simulation params so analysis matches the user's current scenario
@@ -340,7 +341,7 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
         setScenarioMetrics(null);
         setScenarioProgress('Preparing scenario simulations…');
 
-        const url = new URL('http://localhost:8000/simulate-scenario-analysis');
+        const url = new URL(`${API_URL}/simulate-scenario-analysis`);
         url.searchParams.append('hobli', locationName);
         url.searchParams.append('use_traffic', showTraffic);
         if (simulationParams.steps != null) url.searchParams.append('steps', simulationParams.steps);
