@@ -203,11 +203,13 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
   const addNotification = (msg, type = 'info') => {
     const id = Date.now();
-    setNotifications(prev => [...prev, { id, msg, type }]);
-    if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
-    notificationTimeoutRef.current = setTimeout(() => {
+    setNotifications(prev => {
+      const next = [...prev, { id, msg, type }];
+      return next.length > 3 ? next.slice(-3) : next; // Limit to 3 active notifications
+    });
+    setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 3500);
+    }, 4000);
   };
 
   const handleMapClick = (e) => {
@@ -641,6 +643,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     }
     setSessionId(null);
     stopGpsTracking();
+    setNotifications([]);
     setPhase('SELECT_START');
     setStartPoint(null);
     setEndPoint(null);
@@ -946,24 +949,32 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           overflowY: 'auto',
           position: 'relative',
         }}>
-          {/* Notifications */}
-          <div style={{ minHeight: 0 }}>
+          {/* Floating Notifications Container */}
+          <div style={{ 
+            position: 'absolute', 
+            top: '1rem', 
+            left: '1rem', 
+            right: '1rem', 
+            zIndex: 100,
+            pointerEvents: 'none' 
+          }}>
             {notifications.map(n => (
-              <NotificationBanner
-                key={n.id}
-                message={n.msg}
-                type={n.type}
-                icon={
-                  n.type === 'warning' ? AlertCircle :
-                    n.type === 'error' ? AlertCircle :
-                      n.type === 'success' ? MapPin :
-                        Cloud
-                }
-              />
+              <div key={n.id} style={{ pointerEvents: 'auto' }}>
+                <NotificationBanner
+                  message={n.msg}
+                  type={n.type}
+                  icon={
+                    n.type === 'warning' ? AlertCircle :
+                      n.type === 'error' ? AlertCircle :
+                        n.type === 'success' ? MapPin :
+                          Cloud
+                  }
+                />
+              </div>
             ))}
           </div>
 
-          <h2 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '700', color: '#1f2937' }}>Navigation</h2>
+          <h2 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '700', color: '#1f2937', paddingTop: notifications.length > 0 ? '0.5rem' : 0 }}>Navigation</h2>
 
           {/* Mode Toggle */}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
