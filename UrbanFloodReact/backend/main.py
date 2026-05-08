@@ -14,6 +14,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 import logging
 
+# Configure logging EARLY so all module loggers are captured
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s',
+    handlers=[logging.StreamHandler()]
+)
+# Set uvicorn loggers to INFO to capture MongoDB logs
+for logger_name in ['db', 'region_manager', 'shelter_generator', 'gis_terrain_loader', 'service']:
+    logging.getLogger(logger_name).setLevel(logging.INFO)
+
 # Ensure backend directory is in python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -66,9 +76,9 @@ async def lifespan(app: FastAPI):
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
     asyncio.create_task(weather_watcher_loop())
-    print("━━ Backend ready — regions lazy-loaded on demand ━━")
+    print("== Backend ready — regions lazy-loaded on demand ==")
     yield
-    print("━━ Backend shutting down ━━")
+    print("== Backend shutting down ==")
 
 
 
@@ -89,7 +99,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from auth_routes import router as auth_router
+from notification_routes import router as notification_router
+
 app.include_router(automation_router)
+app.include_router(auth_router)
+app.include_router(notification_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
@@ -173,6 +188,57 @@ async def mcp_update_state(req: MCPStateUpdate):
     from genai.mcp_evacuation_server import update_state
     update_state(req.summary_data, req.evacuation_plan, req.hobli)
     return {"status": "ok", "message": "MCP state updated"}
+
+
+# ── Research: MCP vs Non-MCP A/B comparison ───────────────────────────────────
+class MCPComparisonRequest(BaseModel):
+    questions: list = []        # if empty, uses DEFAULT_QUESTIONS
+    summary_data: Optional[dict] = None      # if None, reads from MongoDB mcp_state
+    evacuation_plan: list = []
+    run_judge: bool = True
+
+@app.post("/research/mcp-comparison")
+async def research_mcp_comparison(req: MCPComparisonRequest):
+    """
+    Run MCP vs non-MCP A/B comparison over one or more questions against the
+    current simulation state. Returns per-question side-by-side responses
+    plus auto metrics and (optional) LLM-judge scores.
+    """
+    from genai.mcp_evaluator import compare_many, DEFAULT_QUESTIONS
+    try:
+        from genai.context_builder import build_expert_context
+    except ImportError:
+        from context_builder import build_expert_context
+    from genai.mcp_evacuation_server import _load_state
+
+    summary_data    = req.summary_data
+    evacuation_plan = req.evacuation_plan or []
+
+    if not summary_data:
+        state = _load_state()
+        summary_data    = state.get("summary_data") or {}
+        evacuation_plan = state.get("evacuation_plan") or []
+        if not summary_data:
+            raise HTTPException(
+                status_code=400,
+                detail="No simulation state available. Run a simulation first or supply summary_data."
+            )
+
+    enriched = await build_expert_context(summary_data, evacuation_plan)
+    questions = req.questions or DEFAULT_QUESTIONS
+
+    try:
+        results = await asyncio.wait_for(
+            compare_many(questions, enriched, run_judge=req.run_judge),
+            timeout=290.0,  # 290s hard cap — just under browser's 5-min timeout
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Comparison timed out. Both Gemini and Groq API quotas are likely exhausted. Try again after midnight PST (~12:30 PM IST) when quotas reset."
+        )
+
+    return {"count": len(results), "results": results}
 
 
 class CopilotRequest(BaseModel):
@@ -333,6 +399,29 @@ async def simulate_analysis(
 
 
 
+@app.get("/simulate-scenario-analysis")
+async def simulate_scenario_analysis(
+    hobli:           str   = Query(...),
+    steps:           int   = Query(20),
+    decay_factor:    float = Query(0.5),
+    population:      int | None = Query(None),
+    use_traffic:     bool  = Query(False),
+):
+    """
+    SSE stream for scenario algorithm performance analysis.
+    Runs each algorithm across Low(50mm), Medium(150mm), and High(250mm) scenarios.
+    """
+    return StreamingResponse(
+        service.run_scenario_analysis_generator(
+            hobli, steps, decay_factor,
+            population=population, use_traffic=use_traffic,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 @app.get("/shelters/{hobli_name}")
 async def get_shelters(hobli_name: str):
     """
@@ -361,6 +450,9 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
         "rainfall_mm": weather_data.get("precipitation_mm", 0),
         "condition": weather_data.get("description", "Unknown"),
         "temp_c": weather_data.get("temp_c"),
+        "source": weather_data.get("source", "unknown"),
+        "humidity": weather_data.get("humidity"),
+        "cloud_cover": weather_data.get("cloud_cover"),
     }
 
 
@@ -368,6 +460,60 @@ async def get_current_weather(hobli: str = Query(..., description="Hobli name to
 async def get_metro_stations(hobli_name: str):
     """Return cached metro stations for a hobli."""
     return await service.fetch_metro_stations(hobli_name)
+
+
+class ResolvePinRequest(BaseModel):
+    lat: float
+    lon: float
+
+@app.post("/resolve-pin")
+async def resolve_pin(req: ResolvePinRequest):
+    """Find the nearest hobli to a given lat/lon coordinate using haversine distance.
+    Only considers hoblis present in REGIONS_TREE (i.e. those with rainfall data and
+    full simulation support), so the returned hobli is always fully functional.
+    """
+    import math
+
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371  # Earth radius in km
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    # Build set of norm_keys that are valid (present in REGIONS_TREE with rainfall data)
+    valid_keys: set[str] = set()
+    for district_data in REGIONS_TREE.values():
+        for hobli_list in district_data.values():
+            for display_name in hobli_list:
+                valid_keys.add(norm_key(display_name))
+
+    # Search candidates: prefer REGIONS_TREE hoblis; fall back to all HOBLI_COORDS if tree is empty
+    candidate_keys = valid_keys if valid_keys else set(HOBLI_COORDS.keys())
+
+    best_key, best_dist, best_name = None, float('inf'), None
+    for key in candidate_keys:
+        info = HOBLI_COORDS.get(key)
+        if not info:
+            continue
+        hlat = info.get("lat") or info.get("latitude")
+        hlon = info.get("lon") or info.get("lng") or info.get("longitude")
+        if hlat is None or hlon is None:
+            continue
+        d = haversine(req.lat, req.lon, float(hlat), float(hlon))
+        if d < best_dist:
+            best_dist = d
+            best_key = key
+            best_name = info.get("original_name") or info.get("display") or key
+
+    if best_key is None:
+        raise HTTPException(status_code=404, detail="No hobli coordinates found in registry")
+
+    return {
+        "hobli_name": best_name,
+        "hobli_key": best_key,
+        "distance_km": round(best_dist, 2),
+    }
 
 
 if __name__ == "__main__":
@@ -383,6 +529,19 @@ async def algorithm_analysis_stream(req: AlgorithmAnalysisRequest):
     from genai.expert_panel import stream_algorithm_analysis
     return StreamingResponse(
         stream_algorithm_analysis(req.metrics, req.location),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+class ScenarioAnalysisRequest(BaseModel):
+    metrics: dict
+    location: str
+
+@app.post("/scenario-analysis-stream")
+async def scenario_analysis_stream(req: ScenarioAnalysisRequest):
+    from genai.expert_panel import stream_scenario_analysis
+    return StreamingResponse(
+        stream_scenario_analysis(req.metrics, req.location),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )

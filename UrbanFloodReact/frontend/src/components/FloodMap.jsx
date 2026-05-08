@@ -132,6 +132,7 @@ export function FloodMap({
                 onClick={handleClick}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+                preserveDrawingBuffer={true}
             >
                 <NavigationControl position="top-right" />
 
@@ -391,9 +392,9 @@ export function FloodMap({
                 {/* Selected Map Pin box */}
                 {mapPinBox && (
                     <Marker latitude={mapPinBox.lat} longitude={mapPinBox.lon} anchor="bottom">
-                        <div className="evac-dest-pin" style={{ filter: 'drop-shadow(0 2px 6px rgba(239, 68, 68, 0.4))' }}>
-                            <MapPin size={22} fill="#ef4444" color="white" strokeWidth={1.5} />
-                            <div className="evac-dest-label" style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #b91c1c' }}>PINNED LOCATION</div>
+                        <div className="evac-dest-pin" style={{ filter: 'drop-shadow(0 2px 6px rgba(249, 115, 22, 0.4))' }}>
+                            <MapPin size={22} fill="#ea580c" color="white" strokeWidth={1.5} />
+                            <div className="evac-dest-label" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #ea580c' }}>TARGET LOCATION</div>
                         </div>
                     </Marker>
                 )}

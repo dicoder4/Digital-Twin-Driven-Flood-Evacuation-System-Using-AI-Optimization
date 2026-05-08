@@ -31,9 +31,15 @@ import { API_URL } from './config';
 import { AppCopilot } from './components/AppCopilot';
 import { AutomationPanel } from './components/AutomationPanel';
 import { PublicTransportAgent } from './components/PublicTransportAgent';
+import { useAuth } from './context/AuthContext';
+import { useLanguage } from './context/LanguageContext';
+import { t } from './translations';
 import './App.css';
 
 export default function App() {
+  const { user, logout } = useAuth();
+  const { lang, toggle: toggleLang } = useLanguage();
+
   // ── Map viewport ─────────────────────────────────────────────
   const [viewState, setViewState] = useState({
     longitude: 77.5946, latitude: 12.9716, zoom: 10,
@@ -80,11 +86,16 @@ export default function App() {
   const [selectedShelterId, setSelectedShelterId] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
   const [showTrafficPins, setShowTrafficPins] = useState(false);
-  const [isDraMode, setIsDraMode] = useState(false); // DRA mode toggle
+  const isDraMode = user?.role === 'authority'; // DRA mode toggle enforced by user role
   const [mapPinBox, setMapPinBox] = useState(null);
   const [selectedMetro, setSelectedMetro] = useState(null);
   const [metroStations, setMetroStations] = useState([]);
   const [metroLines, setMetroLines] = useState([]);
+
+  // ── DRA Pin-Drop ─────────────────────────────────────────────
+  const [pinDropMode, setPinDropMode] = useState(false);
+  const [pinResolvedHobli, setPinResolvedHobli] = useState(null);
+  const pinAbortRef = useRef(null);
 
   // ── Sidebar resize ────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -457,28 +468,35 @@ export default function App() {
       {/* ─── Sidebar ───────────────────────────────────────── */}
       <aside className="sidebar" ref={sidebarRef} style={{ width: sidebarWidth }}>
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Droplets size={20} className="icon-blue" />
-            <div>
-              <div className="sidebar-title">Urban Flood Model</div>
-              <div className="sidebar-sub">Digital Twin · Flood Simulation · Evacuation</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <Droplets size={20} className="icon-blue" />
+              <div>
+                <div className="sidebar-title">{t('app_title', lang)}</div>
+                <div className="sidebar-sub">{t('app_subtitle', lang)}</div>
+              </div>
             </div>
-          </div>
-
-          {/* DRA Mode Toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', padding: '0.5rem 0.75rem', borderRadius: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'white' }}>
-              {isDraMode ? 'Disaster Response Authority Mode Active' : 'Switch to Disaster Response Authority Mode'}
-            </span>
             <button
-              className={`evac-toggle-btn ${isDraMode ? 'evac-toggle-on' : ''}`}
-              onClick={() => setIsDraMode(!isDraMode)}
-              style={{ padding: 0, margin: 0, transform: 'scale(0.8)' }}
-              title="Toggle Disaster Response Authority Mode"
+              onClick={toggleLang}
+              style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              title={lang === 'en' ? 'Switch to Kannada' : 'Switch to English'}
             >
-              <span className="evac-toggle-thumb" />
+              {t('lang_toggle', lang)}
             </button>
           </div>
+            {/* User Profile & Logout */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 backdrop-blur-sm">
+              <div className="flex flex-col text-left">
+                <span className="text-slate-800 text-sm font-bold">{user?.username || 'Guest'}</span>
+                <span className="text-slate-500 font-medium text-xs capitalize tracking-wide">{user?.role || 'Viewer'}</span>
+              </div>
+              <button
+                onClick={logout}
+                className="bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 text-red-600 hover:text-red-700 px-3 py-1.5 rounded transition-all duration-200 text-xs font-bold"
+              >
+                {t('logout', lang)}
+              </button>
+            </div>
         </div>
 
         {/* ── Drag-resize handle ─────────────────────────────── */}
@@ -493,23 +511,23 @@ export default function App() {
           <button
             className={`sidebar-tab ${activeTab === 'setup' ? 'active' : ''}`}
             onClick={() => setActiveTab('setup')}
-          >Setup</button>
+          >{t('tab_setup', lang)}</button>
           <button
             className={`sidebar-tab evac-tab ${activeTab === 'evacuation' ? 'active' : ''}`}
             onClick={() => setActiveTab('evacuation')}
             disabled={!sim.simulationDone && !compareResults}
-            title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
-          ><Route size={11} /> Evacuation</button>
+            title={!sim.simulationDone && !compareResults ? t('tab_run_sim_first', lang) : ''}
+          ><Route size={11} /> {t('tab_evacuation', lang)}</button>
           <button
             className={`sidebar-tab ${activeTab === 'ai-agent' ? 'active' : ''}`}
             onClick={() => setActiveTab('ai-agent')}
             disabled={!sim.simulationDone && !compareResults}
-            title={!sim.simulationDone && !compareResults ? 'Run simulation first' : ''}
-          ><Cpu size={11} /> Resources</button>
+            title={!sim.simulationDone && !compareResults ? t('tab_run_sim_first', lang) : ''}
+          ><Cpu size={11} /> {t('tab_resources', lang)}</button>
           <button
             className={`sidebar-tab ${activeTab === 'automation' ? 'active' : ''}`}
             onClick={() => setActiveTab('automation')}
-          ><CloudRain size={11} /> Sentinel</button>
+          ><CloudRain size={11} /> {t('tab_sentinel', lang)}</button>
         </div>
 
         <div className="sidebar-content custom-scrollbar">
@@ -517,21 +535,37 @@ export default function App() {
           {/* ── SETUP TAB ────────────────────────────────── */}
           <div style={{ display: activeTab === 'setup' ? 'block' : 'none' }}>
             {isDraMode ? (
-              <DraSidebar
-                allHoblis={regions.allHoblis}
-                selHobli={regions.selHobli}
-                onHobli={handleHobli}
-                onLoad={handleLoadRegion}
-                loading={regionLoading}
-                loaded={regionLoaded}
-                loadedHobli={loadedHobli}
-                rainfallMm={rainfallMm}
-                onRainfallChange={setRainfallMm}
-                steps={steps}
-                onStepsChange={setSteps}
-                onRunEvacuation={handleDraRunEvacuation}
-                simulationRunning={sim.isRunning}
-              />
+                <DraSidebar
+                  allHoblis={regions.allHoblis}
+                  selHobli={regions.selHobli}
+                  onHobli={handleHobli}
+                  onLoad={handleLoadRegion}
+                  loading={regionLoading}
+                  loaded={regionLoaded}
+                  loadedHobli={loadedHobli}
+                  rainfallMm={rainfallMm}
+                  onRainfallChange={setRainfallMm}
+                  onRunEvacuation={handleDraRunEvacuation}
+                  simulationRunning={sim.isRunning}
+                  pinDropMode={pinDropMode}
+                  onTogglePinDrop={() => {
+                    setPinDropMode(v => !v);
+                    if (pinDropMode) {
+                      setMapPinBox(null);
+                      setPinResolvedHobli(null);
+                    }
+                  }}
+                  pinResolvedHobli={pinResolvedHobli}
+                  onRunPinSimulation={async () => {
+                    if (!pinResolvedHobli?.hobli_name) return;
+                    // Switch region to the resolved hobli, then run
+                    await handleLoadRegion(pinResolvedHobli.hobli_name);
+                    sim.start(pinResolvedHobli.hobli_name, rainfallMm, steps, decayFactor, false, true, 'ga', 0);
+                    setActiveTab('evacuation');
+                    setPinDropMode(false);
+                    setMapPinBox(null);
+                  }}
+                />
             ) : (
               <>
                 <RegionSelector
@@ -573,8 +607,8 @@ export default function App() {
                     <div className="evac-mode-toggle panel">
                       <div className="evac-toggle-row">
                         <div>
-                          <div className="evac-toggle-label">Evacuation Mode</div>
-                          <div className="evac-toggle-sub">Scales population to 1% for faster testing</div>
+                          <div className="evac-toggle-label">{t('evac_mode', lang)}</div>
+                          <div className="evac-toggle-sub">{t('evac_mode_hint', lang)}</div>
                         </div>
                         <button
                           className={`evac-toggle-btn ${evacuationMode ? 'evac-toggle-on' : ''}`}
@@ -587,13 +621,13 @@ export default function App() {
 
                     {/* ── Panel 2: Optimisation Settings (always visible) ── */}
                     <div className="panel optim-panel">
-                      <h3 className="panel-title"><Zap size={13} /> Optimisation Settings</h3>
+                      <h3 className="panel-title"><Zap size={13} /> {t('opt_settings', lang)}</h3>
 
                       {/* Algorithm selector */}
                       <div className="optim-row">
                         <div className="optim-row-label">
-                          <div className="evac-toggle-label">Algorithm</div>
-                          <div className="evac-toggle-sub">Runs after flood simulation</div>
+                          <div className="evac-toggle-label">{t('algorithm', lang)}</div>
+                          <div className="evac-toggle-sub">{t('algo_hint', lang)}</div>
                         </div>
                         <div className="algo-pill-group">
                           {['ga', 'aco', 'pso'].map(a => (
@@ -602,15 +636,15 @@ export default function App() {
                               className={`algo-pill ${algorithm === a && !compareMode ? 'algo-pill--active' : ''}`}
                               onClick={() => { setAlgorithm(a); setCompareMode(false); }}
                               disabled={compareRunning}
-                              title={{ ga: 'Genetic Algorithm', aco: 'Ant Colony Optimisation', pso: 'Particle Swarm Optimisation' }[a]}
+                              title={{ ga: t('ga_label', lang), aco: t('aco_label', lang), pso: t('pso_label', lang) }[a]}
                             >{a.toUpperCase()}</button>
                           ))}
                           <button
                             className={`algo-pill algo-pill--compare ${compareMode ? 'algo-pill--active-compare' : ''}`}
                             onClick={() => setCompareMode(v => !v)}
-                            title="Run all 3 algorithms sequentially and compare results"
+                            title={t('compare_desc', lang)}
                             disabled={compareRunning}
-                          ><GitCompare size={9} /> All</button>
+                          ><GitCompare size={9} /> {t('tab_setup', lang) === 'Setup' ? 'All' : 'ಎಲ್ಲ'}</button>
                         </div>
                       </div>
 
@@ -618,28 +652,28 @@ export default function App() {
                       <button
                         className={`algo-info-btn ${algoInfoOpen ? 'algo-info-btn--open' : ''}`}
                         onClick={() => setAlgoInfoOpen(v => !v)}
-                        title="Learn about each algorithm"
+                        title={t('what_are_these', lang)}
                       >
-                        <Info size={11} /> {algoInfoOpen ? 'Hide info' : 'What are these?'}
+                        <Info size={11} /> {algoInfoOpen ? t('hide_info', lang) : t('what_are_these', lang)}
                       </button>
 
                       {algoInfoOpen && (
                         <div className="algo-info-panel">
                           <div className="algo-info-item" style={{ borderLeft: '3px solid #93c5fd' }}>
-                            <strong style={{ color: '#1d4ed8' }}>GA</strong> — Genetic Algorithm
-                            <div className="algo-info-desc">Evolves solutions using crossover &amp; mutation. Good general-purpose optimiser, occasional disruption of good sub-routes.</div>
+                            <strong style={{ color: '#1d4ed8' }}>GA</strong> — {t('ga_label', lang)}
+                            <div className="algo-info-desc">{t('ga_desc', lang)}</div>
                           </div>
                           <div className="algo-info-item" style={{ borderLeft: '3px solid #86efac' }}>
-                            <strong style={{ color: '#15803d' }}>ACO</strong> — Ant Colony Optimisation
-                            <div className="algo-info-desc">Ants build routes using pheromone trails. Directly minimises flood-weighted distance — best solution quality.</div>
+                            <strong style={{ color: '#15803d' }}>ACO</strong> — {t('aco_label', lang)}
+                            <div className="algo-info-desc">{t('aco_desc', lang)}</div>
                           </div>
                           <div className="algo-info-item" style={{ borderLeft: '3px solid #d8b4fe' }}>
-                            <strong style={{ color: '#7e22ce' }}>PSO</strong> — Particle Swarm Optimisation
-                            <div className="algo-info-desc">Particles swarm toward best-known solutions. Fastest convergence but can plateau early.</div>
+                            <strong style={{ color: '#7e22ce' }}>PSO</strong> — {t('pso_label', lang)}
+                            <div className="algo-info-desc">{t('pso_desc', lang)}</div>
                           </div>
                           <div className="algo-info-item" style={{ borderLeft: '3px solid #c084fc' }}>
-                            <strong style={{ color: '#7c3aed' }}>⇄ All</strong> — Compare Mode
-                            <div className="algo-info-desc">Runs GA, ACO & PSO simultaneously in parallel on the same flood scenario. All results appear at once — ~3× faster than sequential.</div>
+                            <strong style={{ color: '#7c3aed' }}>⇄ {lang === 'en' ? 'All' : 'ಎಲ್ಲ'}</strong> — {lang === 'en' ? 'Compare Mode' : 'ಹೋಲಿಕೆ ಮೋಡ್'}
+                            <div className="algo-info-desc">{t('compare_desc', lang)}</div>
                           </div>
                         </div>
                       )}
@@ -647,8 +681,8 @@ export default function App() {
                       {/* Live Traffic toggle */}
                       <div className="optim-row" style={{ marginTop: '0.5rem' }}>
                         <div className="optim-row-label">
-                          <div className="evac-toggle-label"><Radio size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />Live Traffic</div>
-                          <div className="evac-toggle-sub">TomTom congestion on road graph</div>
+                          <div className="evac-toggle-label"><Radio size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />{t('live_traffic', lang)}</div>
+                          <div className="evac-toggle-sub">{t('traffic_hint', lang)}</div>
                         </div>
                         <button
                           className={`evac-toggle-btn ${useTraffic ? 'evac-toggle-on' : ''}`}
@@ -662,8 +696,8 @@ export default function App() {
                       {/* Hint */}
                       <div className="evac-toggle-hint" style={{ marginTop: '0.4rem' }}>
                         {compareMode
-                          ? '⚡ GA + ACO + PSO will run in parallel — results appear together in Evacuation tab'
-                          : `🚨 ${algorithm.toUpperCase()} will optimise evacuation routes after the flood simulation`
+                          ? t('compare_hint', lang)
+                          : `🚨 ${algorithm.toUpperCase()} ${lang === 'en' ? 'will optimise evacuation routes after the flood simulation' : 'ಪ್ರವಾಹ ಸಿಮ್ಯುಲೇಶನ್ ನಂತರ ಸ್ಥಳಾಂತರ ಮಾರ್ಗಗಳನ್ನು ಆಪ್ಟಿಮೈಸ್ ಮಾಡುತ್ತದೆ'}`
                         }
                       </div>
                     </div>
@@ -691,19 +725,19 @@ export default function App() {
                     {/* Flood Impact summary */}
                     {sim.simulationDone && populationCount > 0 && (
                       <section className="panel">
-                        <h3 className="panel-title" style={{ color: '#dc2626' }}>⚠ Flood Impact</h3>
+                        <h3 className="panel-title" style={{ color: '#dc2626' }}>⚠ {t('flood_impact', lang)}</h3>
                         <div className="pop-count-row">
                           <span className="pop-count" style={{ color: '#dc2626' }}>
                             {(sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount).toLocaleString()}
                           </span>
-                          <span className="pop-count-label">people at risk</span>
+                          <span className="pop-count-label">{t('people_at_risk', lang)}</span>
                         </div>
                         <div className="pop-split">
-                          <span style={{ color: '#16a34a' }}>✓ Safe: {((sim.finalReport?.summary?.simulation_population ?? displayPopulation) - (sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount)).toLocaleString()}</span>
-                          <span style={{ color: '#dc2626' }}>✗ Unsafe: {(sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount).toLocaleString()}</span>
+                          <span style={{ color: '#16a34a' }}>✓ {t('safe', lang)}: {((sim.finalReport?.summary?.simulation_population ?? displayPopulation) - (sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount)).toLocaleString()}</span>
+                          <span style={{ color: '#dc2626' }}>✗ {t('unsafe', lang)}: {(sim.finalReport?.summary?.total_at_risk_initial ?? unsafePeopleCount).toLocaleString()}</span>
                         </div>
                         <button className="btn-evac-goto" onClick={() => setActiveTab('evacuation')}>
-                          <Route size={12} /> View Evacuation Analysis →
+                          <Route size={12} /> {t('view_evac_analysis', lang)}
                         </button>
                       </section>
                     )}
@@ -726,9 +760,16 @@ export default function App() {
               compareActiveAlgo={compareActiveAlgo}
               onSetCompareAlgo={setCompareActiveAlgo}
               isDraMode={isDraMode}
+              user={user}
               evacuationPlan={sim.evacuationPlan || []}
               onRerunWithSuggestions={handleRerunWithSuggestions}
               simulationParams={{ rainfall_mm: rainfallMm, steps, decay_factor: decayFactor, population: populationCount }}
+              floodData={sim.floodData}
+              roadsData={sim.roadsData}
+              trafficRoadsData={sim.trafficRoadsData}
+              metroLines={metroLines}
+              metroStations={metroStations}
+              busManifest={busManifest}
             />
 
           </div>
@@ -816,10 +857,25 @@ export default function App() {
         busManifest={busManifest}
         selectedBusId={selectedBusId}
         mapPinBox={mapPinBox}
-        onMapClick={(lat, lon) => {
+        onMapClick={async (lat, lon) => {
+          if (isDraMode && pinDropMode) {
+            // Cancel any in-flight resolve-pin request
+            if (pinAbortRef.current) pinAbortRef.current.abort();
+            pinAbortRef.current = new AbortController();
+            setMapPinBox({ lat, lon });
+            setPinResolvedHobli({ loading: true });
+            try {
+              const res = await axios.post(`${API_URL}/resolve-pin`, { lat, lon }, { signal: pinAbortRef.current.signal });
+              setPinResolvedHobli(res.data);
+            } catch (err) {
+              if (axios.isCancel(err) || err.name === 'CanceledError') return;
+              console.error("Failed to resolve pin:", err);
+              setPinResolvedHobli({ error: "Could not resolve location. Try a different spot." });
+            }
+            return;
+          }
           setMapPinBox(prev => {
             if (!prev) return { lat, lon };
-            // Increased proximity threshold (~500m area) to ensure easy removal
             const dist = Math.abs(prev.lat - lat) + Math.abs(prev.lon - lon);
             if (dist < 0.005) return null; 
             return { lat, lon };

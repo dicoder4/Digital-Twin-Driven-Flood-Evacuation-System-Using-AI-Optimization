@@ -157,6 +157,19 @@ async def build_expert_context(summary_data: dict, evacuation_plan: list = None,
         )
     ]
 
+    # ── Calculate Environmental Flood Severity ────────────────────────────────
+    rainfall = summary_data.get("rainfall_mm", 0)
+    if rainfall >= 300:
+        severity_label = "EXTREME (Over 200mm rainfall)"
+    elif rainfall >= 200:
+        severity_label = "SEVERE (100mm - 200mm rainfall)"
+    elif rainfall >= 150:
+        severity_label = "MODERATE (50mm - 100mm rainfall)"
+    elif rainfall > 0:
+        severity_label = "LOW (Under 50mm rainfall)"
+    else:
+        severity_label = "UNKNOWN"
+
     # ── Build final context ───────────────────────────────────────────────────
     context = {
         "simulation": {
@@ -170,6 +183,8 @@ async def build_expert_context(summary_data: dict, evacuation_plan: list = None,
             "best_fitness":              summary_data.get("best_fitness", 0),
             "avg_distance_per_person_m": summary_data.get("avg_distance_per_person", 0),
             "execution_time_s":          summary_data.get("ga_execution_time", 0),
+            "rainfall_mm":               rainfall,
+            "environmental_flood_severity": severity_label,
         },
         "local_inventory":  inventory_context,   # BUG 4 FIX: up to 200 items
         "shelters":         enriched_shelters,   # BUG 5 FIX: includes lat/lon
@@ -202,10 +217,12 @@ async def build_expert_context(summary_data: dict, evacuation_plan: list = None,
         context["shelters_by_inflow"] = shelters_by_inflow
 
     context["_data_notes"] = (
-        "local_inventory contains resource SOURCES (fire stations, hospitals, depots) "
-        "sorted by distance from the disaster zone. "
-        "shelters contains evacuation DESTINATIONS with occupancy and coordinates. "
-        "These two lists are entirely separate — do not mix source addresses with shelter names."
+        "1. local_inventory contains resource SOURCES (fire stations, hospitals, depots) "
+        "sorted by distance from the disaster zone. shelters contains evacuation DESTINATIONS "
+        "with occupancy and coordinates. Do not mix source addresses with shelter names.\n"
+        "2. Do NOT conflate 'Evacuation Success' with 'Environmental Flood Severity'. "
+        "A highly successful evacuation (e.g., 100% success rate) does NOT mean the flood severity is LOW. "
+        "Use 'environmental_flood_severity' to state the actual severity of the flood event."
     )
 
     return context

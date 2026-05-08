@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Bot, X, Send, ChevronUp, Loader, Maximize2, Minimize2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API_URL } from '../config';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 320;
@@ -84,11 +86,21 @@ function OptionChips({ options, disabled, onConfirm }) {
 }
 
 export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populationCount, onNavigate, onSelectRegion, onRunSimulation, onUpdateParams, mapPin }) {
+    const { lang } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
-    const [messages, setMessages] = useState([
-        { role: 'assistant', content: "Hi! I'm your App Copilot. How can I help you navigate or run a simulation today?" }
+    const [messages, setMessages] = useState(() => [
+        { role: 'assistant', content: t('copilot_greeting', lang) }
     ]);
+
+    useEffect(() => {
+        setMessages(prev => {
+            if (prev.length === 1 && prev[0].role === 'assistant') {
+                return [{ role: 'assistant', content: t('copilot_greeting', lang) }];
+            }
+            return prev;
+        });
+    }, [lang]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
@@ -437,7 +449,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
             <div className="copilot-header" onMouseDown={startDrag}>
                 <div className="copilot-title">
                     <Bot size={18} />
-                    <span>App Copilot</span>
+                    <span>{t('copilot_title', lang)}</span>
                 </div>
                 <div className="copilot-actions">
                     <button onClick={toggleExpand} title={isExpanded ? 'Restore size' : 'Expand'}>
@@ -520,7 +532,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                         {isTyping && (
                             <div className="chat-line chat-line-ai">
                                 <div className="chat-bubble chat-bubble-ai" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', padding: '6px 12px' }}>
-                                    <Loader size={12} className="spin" /> Thinking...
+                                    <Loader size={12} className="spin" /> {t('copilot_thinking', lang)}
                                 </div>
                             </div>
                         )}
@@ -532,7 +544,7 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                         <textarea
                             className="chat-input"
                             style={{ minHeight: '40px', maxHeight: '80px' }}
-                            placeholder="Ask me to navigate or run a simulation..."
+                            placeholder={t('copilot_placeholder', lang)}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}

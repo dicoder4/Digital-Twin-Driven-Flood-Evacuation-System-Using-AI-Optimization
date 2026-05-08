@@ -2,12 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, BarChart2, Activity, Zap, Shield,
   TrendingDown, TrendingUp, Info, Cpu,
-  ChevronRight, BrainCircuit, MessageSquare,
-  BarChartIcon, Layers, Timer, Repeat, RefreshCw
+  BrainCircuit,
+  BarChartIcon, Layers, RefreshCw,
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Bar, BarChart
+  Tooltip, ResponsiveContainer, Legend, Bar, BarChart
 } from 'recharts';
 import { API_URL } from '../config';
 import ReactMarkdown from 'react-markdown';
@@ -848,6 +848,7 @@ export function AlgoAnalysisPopup({ isOpen, onClose, metrics, locationName }) {
           0%, 100% { opacity: 0; }
           50% { opacity: 1; }
         }
+
       `}</style>
     </div>
   );

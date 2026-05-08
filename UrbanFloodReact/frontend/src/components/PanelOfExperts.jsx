@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
+import { useLanguage } from '../context/LanguageContext';
+import { t } from '../translations';
 import {
     Loader, Truck, Anchor, Megaphone, Cpu, CheckCircle,
     ChevronDown, Play, List, ClipboardCheck, Maximize2, X,
@@ -7,6 +9,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { API_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { createPortal } from 'react-dom';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
@@ -52,6 +55,20 @@ const TABS = [
         badge: 'COMMS',
         badgeColor: '#166534',
         description: 'Drafts official situation reports and public SMS broadcast warnings.',
+    },
+    {
+        key: 'sos_expert',
+        label: 'Mass SOS',
+        shortLabel: 'SOS',
+        icon: Megaphone,
+        color: '#dc2626',
+        accentLight: '#fef2f2',
+        accentBorder: '#fecaca',
+        headerBg: 'linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%)',
+        loadingMsg: 'Drafting SMS Alerts in EN/KA...',
+        badge: 'ALERT',
+        badgeColor: '#7f1d1d',
+        description: 'Drafts Bilingual Emergency Broadcast formats.',
     },
 ];
 
@@ -269,6 +286,10 @@ function makeMarkdownComponents(persona, compact = false) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export function PanelOfExperts({ summary, evacuationPlan, locationName: propLocationName }) {
+    const { user } = useAuth();
+    const { lang } = useLanguage();
+    const [notifyLoading, setNotifyLoading] = useState(false);
+
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('logistics');
     const [responses, setResponses] = useState({ logistics: '', tactical: '', civic: '' });
@@ -360,6 +381,52 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
 
     // ── Download report (fully client-side — no backend route needed) ──────────
     const [downloading, setDownloading] = useState({ docx: false, pdf: false });
+
+    // Handle Notify Actions Role-based
+    const handleNotifyActions = async () => {
+        setNotifyLoading(true);
+        try {
+            const endpoint = (user?.role === 'authority') ? '/api/notifications/sos' : '/api/notifications/notify-authorities';
+            
+            // Try to capture map image if a canvas exists on the screen
+            let mapImageBase64 = null;
+            try {
+                // maplibre uses .maplibregl-canvas
+                const mapCanvas = document.querySelector('.maplibregl-canvas') || document.querySelector('canvas.mapboxgl-canvas') || document.querySelector('canvas');
+                if (mapCanvas) {
+                    mapImageBase64 = mapCanvas.toDataURL('image/png').split(',')[1];
+                }
+            } catch (e) {
+                console.warn('Map capture failed', e);
+            }
+
+            const payload = {
+                user_data: user || {},
+                researcher_data: user || {},
+                evacuation_data: {
+                   algorithm: summary?.algorithm || 'AI Computed',
+                   evacuation_time: summary?.ga_execution_time || summary?.avg_distance_per_person || 0.0,
+                   evacuated_count: summary?.total_evacuated || 0,
+                   total_at_risk: summary?.total_at_risk_initial || summary?.simulation_population || 0
+                },
+                location_data: { location_name: locationName || 'Unknown' },
+                ai_report: (user?.role === 'authority') ? (responses['sos_expert'] || responses['civic']) : (responses['civic'] || ""),
+                map_image_base64: mapImageBase64
+            };
+            const res = await fetch(`${API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) alert('Notification dispatched successfully!');
+            else alert('Failed to send notification: ' + res.statusText);
+        } catch(e) {
+            alert('Error sending notification.');
+        } finally {
+            setNotifyLoading(false);
+        }
+    };
+
 
     // Convert markdown to styled HTML (client-side, no server needed)
     const markdownToHtml = (md, persona, location) => {
@@ -567,7 +634,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                             <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Package size={18} /> Local Resource Inventory — {locationName}
+                                <Package size={18} /> {t('local_inventory', lang)} — {locationName}
                             </h3>
                             <button onClick={() => setShowInventory(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <X size={16} />
@@ -575,14 +642,14 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                         </div>
                         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type:</span>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('type_filter', lang)}</span>
                                 <FilterPill id="all" label="All" color="#64748b" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="logistics" label="Logistics" color="#3b82f6" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="tactical" label="Tactical" color="#f59e0b" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="civic" label="Civic" color="#16a34a" active={resourceFilter} onClick={setResourceFilter} />
                             </div>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Dist:</span>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('dist_filter', lang)}</span>
                                 <FilterPill id="all" label="Any" color="#64748b" active={distanceFilter} onClick={setDistanceFilter} />
                                 <FilterPill id="immediate" label="< 5km" color="#16a34a" active={distanceFilter} onClick={setDistanceFilter} />
                                 <FilterPill id="extended" label="5–15km" color="#ca8a04" active={distanceFilter} onClick={setDistanceFilter} />
@@ -605,13 +672,13 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                         {loadingInventory ? (
                             <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
                                 <Loader size={24} className="spin" style={{ marginBottom: '10px' }} />
-                                <div>Scanning resource nodes...</div>
+                                <div>{t('scanning_resources', lang)}</div>
                             </div>
                         ) : filtered.length > 0 ? (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                 <thead style={{ position: 'sticky', top: 0, background: '#1e293b', zIndex: 1 }}>
                                     <tr>
-                                        {['Item', 'Type', 'Qty', 'Distance', 'Source / Contact'].map(h => (
+                                        {[t('item_col', lang), 'Type', t('qty_col', lang), t('distance_col', lang), t('source_col', lang)].map(h => (
                                             <th key={h} style={{
                                                 padding: '10px 12px', textAlign: 'left', fontWeight: 700,
                                                 fontSize: '11px', color: '#e2e8f0',
@@ -650,7 +717,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                             </table>
                         ) : (
                             <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                                No resources match the current filter.
+                                {t('no_resources', lang)}
                             </div>
                         )}
                     </div>
@@ -688,6 +755,17 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {activeTab === 'civic' && (
+                                <button
+                                    onClick={handleNotifyActions}
+                                    disabled={notifyLoading}
+                                    style={{
+                                        background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px',
+                                        cursor: 'pointer', padding: '6px 12px', display: 'flex', alignItems: 'center', fontSize: '13px'
+                                    }}>
+                                    {notifyLoading ? t('sending', lang) : (user?.role === 'authority' ? t('broadcast_sos', lang) : t('notify_authorities', lang))}
+                                </button>
+                            )}
                             <button
                                 onClick={() => handleDownload('docx')}
                                 disabled={downloading.docx}
@@ -700,7 +778,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 }}
                             >
                                 {downloading.docx ? <Loader size={13} className="spin" /> : <FileText size={13} />}
-                                Download Word
+                                {t('download_word', lang)}
                             </button>
                             <button
                                 onClick={() => handleDownload('pdf')}
@@ -714,7 +792,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 }}
                             >
                                 {downloading.pdf ? <Loader size={13} className="spin" /> : <FileDown size={13} />}
-                                Download PDF
+                                {t('download_pdf', lang)}
                             </button>
                             <button onClick={() => setIsExpanded(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <X size={18} />
@@ -741,6 +819,17 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                 {/* Action bar: Expand + Download buttons */}
                 <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 10,
                               display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {activeTab === 'civic' && (
+                                <button
+                                    onClick={handleNotifyActions}
+                                    disabled={notifyLoading}
+                                    style={{
+                                        background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px',
+                                        cursor: 'pointer', padding: '6px 12px', display: 'flex', alignItems: 'center', fontSize: '13px'
+                                    }}>
+                                    {notifyLoading ? t('sending', lang) : (user?.role === 'authority' ? t('broadcast_sos', lang) : t('notify_authorities', lang))}
+                                </button>
+                            )}
                     <button
                         onClick={() => handleDownload('docx')}
                         title="Download as Word (.docx)"
@@ -836,7 +925,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
             {/* Toggle header */}
             <button className="expert-panel-toggle" onClick={() => setIsOpen(p => !p)}>
                 <span className="expert-panel-toggle-title">
-                    <Cpu size={13} /> AI Panel of Experts
+                    <Cpu size={13} /> {t('ai_experts', lang)}
                 </span>
                 <ChevronDown size={13} className={`genai-chevron ${isOpen ? 'genai-chevron--open' : ''}`} />
             </button>
@@ -912,7 +1001,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 onMouseOver={e => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.color = '#1e293b'; }}
                                 onMouseOut={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#475569'; }}
                             >
-                                <List size={12} /> Inventory
+                                <List size={12} /> {t('inventory', lang)}
                                 {countData > 0 && (
                                     <span style={{
                                         background: '#3b82f6', color: '#fff', fontSize: '9px',
@@ -970,7 +1059,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                     onMouseOver={e => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
                                     onMouseOut={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)'; }}
                                 >
-                                    <Play size={13} fill="white" /> Generate Report
+                                    <Play size={13} fill="white" /> {t('generate_report', lang)}
                                 </button>
                             </div>
                         )}
@@ -990,9 +1079,9 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                         {!loading[activeTab] && !responses[activeTab] && fetched[activeTab] && (
                             <div style={{ color: '#ef4444', textAlign: 'center', padding: '30px' }}>
                                 <AlertTriangle size={20} style={{ marginBottom: '8px' }} />
-                                <div>No response received.</div>
+                                <div>{t('no_response', lang)}</div>
                                 <button onClick={() => fetchExpertise(activeTab)} style={{ marginTop: '10px', padding: '6px 16px', borderRadius: '6px', border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: '13px' }}>
-                                    Retry
+                                    {t('retry', lang)}
                                 </button>
                             </div>
                         )}

@@ -9,6 +9,8 @@ mcp = FastMCP("Urban Flood Weather Server")
 def get_current_weather(hobli_name: str) -> str:
     """
     Fetch the current real-time rainfall and weather data for a given Hobli in Bengaluru.
+    Uses wttr.in (WorldWeatherOnline) as primary source for accurate real-time observations,
+    with Open-Meteo as fallback.
     
     Args:
         hobli_name: The name of the Hobli (e.g. "Begur", "Yelahanka", "Varthur")
@@ -22,13 +24,21 @@ def get_current_weather(hobli_name: str) -> str:
     
     if data.get("source") == "error":
         return f"Error fetching weather: {data.get('description')}"
-        
-    return (
-        f"Weather for {info['display']}:\n"
-        f"Temperature: {data['temp_c']}°C\n"
-        f"Rainfall: {data['precipitation_mm']} mm\n"
-        f"Condition: {data['description']}"
-    )
+    
+    parts = [
+        f"Weather for {info['display']}:",
+        f"Temperature: {data['temp_c']}°C",
+        f"Rainfall: {data['precipitation_mm']} mm",
+        f"Condition: {data['description']}",
+        f"Data Source: {data['source']}",
+    ]
+    # Include humidity and cloud cover if available (from wttr.in)
+    if "humidity" in data:
+        parts.append(f"Humidity: {data['humidity']}%")
+    if "cloud_cover" in data:
+        parts.append(f"Cloud Cover: {data['cloud_cover']}%")
+    
+    return "\n".join(parts)
 
 if __name__ == "__main__":
     mcp.run()
