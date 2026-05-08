@@ -1,6 +1,7 @@
 """
 main.py — Urban Flood Digital Twin API
 ─────────────────────────────────────
+# CI/CD test: auto-deploy via GitHub Actions
 Thin FastAPI layer. All business logic lives in:
   coord_loader.py    — coordinate JSON loading
   rainfall_loader.py — Excel rainfall loading
