@@ -56,15 +56,15 @@ from weather_watcher import router as automation_router, weather_watcher_loop
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("== Urban Flood Backend starting ==")
-    
-    # Force load .env from project root
+    print("━━ Urban Flood Backend starting ━━")
+
+    # Load .env locally, but don't fail if missing (for production)
     env_path = Path(__file__).resolve().parents[2] / ".env"
-    print(f"Loading .env from: {env_path}")
-    load_dotenv(dotenv_path=env_path, override=True)
-    
-    print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
-    print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+        print(f"Loaded .env from: {env_path}")
+    else:
+        print("No .env file found, using environment variables")
     
     # Bootstrap MongoDB
     try:
@@ -93,10 +93,8 @@ app = FastAPI(lifespan=lifespan, title="Urban Flood Digital Twin API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
-                   "http://localhost:5174", "http://127.0.0.1:5174",
-                   "http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
