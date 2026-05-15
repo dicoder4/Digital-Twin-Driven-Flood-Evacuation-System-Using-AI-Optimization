@@ -96,6 +96,7 @@ class SimulationSession:
     original_route_max_depth: float | None = None
     mode: str = "simulated"  # "simulated" or "realtime"
     rainfall_source: str = "simulated"  # "simulated" or "ksndmc"
+    use_traffic: bool = False  # NEW: whether ETA considers traffic
 
 
 # ── Rainfall scenario picking and evolution ────────────────────────────────

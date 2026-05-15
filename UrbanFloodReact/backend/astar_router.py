@@ -74,9 +74,9 @@ def generate_steps(G: nx.DiGraph, path: list[int], street_names: dict = None) ->
     Turn-by-turn instructions derived from bearing + street name (if available).
 
     Args:
-        G: NetworkX DiGraph with edge data
+        G: NetworkX DiGraph with edge data (with 'name' attribute for street names)
         path: List of node IDs
-        street_names: Optional dict mapping (u, v, k) to street name
+        street_names: Optional dict mapping (u, v, k) to street name (for backward compatibility)
     """
     if street_names is None:
         street_names = {}
@@ -89,12 +89,18 @@ def generate_steps(G: nx.DiGraph, path: list[int], street_names: dict = None) ->
         prev_bearing = _bearing(G.nodes[path[i - 1]], G.nodes[u]) if i > 0 else bearing
         turn = _turn_instruction(prev_bearing, bearing)
 
-        # Try to get street name, fall back to highway type
-        edge_key = (u, v, 0)  # Most edges have k=0
-        if edge_key in street_names:
-            road_label = street_names[edge_key]
-        else:
-            # Fallback to highway type
+        # Try to get street name from edge data (priority: name attribute > street_names dict > highway type)
+        road_label = None
+
+        # First check edge 'name' attribute (from OSM)
+        if data.get("name"):
+            road_label = data["name"]
+        # Then check street_names dict (backward compatibility)
+        elif (u, v, 0) in street_names:
+            road_label = street_names[(u, v, 0)]
+
+        # Fallback to highway type
+        if not road_label:
             highway = data.get("highway", "road")
             road_label = highway.replace("_", " ").title()
 

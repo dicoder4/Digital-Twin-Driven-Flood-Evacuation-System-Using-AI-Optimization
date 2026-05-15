@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import uuid
 import time
 import logging
+from datetime import datetime
 
 from geo_db import fetch_corridor
 from corridor_graph import build_graph, snap_to_node
@@ -43,9 +44,10 @@ class SimulateStartRequest(BaseModel):
     intensity: str = "random"
     month: str | None = None
     evolution_mode: str = "random"
-    tick_mins: float = 5.0
+    tick_mins: float = 0.2  # FIXED: 0.2 minutes = 12 seconds (matches physics model TICK_MINS)
     mode: str = "simulated"  # "simulated" or "realtime"
     rainfall_source: str = "simulated"  # "simulated" or "ksndmc"
+    use_traffic: bool = False  # NEW: consider traffic in ETA calculation (default OFF for simulation)
 
 
 class SimulateTickRequest(BaseModel):
@@ -59,8 +61,8 @@ class SimulateResetRequest(BaseModel):
 
 
 SPEED_MAP = {
-    "car": 30,      # Car: 30 km/h (realistic urban speed with traffic)
-    "bike": 15,     # Bike: 15 km/h (cycling speed)
+    "car": 40,      # Car: 40 km/h (matches frontend display)
+    "bike": 30,     # Bike: 30 km/h (matches frontend display)
     "walk": 4,      # Walk: 4 km/h (normal walking pace)
 }
 
@@ -71,10 +73,90 @@ IMPASSABLE_DEPTH_MAP = {
     "emergency": 1.0  # High clearance vehicles
 }
 
+# Traffic congestion schedule by road type and hour (0-23)
+# Values: 1.0 = free flow, 0.5 = 50% congestion (50% of base speed)
+CONGESTION_SCHEDULE = {
+    "motorway": {
+        7: 0.65,    # 7 AM peak
+        8: 0.60,    # 8 AM peak
+        9: 0.75,
+        10: 0.85,
+        11: 0.80,   # Late morning
+        12: 0.80,   # Lunch
+        14: 0.75,   # Early afternoon
+        17: 0.70,   # Evening starts
+        18: 0.55,   # 6 PM peak
+        19: 0.60,   # 7 PM peak
+        20: 0.75,
+    },
+    "primary": {
+        7: 0.60,
+        8: 0.50,
+        9: 0.70,
+        17: 0.65,
+        18: 0.50,   # 6 PM bad
+        19: 0.55,
+    },
+    "residential": {
+        7: 0.75,
+        8: 0.70,
+        18: 0.75,
+        19: 0.80,
+    },
+}
+
+
+def _get_congestion_factor(highway_type: str, hour: int | None = None) -> float:
+    """
+    Get speed reduction factor (1.0 = free flow, 0.5 = 50% congestion).
+
+    Args:
+        highway_type: Type of road (motorway, primary, residential, etc.)
+        hour: Hour of day (0-23). If None, uses current hour.
+
+    Returns:
+        Congestion factor (0.5-1.0) to multiply with base speed
+    """
+    if hour is None:
+        hour = datetime.now().hour
+
+    # Normalize highway type for schedule lookup
+    highway_normalized = highway_type.lower() if highway_type else "unknown"
+
+    # Map various OSM highway types to our schedule categories
+    if highway_normalized in ("motorway", "motorway_link", "trunk", "trunk_link"):
+        road_category = "motorway"
+    elif highway_normalized in ("primary", "primary_link", "secondary", "secondary_link"):
+        road_category = "primary"
+    elif highway_normalized == "unknown":
+        # Unknown roads default to free flow (no congestion model)
+        return 1.0
+    else:
+        road_category = "residential"
+
+    schedule = CONGESTION_SCHEDULE.get(road_category, {})
+
+    # If exact hour in schedule, return it
+    if hour in schedule:
+        return schedule[hour]
+
+    # Otherwise, interpolate between nearby hours or return free flow
+    if hour > 0 and (hour - 1) in schedule:
+        # Linear interpolation to next scheduled hour
+        for check_hour in range(hour + 1, hour + 4):
+            if check_hour in schedule:
+                prev_factor = schedule[hour - 1]
+                next_factor = schedule[check_hour]
+                progress = (hour - (hour - 1)) / (check_hour - (hour - 1))
+                return prev_factor + (next_factor - prev_factor) * progress
+
+    # Default: free flow (no congestion)
+    return 1.0
+
 
 def calculate_eta_minutes(distance_m: float, speed_kph: float) -> int:
     """
-    Calculate ETA in minutes based on distance and speed.
+    Calculate ETA in minutes based on distance and speed (no traffic).
 
     Args:
         distance_m: Distance in meters
@@ -89,6 +171,53 @@ def calculate_eta_minutes(distance_m: float, speed_kph: float) -> int:
     time_hours = distance_km / speed_kph
     time_minutes = time_hours * 60
     return round(time_minutes)
+
+
+def calculate_realistic_eta(graph, path: list, speed_mode: str, hour: int | None = None) -> int:
+    """
+    Calculate ETA considering traffic congestion by road type and time of day.
+
+    Args:
+        graph: NetworkX graph with edge data (length, highway type)
+        path: List of node IDs representing the route
+        speed_mode: "car", "bike", or "walk"
+        hour: Hour of day (0-23) for congestion lookup
+
+    Returns:
+        ETA in minutes (rounded)
+    """
+    if len(path) < 2:
+        return 0
+
+    base_speeds = {"car": 40, "bike": 30, "walk": 4}
+    base_speed = base_speeds.get(speed_mode, 40)
+
+    total_time_min = 0.0
+
+    # Iterate through edges in the path
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i + 1]
+
+        if not graph.has_edge(u, v):
+            continue
+
+        edge_data = graph[u][v]
+        edge_length_m = edge_data.get("length", 0)
+        highway_type = edge_data.get("highway", "residential")
+
+        # Get congestion factor for this road type and time
+        congestion_factor = _get_congestion_factor(highway_type, hour)
+
+        # Adjust speed based on congestion
+        adjusted_speed_kph = base_speed * congestion_factor
+
+        # Calculate time for this edge in minutes
+        edge_length_km = edge_length_m / 1000.0
+        edge_time_min = (edge_length_km / adjusted_speed_kph * 60) if adjusted_speed_kph > 0 else 0
+
+        total_time_min += edge_time_min
+
+    return round(total_time_min)
 
 
 @simulate_router.post("/start")
@@ -160,10 +289,15 @@ async def simulate_start(req: SimulateStartRequest):
             logger.info(f"[SIMULATE START] Scenario selected: date={scenario_date}, month={scenario_month}, hoblis={len(rainfall_snapshot)}")
         logger.debug(f"[SIMULATE START] Rainfall snapshot: {rainfall_snapshot}")
 
-        # 6. Assign hoblis to nodes
-        logger.info("[SIMULATE START] Step 6: Assigning hoblis to nodes...")
-        hobli_for_node = assign_hoblis_to_nodes(G, hobli_coords)
-        logger.info(f"[SIMULATE START] Hoblis assigned to {len(hobli_for_node)} nodes")
+        # 6. Assign hoblis to nodes (unless using KSNDMC wards)
+        # For KSNDMC realtime mode, keep ward_for_node from Step 5
+        # For scenario mode, assign hoblis from hobli_coords
+        if req.mode != "realtime" or req.rainfall_source != "ksndmc":
+            logger.info("[SIMULATE START] Step 6: Assigning hoblis to nodes...")
+            hobli_for_node = assign_hoblis_to_nodes(G, hobli_coords)
+            logger.info(f"[SIMULATE START] Hoblis assigned to {len(hobli_for_node)} nodes")
+        else:
+            logger.info("[SIMULATE START] Step 6: Using KSNDMC ward assignments (from Step 5)")
 
         # 6.5 Bridge rainfall keys → actual hobli names
         # The rainfall_snapshot keys (from CSV "Hobli" column or synthetic names)
@@ -195,10 +329,15 @@ async def simulate_start(req: SimulateStartRequest):
             rainfall_snapshot = remapped_rainfall
             logger.info(f"[SIMULATE START] Remapped rainfall to {len(remapped_rainfall)} actual hoblis (avg={avg_rain:.4f} mm/tick)")
 
-        # 7. Compute flood with scenario rainfall (converted to mm/hour)
+        # 7. Compute flood with scenario rainfall (converted to mm/hour if needed)
         logger.info("[SIMULATE START] Step 7: Computing flood physics with rainfall...")
-        rainfall_mm_hour = scenario_to_flood_input(rainfall_snapshot, req.tick_mins)
-        logger.debug("[SIMULATE START] Rainfall converted to mm/hour scale")
+        # KSNDMC data is already mm/hour; scenario data is mm/tick and needs conversion
+        if req.mode == "realtime" and req.rainfall_source == "ksndmc":
+            rainfall_mm_hour = rainfall_snapshot  # Already mm/hour from KSNDMC
+            logger.debug("[SIMULATE START] Using KSNDMC rainfall (already mm/hour)")
+        else:
+            rainfall_mm_hour = scenario_to_flood_input(rainfall_snapshot, req.tick_mins)
+            logger.debug("[SIMULATE START] Rainfall converted from mm/tick to mm/hour scale")
         # Log sample rainfall values for debugging
         sample_hoblis = list(rainfall_mm_hour.items())[:5]
         logger.info(f"[SIMULATE START] Rainfall mm/hour sample: {sample_hoblis}")
@@ -218,70 +357,84 @@ async def simulate_start(req: SimulateStartRequest):
         from shelter_integration import get_shelter_candidates, rank_shelters_by_distance
 
         impassable_depth = IMPASSABLE_DEPTH_MAP.get(req.speed_mode, 0.25)
-        
-        # Check if a safe path exists first (to trigger shelter fallback if needed)
-        safe_path = astar_route(G, src_node, dst_node, impassable_depth)
-        
-        if safe_path is None:
-            logger.warning(f"[SIMULATE START] No passable route to destination. Finding safe shelters...")
 
-            # Get current hobli for shelter lookup
-            current_hobli = hobli_for_node.get(src_node, "unknown")
-            shelters = get_shelter_candidates(G, req.src_lat, req.src_lon, current_hobli, dist_m=3000)
+        # In SIMULATION mode: Always give a route (user decides flood intensity later)
+        # In REAL-TIME mode: Check for shelter fallback if no safe path exists
+        if req.mode == "simulated":
+            # SIMULATION: Compute route without impassable depth constraint
+            # User will choose flood intensity after, so we don't reject routes based on current floods
+            path = astar_route(G, src_node, dst_node, impassable_depth=float('inf'))
+            if path is None:
+                # Fallback: Route with lenient impassable depth
+                path = astar_route(G, src_node, dst_node, impassable_depth=1.0)
+            if path is None:
+                logger.error("[SIMULATE START] Cannot compute any route to destination")
+                return {"status": "error", "message": "Cannot compute route to destination. Nodes may not be connected."}
+            logger.info(f"[SIMULATE START] Simulation mode: Route computed (flood intensity chosen later)")
+        else:
+            # REAL-TIME: Check if a safe path exists (trigger shelter fallback if needed)
+            safe_path = astar_route(G, src_node, dst_node, impassable_depth)
 
-            if not shelters:
-                logger.error("[SIMULATE START] No shelters found either. Emergency evacuation impossible.")
-                return {"status": "error", "message": "No passable route found. No shelters available."}
+            if safe_path is None:
+                logger.warning(f"[SIMULATE START] No passable route to destination. Finding safe shelters...")
 
-            # Rank shelters by distance and try each one
-            ranked_shelters = rank_shelters_by_distance(shelters, req.src_lat, req.src_lon)
-            logger.info(f"[SIMULATE START] Found {len(ranked_shelters)} nearby shelters")
+                # Get current hobli for shelter lookup
+                current_hobli = hobli_for_node.get(src_node, "unknown")
+                shelters = get_shelter_candidates(G, req.src_lat, req.src_lon, current_hobli, dist_m=3000)
 
-            # Try to route to nearest safe shelter
-            best_shelter = None
-            best_path = None
+                if not shelters:
+                    logger.error("[SIMULATE START] No shelters found either. Emergency evacuation impossible.")
+                    return {"status": "error", "message": "No passable route found. No shelters available."}
 
-            for shelter in ranked_shelters[:5]:  # Try top 5 nearest shelters
-                shelter_lat, shelter_lon = shelter['lat'], shelter['lon']
-                shelter_node = snap_to_node(G, shelter_lat, shelter_lon)
+                # Rank shelters by distance and try each one
+                ranked_shelters = rank_shelters_by_distance(shelters, req.src_lat, req.src_lon)
+                logger.info(f"[SIMULATE START] Found {len(ranked_shelters)} nearby shelters")
 
-                if shelter_node is None:
-                    logger.warning(f"Could not snap shelter '{shelter['name']}' to road network")
-                    continue
+                # Try to route to nearest safe shelter
+                best_shelter = None
+                best_path = None
 
-                shelter_path = astar_route(G, src_node, shelter_node, impassable_depth)
-                if shelter_path is not None:
-                    best_shelter = shelter
-                    best_path = shelter_path
-                    logger.info(f"[SIMULATE START] Found evacuation route to shelter: {shelter['name']}")
-                    break
+                for shelter in ranked_shelters[:5]:  # Try top 5 nearest shelters
+                    shelter_lat, shelter_lon = shelter['lat'], shelter['lon']
+                    shelter_node = snap_to_node(G, shelter_lat, shelter_lon)
 
-            if not best_path or not best_shelter:
-                logger.error("[SIMULATE START] Cannot route to any shelter either")
-                return {"status": "error", "message": "No passable route found. Cannot reach shelters."}
+                    if shelter_node is None:
+                        logger.warning(f"Could not snap shelter '{shelter['name']}' to road network")
+                        continue
 
-            # Return shelter evacuation response
-            return {
-                "status": "severe_flood",
-                "message": "🌊 SEVERE FLOODING DETECTED - Direct route impossible",
-                "alert": "Floods are severe in your area. Nearest safe shelter identified.",
-                "shelter": {
-                    "name": best_shelter.get("name", "Safe Shelter"),
-                    "type": best_shelter.get("type", "shelter"),
-                    "lat": best_shelter['lat'],
-                    "lon": best_shelter['lon'],
-                    "capacity": best_shelter.get("capacity_persons", 100),
-                    "distance_m": sum(G[best_path[i]][best_path[i+1]]["length"] for i in range(len(best_path)-1)),
-                },
-                "alternative_shelters": ranked_shelters[1:4],
-                "route_geojson": build_route_geojson(G, best_path),
-                "session_id": session_id,
-            }
-        
-        # A safe path exists! We start with the optimal flood-aware route immediately 
-        # (Google Maps style). The simulation's 500m "radar" will still trigger a detour 
-        # dynamically if the flood worsens and the route becomes impassable during the drive!
-        path = safe_path
+                    shelter_path = astar_route(G, src_node, shelter_node, impassable_depth)
+                    if shelter_path is not None:
+                        best_shelter = shelter
+                        best_path = shelter_path
+                        logger.info(f"[SIMULATE START] Found evacuation route to shelter: {shelter['name']}")
+                        break
+
+                if not best_path or not best_shelter:
+                    logger.error("[SIMULATE START] Cannot route to any shelter either")
+                    return {"status": "error", "message": "No passable route found. Cannot reach shelters."}
+
+                # Return shelter evacuation response
+                return {
+                    "status": "severe_flood",
+                    "message": "🌊 SEVERE FLOODING DETECTED - Direct route impossible",
+                    "alert": "Floods are severe in your area. Nearest safe shelter identified.",
+                    "shelter": {
+                        "name": best_shelter.get("name", "Safe Shelter"),
+                        "type": best_shelter.get("type", "shelter"),
+                        "lat": best_shelter['lat'],
+                        "lon": best_shelter['lon'],
+                        "capacity": best_shelter.get("capacity_persons", 100),
+                        "distance_m": sum(G[best_path[i]][best_path[i+1]]["length"] for i in range(len(best_path)-1)),
+                    },
+                    "alternative_shelters": ranked_shelters[1:4],
+                    "route_geojson": build_route_geojson(G, best_path),
+                    "session_id": session_id,
+                }
+
+            # A safe path exists! We start with the optimal flood-aware route immediately
+            # (Google Maps style). The simulation's 500m "radar" will still trigger a detour
+            # dynamically if the flood worsens and the route becomes impassable during the drive!
+            path = safe_path
 
         logger.info(f"[SIMULATE START] Primary route found: {len(path)} nodes")
 
@@ -427,11 +580,25 @@ async def simulate_start(req: SimulateStartRequest):
         speed_kph = SPEED_MAP.get(req.speed_mode, 30)
         logger.debug(f"[SIMULATE START] Speed mode: {req.speed_mode} ({speed_kph} km/h)")
 
-        # Calculate summary with proper ETA based on speed mode
+        # Calculate summary with proper ETA based on speed mode and traffic consideration
         base_summary = route_summary(G, path, impassable_depth)
+
+        # Choose ETA calculation method based on traffic flag (always ON for real-time)
+        use_traffic_for_eta = True if req.mode == "realtime" else req.use_traffic
+        if use_traffic_for_eta:
+            current_hour = datetime.now().hour
+            eta_minutes = calculate_realistic_eta(G, path, req.speed_mode, current_hour)
+            eta_note = " (with traffic)"
+            logger.info(f"[SIMULATE START] ETA calculated with traffic consideration: {eta_minutes} min")
+        else:
+            eta_minutes = calculate_eta_minutes(base_summary["total_distance_m"], speed_kph)
+            eta_note = " (no traffic)"
+            logger.info(f"[SIMULATE START] ETA calculated without traffic: {eta_minutes} min")
+
         summary = {
             "total_distance_m": base_summary["total_distance_m"],
-            "eta_minutes": calculate_eta_minutes(base_summary["total_distance_m"], speed_kph),
+            "eta_minutes": eta_minutes,
+            "eta_note": eta_note,
             "max_flood_depth_m": base_summary["max_flood_depth_m"],
             "flooded_segments": base_summary["flooded_segments"],
             "safe": base_summary["safe"],
@@ -492,7 +659,8 @@ async def simulate_start(req: SimulateStartRequest):
             scenario_month=scenario_month,
             last_accessed=time.time(),
             mode=req.mode,
-            rainfall_source=req.rainfall_source
+            rainfall_source=req.rainfall_source,
+            use_traffic=True if req.mode == "realtime" else req.use_traffic  # Traffic ON by default in real-time
         )
         SIMULATE_SESSIONS[session_id] = session
         logger.info(f"[SIMULATE START] Session created: session_id={session_id}")
@@ -504,11 +672,21 @@ async def simulate_start(req: SimulateStartRequest):
 
         # Create summaries for all alternatives
         alt_summaries_with_paths = []
+        use_traffic_for_alts = True if req.mode == "realtime" else req.use_traffic
+        current_hour = datetime.now().hour if use_traffic_for_alts else None
+
         for alt_path in alternative_paths:
             alt_base_summary = route_summary(G, alt_path, impassable_depth)
+
+            # Use same ETA calculation method as primary route
+            if use_traffic_for_alts:
+                alt_eta_minutes = calculate_realistic_eta(G, alt_path, req.speed_mode, current_hour)
+            else:
+                alt_eta_minutes = calculate_eta_minutes(alt_base_summary["total_distance_m"], speed_kph)
+
             alt_summary = {
                 "total_distance_m": alt_base_summary["total_distance_m"],
-                "eta_minutes": calculate_eta_minutes(alt_base_summary["total_distance_m"], speed_kph),
+                "eta_minutes": alt_eta_minutes,
                 "max_flood_depth_m": alt_base_summary["max_flood_depth_m"],
                 "flooded_segments": alt_base_summary["flooded_segments"],
                 "safe": alt_base_summary["safe"],
@@ -629,11 +807,24 @@ async def simulate_tick(req: SimulateTickRequest):
 
         # ── 2. Evolve rainfall ─────────────────────────────────────────────
         old_rainfall = dict(session.rainfall)
-        
+
         if session.mode == "realtime" and session.rainfall_source == "ksndmc":
-            logger.info("[SIMULATE TICK] Fetching fresh KSNDMC rainfall...")
-            from rainfall_service import fetch_rainfall
-            new_rainfall, _ = await fetch_rainfall()
+            # Fetch KSNDMC data only every 5 minutes (300 seconds) to avoid API hammering
+            # rainfall_service has internal 5-min cache, but we add session-level throttling
+            current_time = time.time()
+            if not hasattr(session, 'last_rainfall_fetch'):
+                session.last_rainfall_fetch = 0
+
+            if current_time - session.last_rainfall_fetch >= 300:
+                logger.info("[SIMULATE TICK] Fetching fresh KSNDMC rainfall (5-min interval)...")
+                from rainfall_service import fetch_rainfall
+                new_rainfall, _ = await fetch_rainfall()
+                session.last_rainfall_fetch = current_time
+                logger.info("[SIMULATE TICK] ✅ Fresh KSNDMC data cached (next fetch in 5 min)")
+            else:
+                # Use cached rainfall within 5-minute window
+                new_rainfall = session.rainfall
+                logger.info(f"[SIMULATE TICK] ℹ️ Using cached KSNDMC data (refresh in {300 - (current_time - session.last_rainfall_fetch):.0f}s)")
         else:
             new_rainfall = evolve_rainfall(
                 session.rainfall,
@@ -887,7 +1078,8 @@ async def simulate_scenarios():
         "evolution_modes": ["intensify", "dissipate", "move", "random"],
         "speed_modes": [
             {"key": "walk", "label": "Walking (4 km/h)", "km_h": 4},
-            {"key": "car", "label": "Car (30 km/h)", "km_h": 30},
+            {"key": "car", "label": "Car (40 km/h)", "km_h": 40},
+            {"key": "bike", "label": "Bike (30 km/h)", "km_h": 30},
             {"key": "emergency", "label": "Emergency (60 km/h)", "km_h": 60},
         ]
     }

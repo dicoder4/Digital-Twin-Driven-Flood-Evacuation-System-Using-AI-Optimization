@@ -17,6 +17,7 @@ from corridor_flood import compute_flood
 from astar_router import astar_route, build_route_geojson, generate_steps, route_summary
 from osm_enrichment import enrich_edges_with_names
 from shelter_integration import get_shelter_candidates, rank_shelters_by_distance
+from realtime_traffic_service import get_route_traffic_eta
 
 logger = logging.getLogger(__name__)
 
@@ -116,18 +117,26 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
     active_wards = list({ward_for_node.get(n, "unknown") for n in path})
     active_ward_rainfall = {w: rainfall_mm.get(w, 0.0) for w in active_wards}
 
+    # Fetch live traffic ETA for car mode (bikes/walk not affected by car traffic)
+    logger.info("[CITIZEN ROUTE] Fetching live TomTom traffic data for ETA...")
+    traffic_eta_data = await get_route_traffic_eta(G, path, speed_mode="car")
+    live_eta_minutes = traffic_eta_data.get("eta_minutes", summary["eta_minutes"])
+    logger.info(f"[CITIZEN ROUTE] Live traffic ETA: {live_eta_minutes} min (vs base: {summary['eta_minutes']} min)")
+
     return {
         "status": "ok",
         "session_id": str(uuid.uuid4()),
         "route_geojson": build_route_geojson(G, path),
         "steps": generate_steps(G, path, street_names=street_names),
         "total_distance_m": summary["total_distance_m"],
-        "eta_minutes": summary["eta_minutes"],
+        "eta_minutes": live_eta_minutes,  # Use live traffic ETA
+        "eta_minutes_base": summary["eta_minutes"],  # Keep base for reference
         "max_flood_depth_m": summary["max_flood_depth_m"],
         "flooded_segments": summary["flooded_segments"],
         "safe": summary["safe"],
         "warning": None if summary["safe"] else "Route passes through flooded areas.",
         "active_ward_rainfall": active_ward_rainfall,
+        "traffic_info": traffic_eta_data,  # Include detailed traffic breakdown
     }
 
 

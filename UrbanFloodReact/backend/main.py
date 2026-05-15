@@ -73,21 +73,26 @@ from weather_watcher import router as automation_router, weather_watcher_loop
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("== Urban Flood Backend starting ==")
-    
+
     # Force load .env from project root
     env_path = Path(__file__).resolve().parents[2] / ".env"
     print(f"Loading .env from: {env_path}")
     load_dotenv(dotenv_path=env_path, override=True)
-    
+
     print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
     print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
-    
+
     # Bootstrap MongoDB
     try:
         from db import bootstrap_mongo_data
         bootstrap_mongo_data()
     except Exception as e:
         print(f"[MONGO DEBUG] Bootstrap failed: {e}")
+
+    # Clear any old simulation sessions from previous server run
+    from simulate_routes import SIMULATE_SESSIONS
+    SIMULATE_SESSIONS.clear()
+    print("== Cleared old simulation sessions ==")
 
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)

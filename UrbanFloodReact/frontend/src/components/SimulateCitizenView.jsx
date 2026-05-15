@@ -106,6 +106,11 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const [rainfallLog, setRainfallLog] = useState([]);
   const [isRerouting, setIsRerouting] = useState(false);
   const [rerouteCount, setRerouteCount] = useState(0);
+  const [routeSteps, setRouteSteps] = useState([]); // Turn-by-turn directions
+  const [currentStepIndex, setCurrentStepIndex] = useState(0); // Track which step we're on
+  const [recordedTicks, setRecordedTicks] = useState([]); // Record each tick for replay
+  const [isReplaying, setIsReplaying] = useState(false); // Track if we're in replay mode
+  const [replayIndex, setReplayIndex] = useState(0); // Current tick index in replay
 
   // Config
   const [speedMode, setSpeedMode] = useState('car');
@@ -118,7 +123,10 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   const [watchId, setWatchId] = useState(null);
   const [gpsCoords, setGpsCoords] = useState(null);
   const [draggedMarker, setDraggedMarker] = useState(null);
+  const [useTraffic, setUseTraffic] = useState(false); // Traffic toggle for SIMULATED mode (OFF by default for scenario testing)
+  const [playbackSpeed, setPlaybackSpeed] = useState(250); // Playback speed in ms per tick (50-500ms range)
   const clickCountRef = useRef({ start: 0, end: 0, startTime: 0, endTime: 0 });
+  const doubleClickTimeoutRef = useRef(null);
 
   // Speed reference (must match backend SPEED_MAP)
   const SPEED_CONFIG = {
@@ -128,6 +136,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   };
 
   const tickTimerRef = useRef(null);
+  const playbackSpeedRef = useRef(250);  // Track current playback speed
   const mapRef = useRef(null);
   const notificationTimeoutRef = useRef(null);
   const markerStartRef = useRef({ lat: 0, lon: 0 });
@@ -136,6 +145,31 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     if (tickTimerRef.current) clearInterval(tickTimerRef.current);
     if (watchId) navigator.geolocation.clearWatch(watchId);
   }, [watchId]);
+
+  // Clean up backend session on page unload/reload
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (sessionId) {
+        try {
+          await fetch(`${API_URL}/simulate/reset`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId }),
+            keepalive: true, // Ensure request completes even during unload
+          });
+        } catch { }
+      }
+      if (tickTimerRef.current) clearTimeout(tickTimerRef.current);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [sessionId]);
 
   // Auto-detect location when switching to real-time mode
   useEffect(() => {
@@ -282,7 +316,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 evolution_mode: 'random',
                 tick_mins: tickMins,
                 mode: navMode,
-                rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
+                rainfall_source: navMode === 'realtime' ? 'ksndmc' : 'simulated',
+                use_traffic: useTraffic,
               }),
             }).then(r => r.json());
 
@@ -304,6 +339,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
             }
 
             setRouteData(routeRes);
+            setRouteSteps(routeRes.steps || []);
+            setCurrentStepIndex(0);
             const alts = routeRes.alternative_routes || [];
             setAlternativeRoutes(alts);
             setSessionId(routeRes.session_id);
@@ -319,42 +356,97 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     }
   };
 
-  const handleMarkerDragStart = (marker) => {
+  const handleMarkerMouseDown = (e, marker) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX || e.touches?.[0]?.clientX;
+    const startY = e.clientY || e.touches?.[0]?.clientY;
+    let hasMoved = false;
+
     setDraggedMarker(marker);
-    clickCountRef.current.startTime = Date.now() + 1000; // Block double-tap during drag
+
+    const handleMouseMove = (moveEvent) => {
+      const currentX = moveEvent.clientX || moveEvent.touches?.[0]?.clientX;
+      const currentY = moveEvent.clientY || moveEvent.touches?.[0]?.clientY;
+
+      // Calculate distance moved
+      const dx = Math.abs(currentX - startX);
+      const dy = Math.abs(currentY - startY);
+
+      if (dx > 5 || dy > 5) {
+        hasMoved = true;
+        // Get map container rect
+        if (mapRef.current) {
+          const mapEl = mapRef.current.getContainer();
+          const rect = mapEl.getBoundingClientRect();
+          const relX = currentX - rect.left;
+          const relY = currentY - rect.top;
+
+          // Convert pixel coords to lat/lng
+          try {
+            const lngLat = mapRef.current.unproject([relX, relY]);
+            if (marker === 'start') {
+              setStartPoint({ lat: lngLat.lat, lon: lngLat.lng });
+            } else {
+              setEndPoint({ lat: lngLat.lat, lon: lngLat.lng });
+            }
+          } catch (err) {
+            console.error('Map unproject error:', err);
+          }
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('touchmove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('touchend', handleMouseUp);
+
+      setDraggedMarker(null);
+
+      // Recalculate routes if dragging end point and actually moved
+      if (hasMoved && marker === 'end' && startPoint && endPoint) {
+        setTimeout(() => {
+          addNotification('🔄 Recomputing routes...', 'info');
+          fetchRoutes(startPoint, endPoint);
+        }, 100);
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('touchmove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('touchend', handleMouseUp);
   };
 
-  const handleMarkerDrag = (e, marker) => {
-    if (e.type !== 'move') return;
-    const { lat, lng: lon } = e.lngLat;
-    if (marker === 'start') {
-      setStartPoint({ lat, lon });
-    } else {
-      setEndPoint({ lat, lon });
-    }
-  };
+  const handleMarkerClick = (e, marker) => {
+    e.stopPropagation();
 
-  const handleMarkerDragEnd = (marker) => {
-    setDraggedMarker(null);
-    // Recalculate routes if dragging end point
-    if (marker === 'end' && startPoint && endPoint) {
-      setTimeout(() => {
-        addNotification('🔄 Recomputing routes...', 'info');
-        fetchRoutes(startPoint, endPoint);
-      }, 100);
-    }
-  };
+    // Detect double-click by tracking time between clicks
+    const now = Date.now();
+    const lastClick = clickCountRef.current[`${marker}_lastClick`] || 0;
+    const timeSinceLastClick = now - lastClick;
 
-  const handleMarkerDoubleClick = (marker) => {
-    if (draggedMarker) return;
-    if (marker === 'start') {
-      setStartPoint(null);
-      setPhase('SELECT_START');
-      addNotification('❌ Start point cleared', 'info');
-    } else {
-      setEndPoint(null);
-      setPhase('SELECT_END');
-      addNotification('❌ Destination cleared', 'info');
+    clickCountRef.current[`${marker}_lastClick`] = now;
+
+    if (timeSinceLastClick < 300) {
+      // Double-click detected
+      console.log(`[DOUBLE-CLICK] Marker ${marker}`);
+
+      if (marker === 'start') {
+        setStartPoint(null);
+        setPhase('SELECT_START');
+        addNotification('❌ Start point cleared', 'info');
+      } else if (marker === 'end') {
+        setEndPoint(null);
+        setPhase('SELECT_END');
+        addNotification('❌ Destination cleared', 'info');
+      }
+
+      // Reset click tracking
+      clickCountRef.current[`${marker}_lastClick`] = 0;
     }
   };
 
@@ -383,7 +475,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           evolution_mode: evolutionMode,
           tick_mins: 5.0,
           mode: navMode,
-          rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
+          rainfall_source: navMode === 'realtime' ? 'ksndmc' : 'simulated',
+          use_traffic: useTraffic,
         }),
       }).then(r => r.json());
 
@@ -428,7 +521,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           evolution_mode: 'random',
           tick_mins: 0.2,
           mode: navMode,
-          rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
+          rainfall_source: navMode === 'realtime' ? 'ksndmc' : 'simulated',
+          use_traffic: useTraffic,
         }),
       }).then(r => r.json());
 
@@ -497,7 +591,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           evolution_mode: evolutionMode,
           tick_mins: tickMins,
           mode: navMode,
-          rainfall_source: navMode === 'realtime' ? (rainfallSource === 'live' ? 'ksndmc' : 'simulated') : 'simulated',
+          rainfall_source: navMode === 'realtime' ? 'ksndmc' : 'simulated',
+          use_traffic: useTraffic,
         }),
       }).then(r => r.json());
 
@@ -529,9 +624,9 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   };
 
   const startTickLoop = (sid, tickDurationMs = 110) => {
-    if (tickTimerRef.current) clearInterval(tickTimerRef.current);
+    if (tickTimerRef.current) clearTimeout(tickTimerRef.current);
 
-    tickTimerRef.current = setInterval(async () => {
+    const runTick = async () => {
       try {
         const body = { session_id: sid };
         if (navMode === 'realtime' && gpsCoords) {
@@ -546,7 +641,6 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
         if (res.status === 'error') {
           setPhase('COMPLETE');
-          clearInterval(tickTimerRef.current);
           return;
         }
 
@@ -562,12 +656,10 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           setOriginalRouteMaxDepth(res.original_route_max_depth);
         }
 
-        // Update flood overlay from tick response (shows floods spreading on map)
         if (res.flood_overlay) {
           setFloodOverlay(res.flood_overlay);
         }
 
-        // Accumulate rainfall log entries for live panel
         if (res.rainfall_log) {
           const logEntry = res.rainfall_log;
           console.log(
@@ -577,39 +669,66 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           );
           setRainfallLog(prev => {
             const next = [...prev, logEntry];
-            return next.length > 50 ? next.slice(-50) : next; // Keep last 50 entries
+            return next.length > 50 ? next.slice(-50) : next;
           });
         }
 
-        // We removed the heatmap UI, so we just calculate max flood intensity but don't draw it
         const newHeatmap = res.rainfall_heatmap || [];
         setHeatmap(newHeatmap);
 
-        // Track max flood intensity
         const maxIntensity = Math.max(...(newHeatmap.map(h => h.properties?.intensity ?? h.intensity ?? 0) || [0]));
         setMaxFloodIntensity(maxIntensity);
 
         setStats(res.summary);
 
-        // Handle rerouting with visible animation
+        // Record tick for replay (including rerouting events)
+        setRecordedTicks(prev => [...prev, {
+          tick: res.tick,
+          personPos: res.person_position,
+          floodOverlay: res.flood_overlay,
+          heatmap: newHeatmap,
+          routeHistory: res.route_history_geojson,
+          stats: res.summary,
+          rerouted: res.rerouted,
+          reroute_reason: res.reroute_reason,
+          route_steps: res.steps,
+          current_step_index: currentStepIndex,
+        }]);
+
+        if (routeSteps.length > 0 && res.summary) {
+          const distRemaining = res.summary.total_distance_m;
+          let completedDistance = 0;
+          let newStepIndex = 0;
+          for (let i = 0; i < routeSteps.length; i++) {
+            if (completedDistance < res.summary.total_distance_m) {
+              newStepIndex = i;
+              break;
+            }
+            completedDistance += routeSteps[i].distance_m || 0;
+          }
+          setCurrentStepIndex(Math.min(newStepIndex, routeSteps.length - 1));
+        }
+
         if (res.rerouted && res.reroute_reason) {
           console.log(`%c[REROUTE] ${res.reroute_reason}`, 'color: #dc2626; font-weight: bold; font-size: 14px;');
           setIsRerouting(true);
           setRerouteCount(prev => prev + 1);
           addNotification(`🔄 REROUTING: ${res.reroute_reason}`, 'warning');
 
-          // Pause the tick loop briefly so the user can SEE the reroute
-          clearInterval(tickTimerRef.current);
+          // Update route with new steps from backend
+          if (res.steps && res.steps.length > 0) {
+            setRouteSteps(res.steps);
+            setCurrentStepIndex(0); // Reset to first step of new route
+          }
+
           setTimeout(() => {
             setIsRerouting(false);
             addNotification('✅ New route calculated — resuming navigation', 'success');
-            // Resume with the same tick interval
-            startTickLoop(sid, tickDurationMs);
-          }, 1500); // 1.5 second pause for reroute visibility
-          return; // Don't process further — we'll resume after the pause
+            startTickLoop(sid, playbackSpeedRef.current);
+          }, 1500);
+          return;
         }
 
-        // Flood status notifications (less frequent to avoid spam)
         if (res.rainfall_log) {
           const log = res.rainfall_log;
           if (log.flood_status === 'critical' && log.tick % 5 === 0) {
@@ -621,13 +740,86 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
         if (res.arrived) {
           setPhase('COMPLETE');
-          clearInterval(tickTimerRef.current);
           addNotification('✅ Arrived at destination!', 'success');
+        } else {
+          tickTimerRef.current = setTimeout(runTick, playbackSpeedRef.current);
         }
       } catch (err) {
         console.error(err);
+        tickTimerRef.current = setTimeout(runTick, playbackSpeedRef.current);
       }
-    }, tickDurationMs);
+    };
+
+    runTick();
+  };
+
+  const startReplay = () => {
+    if (!recordedTicks || recordedTicks.length === 0) {
+      addNotification('❌ No frames recorded to replay', 'error');
+      return;
+    }
+
+    // CRITICAL: Stop any active simulation tick loop first
+    if (tickTimerRef.current) {
+      clearTimeout(tickTimerRef.current);
+      tickTimerRef.current = null;
+    }
+
+    setIsReplaying(true);
+    setReplayIndex(0);
+    setPhase('RUNNING');
+    setTick(0);
+    setPersonPos(null);
+    setRouteHistory([]);
+    setFloodOverlay(null);
+    setHeatmap([]);
+    setStats(null);
+    setCurrentStepIndex(0);
+    addNotification(`🎬 Replaying ${recordedTicks.length} frames...`, 'info');
+
+    let currentIdx = 0;
+
+    const playNextFrame = () => {
+      if (currentIdx >= recordedTicks.length) {
+        // Replay finished - resume simulation from where it left off
+        setIsReplaying(false);
+        addNotification('✅ Replay finished - resuming simulation', 'success');
+        // Resume the simulation tick loop
+        if (sessionId) {
+          startTickLoop(sessionId, playbackSpeedRef.current);
+        }
+        return;
+      }
+
+      const frame = recordedTicks[currentIdx];
+      setTick(frame.tick);
+      setPersonPos(frame.personPos);
+      setFloodOverlay(frame.floodOverlay);
+      setHeatmap(frame.heatmap || []);
+      if (frame.routeHistory) {
+        setRouteHistory(frame.routeHistory.map(g => ({ geojson: g })));
+      }
+      setStats(frame.stats);
+      setReplayIndex(currentIdx + 1);
+
+      // Restore rerouting state during replay
+      if (frame.rerouted) {
+        setIsRerouting(true);
+        if (frame.route_steps) {
+          setRouteSteps(frame.route_steps);
+          setCurrentStepIndex(frame.current_step_index || 0);
+        }
+        // Show rerouting banner for 1.5s then hide
+        setTimeout(() => {
+          setIsRerouting(false);
+        }, 1500);
+      }
+
+      currentIdx++;
+      tickTimerRef.current = setTimeout(playNextFrame, playbackSpeedRef.current);
+    };
+
+    playNextFrame();
   };
 
   const handleReset = async () => {
@@ -653,6 +845,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     setPersonPos(null);
     setHeatmap([]);
     setRouteHistory([]);
+    setRouteSteps([]);
+    setCurrentStepIndex(0);
     setTick(0);
     setStats(null);
     setError(null);
@@ -662,6 +856,9 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
     setRainfallLog([]);
     setIsRerouting(false);
     setRerouteCount(0);
+    setRecordedTicks([]);
+    setIsReplaying(false);
+    setReplayIndex(0);
   };
 
   return (
@@ -803,13 +1000,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 longitude={startPoint.lon}
                 latitude={startPoint.lat}
                 anchor="bottom"
-                draggable
-                onDragStart={() => handleMarkerDragStart('start')}
-                onDrag={(e) => handleMarkerDrag(e, 'start')}
-                onDragEnd={() => handleMarkerDragEnd('start')}
               >
-                <button
-                  title="Drag to move, double-click to remove"
+                <div
                   style={{
                     width: '40px',
                     height: '40px',
@@ -824,15 +1016,17 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     justifyContent: 'center',
                     fontSize: '20px',
                     fontWeight: 'bold',
+                    color: 'white',
                     cursor: draggedMarker === 'start' ? 'grabbing' : 'grab',
                     transition: 'all 0.2s',
-                    color: 'white',
-                    padding: 0,
+                    userSelect: 'none',
                   }}
-                  onDoubleClick={() => handleMarkerDoubleClick('start')}
+                  onMouseDown={(e) => handleMarkerMouseDown(e, 'start')}
+                  onClick={(e) => handleMarkerClick(e, 'start')}
+                  title="Drag to move, double-click to remove"
                 >
                   A
-                </button>
+                </div>
               </Marker>
             )}
 
@@ -842,13 +1036,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 longitude={endPoint.lon}
                 latitude={endPoint.lat}
                 anchor="bottom"
-                draggable
-                onDragStart={() => handleMarkerDragStart('end')}
-                onDrag={(e) => handleMarkerDrag(e, 'end')}
-                onDragEnd={() => handleMarkerDragEnd('end')}
               >
-                <button
-                  title="Drag to move, double-click to remove"
+                <div
                   style={{
                     width: '40px',
                     height: '40px',
@@ -863,20 +1052,22 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     justifyContent: 'center',
                     fontSize: '20px',
                     fontWeight: 'bold',
+                    color: 'white',
                     cursor: draggedMarker === 'end' ? 'grabbing' : 'grab',
                     transition: 'all 0.2s',
-                    color: 'white',
-                    padding: 0,
+                    userSelect: 'none',
                   }}
-                  onDoubleClick={() => handleMarkerDoubleClick('end')}
+                  onMouseDown={(e) => handleMarkerMouseDown(e, 'end')}
+                  onClick={(e) => handleMarkerClick(e, 'end')}
+                  title="Drag to move, double-click to remove"
                 >
                   B
-                </button>
+                </div>
               </Marker>
             )}
 
             {/* Person during simulation */}
-            {personPos != null && phase === 'RUNNING' && (
+            {personPos != null && (phase === 'RUNNING' || phase === 'PAUSED') && (
               <Marker longitude={personPos.lon} latitude={personPos.lat} anchor="bottom">
                 <div style={{
                   width: '36px',
@@ -932,7 +1123,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           </Map>
 
           {/* Rain overlay effect */}
-          {phase === 'RUNNING' && <RainOverlay intensity={maxFloodIntensity} />}
+          {(phase === 'RUNNING' || phase === 'PAUSED') && <RainOverlay intensity={maxFloodIntensity} />}
         </div>
 
         {/* Right: Phone-like panel */}
@@ -1016,54 +1207,27 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
             </button>
           </div>
 
-          {/* Rainfall Source Toggle (only for Real-Time) */}
-          {navMode === 'realtime' && (
-            <div style={{
-              display: 'flex',
-              gap: '0.5rem',
-              background: '#fffbeb',
-              padding: '0.5rem',
-              borderRadius: '0.75rem',
-              border: '1px solid #fde68a',
-              animation: 'fadeIn 0.3s ease-out'
-            }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#92400e', alignSelf: 'center', paddingLeft: '0.25rem' }}>Rain:</span>
-              <button
-                onClick={() => setRainfallSource('live')}
-                style={{
-                  flex: 1,
-                  padding: '0.4rem',
-                  borderRadius: '0.5rem',
-                  border: 'none',
-                  background: rainfallSource === 'live' ? '#d97706' : 'white',
-                  color: rainfallSource === 'live' ? 'white' : '#92400e',
-                  fontSize: '0.75rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: rainfallSource === 'live' ? '0 1px 4px rgba(217, 119, 6, 0.3)' : 'none'
-                }}
-              >
-                📡 KSNDMC
-              </button>
-              <button
-                onClick={() => setRainfallSource('simulated')}
-                style={{
-                  flex: 1,
-                  padding: '0.4rem',
-                  borderRadius: '0.5rem',
-                  border: 'none',
-                  background: rainfallSource === 'simulated' ? '#d97706' : 'white',
-                  color: rainfallSource === 'simulated' ? 'white' : '#92400e',
-                  fontSize: '0.75rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: rainfallSource === 'simulated' ? '0 1px 4px rgba(217, 119, 6, 0.3)' : 'none'
-                }}
-              >
-                🧪 Inject
-              </button>
-            </div>
-          )}
+          {/* Mode Explanation */}
+          <div style={{
+            background: navMode === 'realtime' ? '#dbeafe' : '#f3f4f6',
+            padding: '0.75rem',
+            borderRadius: '0.5rem',
+            border: `1px solid ${navMode === 'realtime' ? '#93c5fd' : '#d1d5db'}`,
+            fontSize: '0.75rem',
+            color: navMode === 'realtime' ? '#0c4a6e' : '#374151',
+            lineHeight: '1.5'
+          }}>
+            {navMode === 'realtime' ? (
+              <>
+                <strong>📡 Real-Time Mode:</strong> Live GPS tracking + live rainfall from KSNDMC. Traffic data fetched automatically. Shows actual conditions.
+              </>
+            ) : (
+              <>
+                <strong>🎮 Simulated Mode:</strong> Test evacuation scenarios with historical rainfall patterns. Control rainfall intensity, evolution, and toggle traffic for testing. Fast-forward with speed slider.
+              </>
+            )}
+          </div>
+
 
           {error && (
             <NotificationBanner message={error} type="error" icon={AlertCircle} />
@@ -1146,7 +1310,75 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
             </div>
           )}
 
-          {phase === 'CONFIG' && (
+          {/* Real-time CONFIG: Minimal navigation info only */}
+          {phase === 'CONFIG' && navMode === 'realtime' && (
+            <>
+              {routeData && (
+                <div style={{
+                  background: '#f0fdf4',
+                  padding: '1rem',
+                  borderRadius: '0.75rem',
+                  border: '1px solid #86efac',
+                  fontSize: '0.875rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span>🛣️ Distance:</span>
+                    <strong>{(routeData.summary.total_distance_m / 1000).toFixed(1)} km</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span>💧 Max Flood:</span>
+                    <strong style={{ color: routeData.summary.max_flood_depth_m > 0.5 ? '#dc2626' : '#16a34a' }}>
+                      {routeData.summary.max_flood_depth_m.toFixed(2)} m
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>🛡️ Safety:</span>
+                    <strong style={{ color: routeData.summary.safe ? '#16a34a' : '#dc2626' }}>
+                      {routeData.summary.safe ? 'SAFE ✅' : 'RISKY ⚠️'}
+                    </strong>
+                  </div>
+                </div>
+              )}
+
+              <div style={{
+                background: '#ecfdf5',
+                padding: '1rem',
+                borderRadius: '0.75rem',
+                border: '1px solid #6ee7b7',
+                fontSize: '0.85rem',
+                color: '#065f46',
+                lineHeight: '1.6'
+              }}>
+                <div style={{ fontWeight: '700', marginBottom: '0.5rem' }}>📡 Real-Time Navigation</div>
+                Live rainfall tracking from KSNDMC • GPS-based position updates • Dynamic flood alerts during journey
+              </div>
+
+              <button
+                onClick={handleStartSimulation}
+                style={{
+                  width: '100%',
+                  background: '#10b981',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '0.5rem',
+                  border: 'none',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '0.95rem',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  transition: 'all 0.2s',
+                  marginTop: '0.5rem'
+                }}
+                onMouseOver={(e) => e.target.style.background = '#059669'}
+                onMouseOut={(e) => e.target.style.background = '#10b981'}
+              >
+                ▶️ START JOURNEY
+              </button>
+            </>
+          )}
+
+          {/* Simulated CONFIG: Full scenario testing controls */}
+          {phase === 'CONFIG' && navMode === 'simulated' && (
             <>
               {/* Route recommendation if safer alternative exists */}
               {routeData?.route_recommendation && (
@@ -1257,57 +1489,71 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 </select>
               </div>
 
-              {navMode === 'simulated' || (navMode === 'realtime' && rainfallSource === 'simulated') ? (
-                <>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Rainfall Intensity</label>
-                    <select
-                      value={intensity}
-                      onChange={(e) => setIntensity(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.75rem',
-                        borderRadius: '0.5rem',
-                        border: '1px solid #d1d5db',
-                        fontSize: '0.875rem',
-                        background: 'white',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <option value="random">🎲 Random</option>
-                      <option value="light">🌧️ Light (50mm)</option>
-                      <option value="moderate">⛈️ Moderate (100mm)</option>
-                      <option value="heavy">🌊 Heavy (150mm)</option>
-                    </select>
-                  </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Rainfall Intensity</label>
+                <select
+                  value={intensity}
+                  onChange={(e) => setIntensity(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #d1d5db',
+                    fontSize: '0.875rem',
+                    background: 'white',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="random">🎲 Random (0-200mm)</option>
+                  <option value="light">🌧️ Light (0-10mm)</option>
+                  <option value="moderate">⛈️ Moderate (10-30mm)</option>
+                  <option value="heavy">🌊 Heavy (30-60mm, synth: 45mm)</option>
+                  <option value="extreme">🌪️ Extreme (60-200mm, synth: 100mm)</option>
+                </select>
+              </div>
 
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Evolution Mode</label>
-                    <select
-                      value={evolutionMode}
-                      onChange={(e) => setEvolutionMode(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.75rem',
-                        borderRadius: '0.5rem',
-                        border: '1px solid #d1d5db',
-                        fontSize: '0.875rem',
-                        background: 'white',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <option value="random">🎲 Random</option>
-                      <option value="intensify">⬆️ Intensify</option>
-                      <option value="dissipate">⬇️ Dissipate</option>
-                      <option value="move">➡️ Move</option>
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <div style={{ background: '#ecfdf5', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #6ee7b7', fontSize: '0.85rem', color: '#065f46' }}>
-                  📡 <strong>Live Rainfall Active</strong>: Tracking KSNDMC data in real-time. Intensity is based on current weather reports.
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.875rem', color: '#374151' }}>Evolution Mode</label>
+                <select
+                  value={evolutionMode}
+                  onChange={(e) => setEvolutionMode(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #d1d5db',
+                    fontSize: '0.875rem',
+                    background: 'white',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="random">🎲 Random</option>
+                  <option value="intensify">⬆️ Intensify</option>
+                  <option value="dissipate">⬇️ Dissipate</option>
+                  <option value="move">➡️ Move</option>
+                </select>
+              </div>
+
+              <div style={{
+                background: '#dbeafe',
+                padding: '0.75rem',
+                borderRadius: '0.5rem',
+                border: '1px solid #93c5fd',
+                fontSize: '0.875rem'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={useTraffic}
+                    onChange={(e) => setUseTraffic(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: '600' }}>🚗 Consider Traffic</span>
+                </label>
+                <div style={{ fontSize: '0.75rem', color: '#0369a1', marginTop: '0.5rem', marginLeft: '1.75rem' }}>
+                  {useTraffic ? '✓ Realistic congestion' : '⚡ Ignore traffic'}
                 </div>
-              )}
+              </div>
 
               <button
                 onClick={handleStartSimulation}
@@ -1328,7 +1574,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 onMouseOver={(e) => e.target.style.background = '#4338ca'}
                 onMouseOut={(e) => e.target.style.background = '#4f46e5'}
               >
-                {navMode === 'realtime' ? '▶️ START JOURNEY' : '▶️ START SIMULATION'}
+                ▶️ START SIMULATION
               </button>
             </>
           )}
@@ -1422,7 +1668,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
             </div>
           )}
 
-          {phase === 'RUNNING' && (
+          {(phase === 'RUNNING' || phase === 'PAUSED') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {/* Location info - Google Maps style */}
               <div style={{ fontSize: '0.75rem', color: '#6b7280', padding: '0.75rem', background: '#f9fafb', borderRadius: '0.5rem' }}>
@@ -1447,25 +1693,74 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 </div>
               </div>
 
-              {stats != null && (
+              {/* Real-time mode: GPS-based journey info only */}
+              {navMode === 'realtime' && stats != null && (
                 <div style={{ background: '#f3f4f6', padding: '1rem', borderRadius: '0.75rem', fontSize: '0.85rem', lineHeight: '1.8' }}>
-                  {/* Progress bar with actual elapsed time - using current speed mode ETA */}
                   {(() => {
-                    const actualEta = Math.round((stats.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60);
                     const totalDist = routeData?.summary?.total_distance_m || 1;
-                    const progress = navMode === 'realtime'
-                      ? Math.round(Math.min(99, (1 - (stats.total_distance_m / totalDist)) * 100))
-                      : Math.round(Math.min(100, (tick * 0.2 / (tick * 0.2 + actualEta)) * 100));
+                    const progress = Math.round(Math.min(99, (1 - (stats.total_distance_m / totalDist)) * 100));
                     return (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                          <span style={{ fontWeight: '600' }}>📍 {navMode === 'realtime' ? 'Journey Progress' : 'Simulation Progress'}</span>
-                          <span style={{ fontWeight: 'bold', color: navMode === 'realtime' ? '#10b981' : '#4f46e5' }}>{progress}%</span>
+                          <span style={{ fontWeight: '600' }}>📍 Journey Progress</span>
+                          <span style={{ fontWeight: 'bold', color: '#10b981' }}>{progress}%</span>
                         </div>
                         <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden', marginBottom: '1rem' }}>
                           <div style={{
                             height: '100%',
-                            background: navMode === 'realtime' ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #4f46e5, #7c3aed)',
+                            background: 'linear-gradient(90deg, #10b981, #34d399)',
+                            width: `${progress}%`,
+                            transition: 'width 0.1s linear'
+                          }} />
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span>🛣️ Distance Remaining:</span>
+                    <span><strong>{(stats.total_distance_m / 1000).toFixed(1)} km</strong></span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    color: stats.max_flood_depth_m > 1.5 ? '#dc2626' : stats.max_flood_depth_m > 0.5 ? '#ea580c' : '#16a34a',
+                    fontWeight: 'bold',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px solid #e5e7eb',
+                    marginBottom: '0.5rem'
+                  }}>
+                    <span>💧 Current Flood Level:</span>
+                    <span>{stats.max_flood_depth_m.toFixed(2)}m {stats.max_flood_depth_m > 1.5 ? '🚫' : stats.max_flood_depth_m > 0.5 ? '⚠️' : '✅'}</span>
+                  </div>
+
+                  {/* Flood impact note */}
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', paddingTop: '0.5rem', borderTop: '1px solid #e5e7eb', marginTop: '0.5rem' }}>
+                    {stats.max_flood_depth_m > 1.5 && '⚠️ IMPASSABLE - Depth > 1.5m'}
+                    {stats.max_flood_depth_m > 0.8 && stats.max_flood_depth_m <= 1.5 && '⚠️ High flood - Proceed with caution'}
+                    {stats.max_flood_depth_m > 0.4 && stats.max_flood_depth_m <= 0.8 && '⚡ Moderate flood - All modes passable'}
+                    {stats.max_flood_depth_m > 0.1 && stats.max_flood_depth_m <= 0.4 && '💧 Light flooding - Normal travel'}
+                    {stats.max_flood_depth_m <= 0.1 && '✅ No flooding - Safe passage'}
+                  </div>
+                </div>
+              )}
+
+              {/* Simulated mode: Full statistics with ETA and time remaining */}
+              {navMode === 'simulated' && stats != null && (
+                <div style={{ background: '#f3f4f6', padding: '1rem', borderRadius: '0.75rem', fontSize: '0.85rem', lineHeight: '1.8' }}>
+                  {(() => {
+                    const actualEta = Math.round((stats.total_distance_m / 1000) / SPEED_CONFIG[speedMode].speed_kph * 60);
+                    const progress = Math.round(Math.min(100, (tick * 0.2 / (tick * 0.2 + actualEta)) * 100));
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: '600' }}>📍 Simulation Progress</span>
+                          <span style={{ fontWeight: 'bold', color: '#4f46e5' }}>{progress}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden', marginBottom: '1rem' }}>
+                          <div style={{
+                            height: '100%',
+                            background: 'linear-gradient(90deg, #4f46e5, #7c3aed)',
                             width: `${progress}%`,
                             transition: 'width 0.1s linear'
                           }} />
@@ -1520,6 +1815,106 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     {stats.max_flood_depth_m > 0.4 && stats.max_flood_depth_m <= 0.8 && '⚡ Moderate flood - All modes passable'}
                     {stats.max_flood_depth_m > 0.1 && stats.max_flood_depth_m <= 0.4 && '💧 Light flooding - Normal travel'}
                     {stats.max_flood_depth_m <= 0.1 && '✅ No flooding - Safe passage'}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Next Turn (Google Maps style) — PROMINENT ── */}
+              {navMode === 'realtime' && routeSteps && routeSteps.length > 0 && currentStepIndex < routeSteps.length && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+                  border: '2px solid #10b981',
+                  borderRadius: '1rem',
+                  padding: '1rem',
+                  boxShadow: '0 4px 16px rgba(16, 185, 129, 0.2)',
+                }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                    📍 Next Turn
+                  </div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#065f46', marginBottom: '0.75rem', lineHeight: 1.2 }}>
+                    {routeSteps[currentStepIndex].instruction}
+                  </div>
+                  <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.25rem' }}>Distance to turn</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#059669' }}>
+                        {routeSteps[currentStepIndex].distance_m >= 1000
+                          ? `${(routeSteps[currentStepIndex].distance_m / 1000).toFixed(1)} km`
+                          : `${routeSteps[currentStepIndex].distance_m} m`}
+                      </div>
+                    </div>
+                    {routeSteps[currentStepIndex].flood_depth_m > 0.1 && (
+                      <div style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        background: routeSteps[currentStepIndex].flood_depth_m > 0.25 ? '#fee2e2' : '#fef3c7',
+                        border: `1px solid ${routeSteps[currentStepIndex].flood_depth_m > 0.25 ? '#fca5a5' : '#fcd34d'}`,
+                        borderRadius: '0.5rem'
+                      }}>
+                        <div style={{ fontSize: '0.7rem', fontWeight: '600', color: routeSteps[currentStepIndex].flood_depth_m > 0.25 ? '#991b1b' : '#92400e' }}>
+                          ⚠️ Flood Alert
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: '700', color: routeSteps[currentStepIndex].flood_depth_m > 0.25 ? '#dc2626' : '#f59e0b', marginTop: '0.25rem' }}>
+                          {routeSteps[currentStepIndex].flood_depth_m.toFixed(2)} m
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Full Turn-by-turn list ── */}
+              {navMode === 'realtime' && routeSteps && routeSteps.length > 0 && (
+                <div style={{
+                  background: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '0.75rem',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    padding: '0.6rem 0.75rem',
+                    background: '#10b981',
+                    color: 'white',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <span>📍 ALL TURNS</span>
+                    <span>{currentStepIndex + 1} of {routeSteps.length}</span>
+                  </div>
+                  <div style={{ padding: '0.75rem', maxHeight: '200px', overflowY: 'auto' }}>
+                    {routeSteps.map((step, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: '0.5rem',
+                          marginBottom: idx < routeSteps.length - 1 ? '0.5rem' : '0',
+                          borderLeft: `3px solid ${idx === currentStepIndex ? '#10b981' : idx < currentStepIndex ? '#d1d5db' : '#e5e7eb'}`,
+                          paddingLeft: '0.75rem',
+                          background: idx === currentStepIndex ? '#ecfdf5' : 'transparent',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.8rem',
+                          opacity: idx <= currentStepIndex ? 1 : 0.6,
+                        }}
+                      >
+                        <div style={{ fontWeight: idx === currentStepIndex ? '700' : '600', color: '#1f2937' }}>
+                          {idx === currentStepIndex ? '▶️ ' : idx < currentStepIndex ? '✓ ' : '◯ '}
+                          {step.instruction}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>
+                            {step.distance_m >= 1000 ? `${(step.distance_m / 1000).toFixed(1)} km` : `${step.distance_m} m`}
+                          </span>
+                          {step.flood_depth_m > 0.1 && (
+                            <span style={{ color: step.flood_depth_m > 0.25 ? '#dc2626' : '#f59e0b', fontWeight: '600' }}>
+                              ⚠️ {step.flood_depth_m.toFixed(2)}m
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1581,7 +1976,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   justifyContent: 'space-between',
                   alignItems: 'center',
                 }}>
-                  <span>📡 LIVE UPDATES</span>
+                  <span>📡 {navMode === 'realtime' ? 'LIVE FLOOD ALERTS' : 'LIVE UPDATES'}</span>
                   <span style={{ fontFamily: 'monospace', color: '#67e8f9' }}>
                     {rainfallLog.length > 0 ? `${rainfallLog[rainfallLog.length - 1].avg_rainfall_mm_hr}mm/hr` : '--'}
                   </span>
@@ -1599,7 +1994,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 >
                   {rainfallLog.length === 0 && (
                     <div style={{ padding: '0.5rem', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
-                      Waiting for simulation data...
+                      {navMode === 'realtime' ? 'Monitoring for flood alerts...' : 'Waiting for simulation data...'}
                     </div>
                   )}
                   {rainfallLog.map((entry, idx) => {
@@ -1644,26 +2039,285 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                 </div>
               </div>
 
+              {navMode === 'simulated' && (
+                <div style={{
+                  background: '#f0fdf4',
+                  padding: '1rem',
+                  borderRadius: '0.75rem',
+                  border: '1px solid #86efac',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.875rem' }}>⚡ Playback Speed</label>
+                    <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>
+                      {(250 / playbackSpeed).toFixed(1)}x
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="500"
+                    value={playbackSpeed}
+                    onChange={(e) => {
+                      const newSpeed = Number(e.target.value);
+                      setPlaybackSpeed(newSpeed);
+                      playbackSpeedRef.current = newSpeed;  // Update ref for active playback
+                    }}
+                    style={{
+                      width: '100%',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>⏩ Fast (0.5x)</span>
+                    <span>⏯️ Normal</span>
+                    <span>🐢 Slow (5x)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Pause button - only during active simulation */}
+              {navMode === 'simulated' && phase === 'RUNNING' && (
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => {
+                      if (tickTimerRef.current) {
+                        clearTimeout(tickTimerRef.current);
+                        tickTimerRef.current = null;
+                      }
+                      setPhase('PAUSED');
+                      addNotification('⏸️ Simulation paused', 'info');
+                    }}
+                    style={{
+                      flex: 1,
+                      background: '#f59e0b',
+                      color: 'white',
+                      padding: '0.75rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    ⏸️ Pause
+                  </button>
+                </div>
+              )}
+
+              {/* Resume button - only when paused */}
+              {navMode === 'simulated' && phase === 'PAUSED' && (
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => {
+                      setPhase('RUNNING');
+                      addNotification('▶️ Simulation resumed', 'success');
+                      if (isReplaying) {
+                        // Resume replay from paused index
+                        const playNextFrame = (idx) => {
+                          if (idx >= recordedTicks.length) {
+                            setPhase('COMPLETE');
+                            setIsReplaying(false);
+                            addNotification('✅ Replay finished', 'success');
+                            return;
+                          }
+                          const frame = recordedTicks[idx];
+                          setTick(frame.tick);
+                          setPersonPos(frame.personPos);
+                          setFloodOverlay(frame.floodOverlay);
+                          setHeatmap(frame.heatmap);
+                          if (frame.routeHistory) {
+                            setRouteHistory(frame.routeHistory.map(g => ({ geojson: g })));
+                          }
+                          setStats(frame.stats);
+                          setReplayIndex(idx + 1);
+                          if (frame.rerouted) {
+                            setIsRerouting(true);
+                            if (frame.route_steps) {
+                              setRouteSteps(frame.route_steps);
+                              setCurrentStepIndex(frame.current_step_index || 0);
+                            }
+                            setTimeout(() => setIsRerouting(false), 1500);
+                          }
+                          tickTimerRef.current = setTimeout(() => playNextFrame(idx + 1), playbackSpeedRef.current);
+                        };
+                        playNextFrame(replayIndex);
+                      } else if (sessionId) {
+                        startTickLoop(sessionId, playbackSpeedRef.current);
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      background: '#10b981',
+                      color: 'white',
+                      padding: '0.75rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    ▶️ Resume
+                  </button>
+                </div>
+              )}
+
+              {navMode === 'simulated' && phase === 'RUNNING' && (
+                <>
+                  {/* Replay button visible during simulation if recording exists */}
+                  {recordedTicks.length > 0 && (
+                    <button
+                      onClick={startReplay}
+                      style={{
+                        width: '100%',
+                        background: '#6366f1',
+                        color: 'white',
+                        padding: '0.75rem',
+                        borderRadius: '0.5rem',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        marginBottom: '0.5rem',
+                      }}
+                      onMouseOver={(e) => e.target.style.background = '#4f46e5'}
+                      onMouseOut={(e) => e.target.style.background = '#6366f1'}
+                    >
+                      🎬 Replay ({recordedTicks.length} frames so far)
+                    </button>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={async () => {
+                        if (tickTimerRef.current) clearTimeout(tickTimerRef.current);
+                        // Reset backend session to start position
+                        if (sessionId) {
+                          try {
+                            await fetch(`${API_URL}/simulate/reset`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ session_id: sessionId }),
+                            });
+                          } catch { }
+                        }
+                        // Reset UI to start of simulation (keep recorded ticks for replay)
+                        setTick(0);
+                        setPersonPos(null);
+                        setRouteHistory([]);
+                        setStats(null);
+                        setRainfallLog([]);
+                        setIsRerouting(false);
+                        setRerouteCount(0);
+                        setCurrentStepIndex(0);
+                        // Clear recorded ticks since we're starting fresh
+                        setRecordedTicks([]);
+                        setIsReplaying(false);
+                        setReplayIndex(0);
+                        setPhase('RUNNING');
+                        addNotification('🔄 Simulation restarted', 'info');
+                        // Resume from beginning
+                        if (sessionId) {
+                          startTickLoop(sessionId, playbackSpeedRef.current);
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        background: '#8b5cf6',
+                        color: 'white',
+                        padding: '0.75rem',
+                        borderRadius: '0.5rem',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                      }}
+                    >
+                      🔄 Restart
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      style={{
+                        flex: 1,
+                        background: '#ef4444',
+                        color: 'white',
+                        padding: '0.75rem',
+                        borderRadius: '0.5rem',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                      }}
+                    >
+                      ⏹️ Stop Simulation
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Real-time COMPLETE: Minimal summary */}
+          {phase === 'COMPLETE' && navMode === 'realtime' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: '#dcfce7',
+                border: '2px solid #86efac',
+                color: '#166534',
+                padding: '1.25rem',
+                borderRadius: '0.75rem',
+                textAlign: 'center',
+                fontWeight: '600',
+                fontSize: '1rem',
+              }}>
+                ✅ ARRIVED SAFELY!
+              </div>
+
+              {/* Location summary */}
+              <div style={{ fontSize: '0.8rem', color: '#374151', padding: '0.75rem', background: '#f9fafb', borderRadius: '0.5rem', borderLeft: '4px solid #10b981' }}>
+                <div style={{ marginBottom: '0.3rem' }}><strong>📍 From:</strong> {startPoint ? `${startPoint.lat.toFixed(4)}, ${startPoint.lon.toFixed(4)}` : 'Unknown'}</div>
+                <div><strong>🎯 To:</strong> {endPoint ? `${endPoint.lat.toFixed(4)}, ${endPoint.lon.toFixed(4)}` : 'Unknown'}</div>
+              </div>
+
+              {stats != null && (
+                <div style={{ background: '#f0fdf4', padding: '1.25rem', borderRadius: '0.75rem', fontSize: '0.875rem', lineHeight: '1.8', border: '1px solid #86efac' }}>
+                  <div style={{ fontWeight: '700', marginBottom: '0.75rem', fontSize: '0.95rem' }}>📍 Journey Summary</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span>🛣️ Distance:</span>
+                    <span style={{ fontWeight: '600', color: '#10b981' }}>{(stats.total_distance_m / 1000).toFixed(1)} km</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                    <span>💧 Max Flood Encountered:</span>
+                    <span style={{ fontWeight: '600', color: stats.max_flood_depth_m > 0.5 ? '#dc2626' : '#16a34a' }}>{stats.max_flood_depth_m.toFixed(2)} m</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>🛡️ Route Status:</span>
+                    <span style={{ fontWeight: '600', color: stats.safe ? '#16a34a' : '#dc2626' }}>{stats.safe ? '✅ SAFE' : '⚠️ CHALLENGING'}</span>
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={handleReset}
                 style={{
                   width: '100%',
-                  background: '#ef4444',
+                  background: '#10b981',
                   color: 'white',
-                  padding: '0.75rem',
+                  padding: '1rem',
                   borderRadius: '0.5rem',
                   border: 'none',
                   fontWeight: 'bold',
                   cursor: 'pointer',
-                  fontSize: '0.875rem',
+                  fontSize: '0.95rem',
                 }}
               >
-                ⏹️ Stop Simulation
+                ↻ New Journey
               </button>
             </div>
           )}
 
-          {phase === 'COMPLETE' && (
+          {/* Simulated COMPLETE: Full trip analysis */}
+          {phase === 'COMPLETE' && navMode === 'simulated' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{
                 background: '#dcfce7',
@@ -1697,7 +2351,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                     <span>🚗 Speed Mode:</span>
-                    <span style={{ fontWeight: '600' }}>{speedMode === 'car' ? '🚗 Car (30 km/h)' : speedMode === 'bike' ? '🚴 Bike (15 km/h)' : '🚶 Walking (4 km/h)'}</span>
+                    <span style={{ fontWeight: '600' }}>{speedMode === 'car' ? '🚗 Car (40 km/h)' : speedMode === 'bike' ? '🚴 Bike (30 km/h)' : '🚶 Walking (4 km/h)'}</span>
                   </div>
                   <hr style={{ margin: '0.5rem 0', border: 'none', borderTop: '1px solid #e5e7eb' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
@@ -1719,6 +2373,28 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     {stats.flooded_segments === 0 && '✅ No flooded roads on your route'}
                   </div>
                 </div>
+              )}
+
+              {recordedTicks.length > 0 && (
+                <button
+                  onClick={startReplay}
+                  style={{
+                    width: '100%',
+                    background: '#6366f1',
+                    color: 'white',
+                    padding: '1rem',
+                    borderRadius: '0.5rem',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    marginBottom: '0.5rem',
+                  }}
+                  onMouseOver={(e) => e.target.style.background = '#4f46e5'}
+                  onMouseOut={(e) => e.target.style.background = '#6366f1'}
+                >
+                  🎬 Replay ({recordedTicks.length} frames)
+                </button>
               )}
 
               <button

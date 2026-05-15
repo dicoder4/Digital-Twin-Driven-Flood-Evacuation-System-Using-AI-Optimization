@@ -64,6 +64,7 @@ def build_graph(edges: list, nodes: list) -> nx.DiGraph:
             water_depth=0.0,
             flood_risk="low",
             geometry=e["location"]["coordinates"],
+            name=e.get("name", None),  # Street name from OSM (may be None)
         )
 
     return G

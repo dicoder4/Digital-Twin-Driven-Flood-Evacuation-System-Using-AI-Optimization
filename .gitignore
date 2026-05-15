@@ -12,6 +12,13 @@ UrbanFloodReact/cache/
 UrbanFloodReact/frontend/package-lock.json
 UrbanFloodReact/frontend/package.json
 
+# Caching and utility scripts (one-time setup)
+UrbanFloodReact/backend/cache_*.py
+UrbanFloodReact/backend/taluk_hobli_cache.py
+UrbanFloodReact/backend/warm_*.py
+UrbanFloodReact/backend/check_mongo_*.py
+UrbanFloodReact/backend/populate_*.py
+
 # Claude local workspace files
 .claude/skills/
 .claude/**/*.local.json
@@ -31,6 +38,7 @@ RESEARCH_README.md
 SPEED_LOGIC_AND_PHYSICS.md
 TESTING_RESULTS.md
 CITIZEN_IMPLEMENTATION_COMPLETE.md
+.archive_docs/
 paper/HOW_TO_COMPILE.md
 paper/figures/generate_figures.py
 paper/main.tex
