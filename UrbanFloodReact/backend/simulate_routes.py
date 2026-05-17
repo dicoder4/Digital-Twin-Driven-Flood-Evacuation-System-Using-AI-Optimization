@@ -830,7 +830,8 @@ async def simulate_tick(req: SimulateTickRequest):
                 session.rainfall,
                 session.hobli_coords,
                 session.tick,
-                session.evolution_mode
+                session.evolution_mode,
+                session=session
             )
         session.rainfall = new_rainfall
 
