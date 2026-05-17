@@ -1024,6 +1024,7 @@ async def simulate_tick(req: SimulateTickRequest):
                 combined_path = traveled_nodes + new_path
                 session.path_nodes = combined_path
                 session.position.path_nodes = combined_path
+                session.position.edge_progress = 0.0  # Reset so person starts from reroute node, not mid-old-edge
                 session.position.G = session.G
 
                 rerouted = True
