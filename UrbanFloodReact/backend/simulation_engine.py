@@ -307,78 +307,63 @@ def _evolve_move_mode(
     tick: int,
     session: Optional['SimulationSession'] = None
 ) -> Dict[str, float]:
-    """Move a storm cell across regions so rainfall shifts geographically.
-    
-    The storm center is tracked explicitly (not re-derived from decayed values)
-    and total rainfall energy is conserved. When the storm enters a new region
-    that region's rainfall increases; when it leaves, rainfall there decreases.
+    """Spatial weather diversity mode for 'move'.
+
+    Simulates what a traveler experiences driving through different weather
+    zones.  Each region (hobli) independently fluctuates its rainfall and,
+    every few ticks, one region undergoes a major shift — a sudden downpour,
+    a clearing, or a burst of heavy rain.  Because the *user* is moving
+    through regions, the local rainfall they see changes naturally.
+
+    Key properties
+    ──────────────
+    • Total rainfall is NOT conserved — regions are independent weather cells.
+    • Each tick: ±20 % Gaussian noise per region (gentle drift).
+    • Every ~5 ticks: one random region gets a dramatic shift:
+          "surge"       →  2×–4× of the current average
+          "clear"       →  near-zero (cloud break)
+          "heavy_burst" →  3×–5× of the current average
+    • All values are clamped to [0, 0.8] mm/tick to avoid physics blow-up.
     """
-    # ── 1. Initialize storm parameters on first call ──
-    if session is not None and session.storm_center is not None:
-        storm_center = session.storm_center
-        total_rain = session.storm_total_rain
-        storm_radius = session.storm_radius_m
-    else:
-        # First tick: compute initial storm center from rainfall-weighted centroid
-        storm_center = _compute_storm_center(current_snapshot, hobli_coords)
-        total_rain = sum(current_snapshot.values())
-        storm_radius = 8000.0
-        if storm_center is None:
-            return dict(current_snapshot)
+    new_snapshot: Dict[str, float] = {}
+    hobli_list = list(current_snapshot.keys())
 
-    # ── 2. Move the storm center ──
-    # Storm drifts at ~0.001° per tick ≈ ~100m per tick
-    # Direction: predominantly NE with slight random jitter for realism
-    base_dlat = 0.001
-    base_dlon = 0.001
-    jitter_lat = random.gauss(0, 0.0003)
-    jitter_lon = random.gauss(0, 0.0003)
-    new_center = (
-        storm_center[0] + base_dlat + jitter_lat,
-        storm_center[1] + base_dlon + jitter_lon,
-    )
+    # ── Per-region gentle drift ──
+    for hobli, mm in current_snapshot.items():
+        # Gaussian noise centred on 1.0, σ = 0.20 → ±20 % typical swing
+        factor = random.gauss(1.0, 0.20)
+        new_val = mm * factor
+        # Small chance (8 %) a region starts raining if it was dry
+        if new_val < 0.001 and random.random() < 0.08:
+            avg_rain = sum(current_snapshot.values()) / max(len(current_snapshot), 1)
+            new_val = avg_rain * random.uniform(0.3, 0.8)
+        new_snapshot[hobli] = max(0.0, min(new_val, 0.8))
 
-    # ── 3. Recompute rainfall for each hobli based on distance to new storm center ──
-    # Use a Gaussian-like falloff so the storm has a smooth bell-curve shape
-    raw_intensities = {}
-    total_intensity = 0.0
+    # ── Periodic major weather shift in one random region ──
+    if tick % 5 == 0 and hobli_list:
+        shift_hobli = random.choice(hobli_list)
+        avg_rain = sum(current_snapshot.values()) / max(len(current_snapshot), 1)
+        avg_rain = max(avg_rain, 0.005)  # floor so multiplier has something to scale
 
-    for hobli in current_snapshot.keys():
-        if hobli in hobli_coords:
-            hlat, hlon = hobli_coords[hobli]
-            dist = _haversine_dist(hlat, hlon, new_center[0], new_center[1])
-            # Gaussian falloff: intensity = exp(-(dist/sigma)^2)
-            # sigma = storm_radius / 2 gives a nice bell shape within the radius
-            sigma = storm_radius / 2.0
-            intensity = exp(-((dist / sigma) ** 2))
-        else:
-            # Hobli not in coords — give it a small baseline
-            intensity = 0.01
+        shift_type = random.choice(["surge", "clear", "heavy_burst"])
+        if shift_type == "surge":
+            new_snapshot[shift_hobli] = min(avg_rain * random.uniform(2.0, 4.0), 0.8)
+        elif shift_type == "clear":
+            new_snapshot[shift_hobli] = avg_rain * random.uniform(0.0, 0.15)
+        elif shift_type == "heavy_burst":
+            new_snapshot[shift_hobli] = min(avg_rain * random.uniform(3.0, 5.0), 0.8)
 
-        raw_intensities[hobli] = intensity
-        total_intensity += intensity
+        logger.info(
+            f"[MOVE MODE] tick={tick} | Weather shift: '{shift_type}' at {shift_hobli} "
+            f"→ {new_snapshot[shift_hobli]:.4f} mm/tick"
+        )
 
-    # ── 4. Distribute total rainfall energy proportionally ──
-    # This conserves the total rain so the storm moves rather than dissipates
-    new_snapshot = {}
-    if total_intensity > 0:
-        for hobli, raw_i in raw_intensities.items():
-            fraction = raw_i / total_intensity
-            new_snapshot[hobli] = min(fraction * total_rain, 0.8)  # cap per-hobli
-    else:
-        new_snapshot = dict(current_snapshot)
-
-    # ── 5. Persist storm state in session for next tick ──
-    if session is not None:
-        session.storm_center = new_center
-        session.storm_total_rain = total_rain  # conserved
-        session.storm_radius_m = storm_radius
-
-    # Log the storm movement
+    # ── Summary log ──
+    new_max = max(new_snapshot.values()) if new_snapshot else 0
+    new_min = min(new_snapshot.values()) if new_snapshot else 0
     logger.info(
-        f"[MOVE MODE] Storm center: ({new_center[0]:.4f}, {new_center[1]:.4f}) | "
-        f"total_rain={total_rain:.4f}mm/tick | radius={storm_radius:.0f}m | "
-        f"hoblis_affected={sum(1 for v in new_snapshot.values() if v > 0.001)}"
+        f"[MOVE MODE] tick={tick} | range=[{new_min:.4f}, {new_max:.4f}] mm/tick | "
+        f"hoblis={len(new_snapshot)}"
     )
 
     return new_snapshot

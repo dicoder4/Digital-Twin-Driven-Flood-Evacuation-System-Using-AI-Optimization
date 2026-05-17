@@ -13,6 +13,7 @@ from geo_db import fetch_corridor
 from corridor_graph import build_graph, snap_to_node
 from corridor_flood import compute_flood
 from astar_router import astar_route, build_route_geojson, generate_steps, route_summary
+from realtime_traffic_service import get_route_traffic_eta
 from simulation_engine import (
     fetch_hobli_coords,
     assign_hoblis_to_nodes,
@@ -74,6 +75,7 @@ IMPASSABLE_DEPTH_MAP = {
 }
 
 # Traffic congestion schedule by road type and hour (0-23)
+# Used as FALLBACK when TomTom API is unavailable
 # Values: 1.0 = free flow, 0.5 = 50% congestion (50% of base speed)
 CONGESTION_SCHEDULE = {
     "motorway": {
@@ -173,18 +175,77 @@ def calculate_eta_minutes(distance_m: float, speed_kph: float) -> int:
     return round(time_minutes)
 
 
-def calculate_realistic_eta(graph, path: list, speed_mode: str, hour: int | None = None) -> int:
+async def calculate_traffic_eta(graph, path: list, speed_mode: str) -> tuple[int, str]:
     """
-    Calculate ETA considering traffic congestion by road type and time of day.
+    Calculate ETA using live TomTom traffic data.
+    Falls back to hardcoded congestion schedule if TomTom is unavailable.
+
+    To avoid sending 200+ API calls for long routes, we sample at most
+    MAX_SAMPLE_NODES evenly-spaced nodes from the path, fetch TomTom
+    traffic for that sub-path, and extrapolate the average speed to the
+    full route distance.
 
     Args:
         graph: NetworkX graph with edge data (length, highway type)
         path: List of node IDs representing the route
         speed_mode: "car", "bike", or "walk"
-        hour: Hour of day (0-23) for congestion lookup
 
     Returns:
-        ETA in minutes (rounded)
+        Tuple of (eta_minutes, eta_source) where eta_source is "tomtom" or "schedule"
+    """
+    if len(path) < 2:
+        return 0, "none"
+
+    # ── Compute full route distance (always needed) ──
+    full_distance_m = 0.0
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i + 1]
+        if graph.has_edge(u, v):
+            full_distance_m += graph[u][v].get("length", 0)
+
+    # ── Sample the path to limit TomTom API calls ──
+    MAX_SAMPLE_NODES = 13  # → at most 12 edges → 12 TomTom calls
+    if len(path) > MAX_SAMPLE_NODES:
+        step = (len(path) - 1) / (MAX_SAMPLE_NODES - 1)
+        sample_indices = [int(i * step) for i in range(MAX_SAMPLE_NODES)]
+        # Ensure last node is included
+        sample_indices[-1] = len(path) - 1
+        sampled_path = [path[i] for i in sample_indices]
+        logger.info(f"[TRAFFIC] Sampling {len(sampled_path)}/{len(path)} nodes for TomTom")
+    else:
+        sampled_path = path
+
+    # Try TomTom live traffic first
+    try:
+        tomtom_result = await get_route_traffic_eta(graph, sampled_path, speed_mode)
+        if tomtom_result.get("has_traffic") and tomtom_result.get("eta_minutes", 0) > 0:
+            avg_speed = tomtom_result.get("avg_speed_kmh", 0)
+            if avg_speed > 0:
+                # Extrapolate: use TomTom's average speed over the FULL route distance
+                full_eta_minutes = round((full_distance_m / 1000) / avg_speed * 60)
+            else:
+                full_eta_minutes = tomtom_result["eta_minutes"]
+            logger.info(
+                f"[TRAFFIC] TomTom ETA: {full_eta_minutes}min | "
+                f"avg_speed={avg_speed}km/h | "
+                f"sampled={len(sampled_path)} nodes | full_dist={full_distance_m:.0f}m"
+            )
+            return full_eta_minutes, "tomtom"
+        else:
+            # TomTom returned data but no traffic (walk/bike or no API key)
+            if tomtom_result.get("eta_minutes", 0) > 0:
+                return tomtom_result["eta_minutes"], "base_speed"
+            logger.info("[TRAFFIC] TomTom returned no traffic data, falling back to schedule")
+    except Exception as e:
+        logger.warning(f"[TRAFFIC] TomTom fetch failed: {e}, falling back to schedule")
+
+    # Fallback: hardcoded congestion schedule
+    return _calculate_schedule_eta(graph, path, speed_mode), "schedule"
+
+
+def _calculate_schedule_eta(graph, path: list, speed_mode: str, hour: int | None = None) -> int:
+    """
+    Fallback ETA using hardcoded congestion schedule (when TomTom is unavailable).
     """
     if len(path) < 2:
         return 0
@@ -194,7 +255,6 @@ def calculate_realistic_eta(graph, path: list, speed_mode: str, hour: int | None
 
     total_time_min = 0.0
 
-    # Iterate through edges in the path
     for i in range(len(path) - 1):
         u, v = path[i], path[i + 1]
 
@@ -205,13 +265,9 @@ def calculate_realistic_eta(graph, path: list, speed_mode: str, hour: int | None
         edge_length_m = edge_data.get("length", 0)
         highway_type = edge_data.get("highway", "residential")
 
-        # Get congestion factor for this road type and time
         congestion_factor = _get_congestion_factor(highway_type, hour)
-
-        # Adjust speed based on congestion
         adjusted_speed_kph = base_speed * congestion_factor
 
-        # Calculate time for this edge in minutes
         edge_length_km = edge_length_m / 1000.0
         edge_time_min = (edge_length_km / adjusted_speed_kph * 60) if adjusted_speed_kph > 0 else 0
 
@@ -583,13 +639,12 @@ async def simulate_start(req: SimulateStartRequest):
         # Calculate summary with proper ETA based on speed mode and traffic consideration
         base_summary = route_summary(G, path, impassable_depth)
 
-        # Choose ETA calculation method based on traffic flag (always ON for real-time)
+        # Choose ETA calculation method — always use TomTom traffic (falls back to schedule)
         use_traffic_for_eta = True if req.mode == "realtime" else req.use_traffic
         if use_traffic_for_eta:
-            current_hour = datetime.now().hour
-            eta_minutes = calculate_realistic_eta(G, path, req.speed_mode, current_hour)
-            eta_note = " (with traffic)"
-            logger.info(f"[SIMULATE START] ETA calculated with traffic consideration: {eta_minutes} min")
+            eta_minutes, eta_source = await calculate_traffic_eta(G, path, req.speed_mode)
+            eta_note = f" (traffic: {eta_source})"
+            logger.info(f"[SIMULATE START] ETA calculated via {eta_source}: {eta_minutes} min")
         else:
             eta_minutes = calculate_eta_minutes(base_summary["total_distance_m"], speed_kph)
             eta_note = " (no traffic)"
@@ -680,7 +735,7 @@ async def simulate_start(req: SimulateStartRequest):
 
             # Use same ETA calculation method as primary route
             if use_traffic_for_alts:
-                alt_eta_minutes = calculate_realistic_eta(G, alt_path, req.speed_mode, current_hour)
+                alt_eta_minutes, _ = await calculate_traffic_eta(G, alt_path, req.speed_mode)
             else:
                 alt_eta_minutes = calculate_eta_minutes(alt_base_summary["total_distance_m"], speed_kph)
 
@@ -836,11 +891,31 @@ async def simulate_tick(req: SimulateTickRequest):
         session.rainfall = new_rainfall
 
         # Compute rainfall statistics for logging and frontend
+        # KSNDMC data is already in mm/hour; simulated data is in mm/tick and needs conversion
+        is_ksndmc = (session.mode == "realtime" and session.rainfall_source == "ksndmc")
+
         old_avg = sum(old_rainfall.values()) / max(len(old_rainfall), 1)
         new_avg = sum(new_rainfall.values()) / max(len(new_rainfall), 1)
         new_max = max(new_rainfall.values()) if new_rainfall else 0
-        rain_mm_hr_avg = new_avg * (60.0 / session.tick_mins)  # Convert mm/tick to mm/hr
-        rain_mm_hr_max = new_max * (60.0 / session.tick_mins)
+
+        if is_ksndmc:
+            # KSNDMC values are already mm/hour — do NOT re-convert
+            rain_mm_hr_avg = new_avg
+            rain_mm_hr_max = new_max
+        else:
+            # Simulated values are mm/tick — convert to mm/hour for display
+            rain_mm_hr_avg = new_avg * (60.0 / session.tick_mins)
+            rain_mm_hr_max = new_max * (60.0 / session.tick_mins)
+
+        # Determine local rainfall at the user's current position
+        current_node = session.position.current_node()
+        hobli_for_node = assign_hoblis_to_nodes(session.G, session.hobli_coords)
+        current_hobli = hobli_for_node.get(current_node, "unknown")
+        local_rain_raw = new_rainfall.get(current_hobli, 0)
+        if is_ksndmc:
+            local_rain_mm_hr = local_rain_raw
+        else:
+            local_rain_mm_hr = local_rain_raw * (60.0 / session.tick_mins)
 
         # Track which hoblis changed significantly
         changed_hoblis = []
@@ -851,8 +926,8 @@ async def simulate_tick(req: SimulateTickRequest):
                 changed_hoblis.append(h)
 
         logger.info(
-            f"[SIMULATE TICK] 🌧️ Rainfall: avg={rain_mm_hr_avg:.1f}mm/hr max={rain_mm_hr_max:.1f}mm/hr | "
-            f"Δavg={((new_avg - old_avg) / max(old_avg, 0.0001)) * 100:+.1f}% | "
+            f"[SIMULATE TICK] 🌧️ Rainfall: local={local_rain_mm_hr:.1f}mm/hr ({current_hobli}) | "
+            f"avg={rain_mm_hr_avg:.1f}mm/hr max={rain_mm_hr_max:.1f}mm/hr | "
             f"changed_hoblis={len(changed_hoblis)}"
         )
 
@@ -863,8 +938,11 @@ async def simulate_tick(req: SimulateTickRequest):
 
         # Always recompute flood physics — this is the key fix.
         # In a real system, we'd be continuously querying rain gauges.
-        rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
-        hobli_for_node = assign_hoblis_to_nodes(session.G, session.hobli_coords)
+        if is_ksndmc:
+            rainfall_mm_hour = new_rainfall  # Already mm/hour from KSNDMC
+        else:
+            rainfall_mm_hour = scenario_to_flood_input(new_rainfall, session.tick_mins)
+        # hobli_for_node already computed above for local rainfall lookup
         session.G = compute_flood(session.G, rainfall_mm_hour, hobli_for_node)
 
         # Log flood state after recomputation
@@ -988,20 +1066,22 @@ async def simulate_tick(req: SimulateTickRequest):
         else:
             flood_status = "none"
 
-        # Build human-readable log message
+        # Build human-readable log message — use LOCAL rainfall at user's position
         if rerouted:
             log_message = f"🔄 REROUTING — {reroute_reason}"
-        elif rain_mm_hr_avg > 50:
-            log_message = f"🌊 Heavy rain: {rain_mm_hr_avg:.0f}mm/hr"
-        elif rain_mm_hr_avg > 20:
-            log_message = f"⛈️ Moderate rain: {rain_mm_hr_avg:.0f}mm/hr — {flooded_edge_count} roads flooding"
-        elif rain_mm_hr_avg > 5:
-            log_message = f"🌧️ Light rain: {rain_mm_hr_avg:.0f}mm/hr"
+        elif local_rain_mm_hr > 50:
+            log_message = f"🌊 Heavy rain: {local_rain_mm_hr:.0f}mm/hr at {current_hobli}"
+        elif local_rain_mm_hr > 20:
+            log_message = f"⛈️ Moderate rain: {local_rain_mm_hr:.0f}mm/hr at {current_hobli} — {flooded_edge_count} roads flooding"
+        elif local_rain_mm_hr > 5:
+            log_message = f"🌧️ Light rain: {local_rain_mm_hr:.0f}mm/hr at {current_hobli}"
         else:
-            log_message = f"🌤️ Minimal rain: {rain_mm_hr_avg:.1f}mm/hr"
+            log_message = f"🌤️ Minimal rain: {local_rain_mm_hr:.1f}mm/hr at {current_hobli}"
 
         rainfall_log = {
             "tick": session.tick,
+            "local_rainfall_mm_hr": round(local_rain_mm_hr, 1),
+            "local_hobli": current_hobli,
             "avg_rainfall_mm_hr": round(rain_mm_hr_avg, 1),
             "max_rainfall_mm_hr": round(rain_mm_hr_max, 1),
             "max_flood_depth_m": round(max_depth_on_graph, 3),
