@@ -1,162 +1,440 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+/* ── Root Container ── */
 .citizen-view {
-  display: flex;
-  flex-direction: column;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  position: relative;
+  background: #0f172a;
 }
 
-.citizen-header {
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+/* ── Floating Glass Header (non-nav phases) ── */
+.floating-glass-header {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 50;
+  padding: 12px 18px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
-.citizen-header h1 {
-  font-size: 18px;
-  font-weight: 600;
+.floating-glass-header h1 {
+  font-size: 17px;
+  font-weight: 800;
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
+  color: #1e293b;
 }
 
-.citizen-header button {
-  padding: 6px 12px;
-  background-color: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
-  border-radius: 6px;
+.floating-glass-header h1 svg {
+  color: #2563eb;
+}
+
+.floating-glass-header button {
+  padding: 7px 14px;
+  background: #f1f5f9;
+  border: none;
+  color: #64748b;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 12px;
-  transition: background-color 0.2s;
+  font-weight: 600;
+  transition: all 0.15s ease;
 }
 
-.citizen-header button:hover {
-  background-color: rgba(255, 255, 255, 0.3);
+.floating-glass-header button:hover {
+  background: #e2e8f0;
+  color: #1e293b;
 }
 
+/* ── Navigation Top Bar (Google Maps green bar) ── */
+.nav-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  background: linear-gradient(180deg, #15803d 0%, #166534 100%);
+  color: white;
+  padding: 0;
+  box-shadow: 0 6px 24px rgba(21, 128, 61, 0.35);
+}
+
+.nav-top-bar .nav-instruction-area {
+  padding: 16px 20px 14px 20px;
+}
+
+.nav-top-bar .nav-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-top-bar .nav-instruction {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+  margin-bottom: 12px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.nav-top-bar .nav-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.nav-top-bar .nav-distance-block .nav-distance-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.nav-top-bar .nav-distance-block .nav-distance-value {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.nav-top-bar .nav-flood-chip {
+  background: rgba(220, 38, 38, 0.85);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  padding: 6px 12px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.nav-top-bar .nav-flood-chip-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+}
+
+.nav-top-bar .nav-flood-chip-value {
+  font-size: 18px;
+  font-weight: 900;
+  color: white;
+}
+
+/* ── Progress bar beneath nav top bar ── */
+.nav-progress-bar {
+  height: 5px;
+  background: rgba(0, 0, 0, 0.15);
+  width: 100%;
+}
+
+.nav-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #86efac, #4ade80, #22c55e);
+  transition: width 0.4s ease;
+  border-radius: 0 3px 3px 0;
+}
+
+/* ── Glass Bottom Sheet ── */
 .citizen-bottom-sheet {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  background: white;
-  border-radius: 20px 20px 0 0;
-  padding: 20px 16px;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 24px 24px 0 0;
+  padding: 16px 20px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
   z-index: 1000;
-  transition: height 0.3s ease;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   max-height: 80vh;
   overflow-y: auto;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
-.citizen-bottom-sheet::-webkit-scrollbar {
-  width: 6px;
+.bottom-sheet-handle {
+  width: 40px;
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 10px;
+  margin: 0 auto 14px auto;
 }
 
-.citizen-bottom-sheet::-webkit-scrollbar-track {
-  background: transparent;
-}
+.citizen-bottom-sheet::-webkit-scrollbar { width: 5px; }
+.citizen-bottom-sheet::-webkit-scrollbar-track { background: transparent; }
+.citizen-bottom-sheet::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
-.citizen-bottom-sheet::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 3px;
-}
-
+/* ── Premium Buttons ── */
 .citizen-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 48px;
+  min-height: 50px;
   width: 100%;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 500;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 12px 16px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.citizen-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .citizen-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
 }
 
 .citizen-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
+.citizen-btn.btn-primary {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+  color: white;
+}
+
+.citizen-btn.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+}
+
+.citizen-btn.btn-green {
+  background: linear-gradient(135deg, #059669, #10b981);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+  color: white;
+}
+
+.citizen-btn.btn-green:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+}
+
+.citizen-btn.btn-danger {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25);
+  color: white;
+}
+
+.citizen-btn.btn-secondary {
+  background: #f1f5f9;
+  color: #475569;
+  box-shadow: none;
+}
+
+.citizen-btn.btn-secondary:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+/* ── Turn-by-turn list ── */
+.turns-list-container {
+  background: #f8fafb;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.turns-list-header {
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #15803d, #16a34a);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.3px;
+}
+
+.turns-list-body {
+  padding: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.turn-item {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-left: 3px solid #e5e7eb;
+  padding-left: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.turn-item.active {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.turn-item.done {
+  border-left-color: #d1d5db;
+  opacity: 0.55;
+}
+
+.turn-item .turn-instruction {
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+}
+
+.turn-item.active .turn-instruction {
+  font-weight: 700;
+  color: #15803d;
+}
+
+.turn-item .turn-meta {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 3px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.turn-item .turn-flood-badge {
+  font-weight: 700;
+}
+
+.turn-item .turn-flood-badge.danger { color: #dc2626; }
+.turn-item .turn-flood-badge.warning { color: #f59e0b; }
+
+/* ── Journey stats card ── */
+.journey-stats {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.journey-stats .stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.journey-stats .stat-divider {
+  border: none;
+  height: 1px;
+  background: #e5e7eb;
+  margin: 8px 0;
+}
+
+/* ── LIVE badge ── */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: white;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+.live-badge::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: #4ade80;
+  border-radius: 50%;
+  animation: live-dot-pulse 1.5s infinite;
+}
+
+@keyframes live-dot-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+}
+
+/* ── Rerouting shimmer ── */
+.reroute-banner {
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #1d4ed8 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  color: white;
+  padding: 14px;
+  border-radius: 14px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Flood badge pills ── */
+.flood-badge-safe { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.flood-badge-moderate { background: #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.flood-badge-danger { background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+
+/* ── GPS pulse ── */
 @keyframes citizen-pulse {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.6);
-    opacity: 0.4;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .citizen-gps-dot {
   animation: citizen-pulse 2s infinite;
 }
 
-.flood-badge-low {
-  background-color: #dcfce7;
-  color: #166534;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+/* ── Animations ── */
+@keyframes slideInDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
-.flood-badge-medium {
-  background-color: #fef3c7;
-  color: #92400e;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.flood-badge-high {
-  background-color: #fee2e2;
-  color: #991b1b;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+@keyframes rainPulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.35; }
 }
 
+/* ── Responsive ── */
 @media (max-width: 640px) {
-  .citizen-header h1 {
-    font-size: 16px;
-  }
-
-  .citizen-header button {
-    font-size: 10px;
-    padding: 4px 8px;
-  }
-
-  .citizen-bottom-sheet {
-    max-height: 70vh;
-  }
-
-  .citizen-btn {
-    font-size: 14px;
-    min-height: 44px;
-  }
+  .floating-glass-header { left: 8px; right: 8px; top: 8px; padding: 10px 14px; }
+  .floating-glass-header h1 { font-size: 15px; }
+  .citizen-bottom-sheet { max-height: 75vh; padding: 14px 16px; border-radius: 20px 20px 0 0; }
+  .citizen-btn { font-size: 14px; min-height: 46px; }
+  .nav-top-bar .nav-instruction { font-size: 18px; }
+  .nav-top-bar .nav-distance-block .nav-distance-value { font-size: 22px; }
 }
