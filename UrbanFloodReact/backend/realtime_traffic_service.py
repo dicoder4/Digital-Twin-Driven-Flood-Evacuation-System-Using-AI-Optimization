@@ -207,6 +207,58 @@ async def get_route_traffic_eta(
     }
 
 
+async def embed_live_traffic_in_path(G: nx.DiGraph, path: List[int]) -> int:
+    """
+    Fetches live traffic ONLY for edges in the given path (not entire graph).
+    Much faster than fetching for all edges - typical route is 100-200 edges,
+    corridor has 10,000+ edges.
+
+    Args:
+        G: NetworkX DiGraph with road segments
+        path: List of node IDs representing the route
+
+    Returns:
+        Number of edges successfully updated with traffic data
+    """
+    segment_coords = []
+    edge_map = {}
+
+    # Collect midpoints ONLY for edges in the path
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i + 1]
+        node_u = G.nodes[u]
+        node_v = G.nodes[v]
+        mid_lat = (node_u["lat"] + node_v["lat"]) / 2
+        mid_lon = (node_u["lon"] + node_v["lon"]) / 2
+        segment_coords.append((mid_lat, mid_lon))
+        edge_map[len(segment_coords) - 1] = (u, v)
+
+    if not segment_coords:
+        logger.warning("No edges found in path for traffic embedding")
+        return 0
+
+    logger.info(f"Fetching live traffic for {len(segment_coords)} edges in path (vs corridor size)...")
+
+    # Fetch traffic data concurrently
+    traffic_tasks = [fetch_live_traffic_for_segment(coord) for coord in segment_coords]
+    traffic_results = await asyncio.gather(*traffic_tasks)
+
+    # Embed into graph
+    updated_count = 0
+    for idx, traffic_data in enumerate(traffic_results):
+        if traffic_data is None:
+            continue
+
+        u, v = edge_map[idx]
+        current_speed = traffic_data.get("current_speed")
+        if current_speed and current_speed > 0:
+            G[u][v]["live_speed_kmh"] = current_speed
+            updated_count += 1
+
+    logger.info(f"Traffic embedded into {updated_count} edges in path")
+    return updated_count
+
+
 def clear_traffic_cache():
     """Clear all cached traffic data."""
     global _traffic_cache, _cache_timestamps

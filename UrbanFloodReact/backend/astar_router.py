@@ -11,12 +11,16 @@ def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.2
     """
     Returns ordered list of node IDs from src to dst,
     or None if no passable path exists.
-    Cost includes travel time + flood penalty.
+    Cost includes travel time (accounting for live traffic) + flood penalty.
+
+    Uses live_speed_kmh if available on edges (from traffic data), falls back to speed_kph.
     """
     def cost(u, v, data):
         depth = data.get("water_depth", 0.0)
-        travel_min = (data["length"] / 1000.0) / data["speed_kph"] * 60.0
-        
+        # Prefer live traffic speed if available, otherwise use base speed
+        speed_kmh = data.get("live_speed_kmh", data.get("speed_kph", 40))
+        travel_min = (data["length"] / 1000.0) / speed_kmh * 60.0
+
         if depth >= impassable_depth:
             if strict:
                 return float("inf")
@@ -25,7 +29,7 @@ def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.2
         else:
             # Flood penalty: prefer less flooded routes
             flood_penalty = (depth ** 2) * 5.0
-            
+
         return travel_min + flood_penalty
 
     def heuristic(u, v):
@@ -33,7 +37,8 @@ def astar_route(G: nx.DiGraph, src: int, dst: int, impassable_depth: float = 0.2
         dlat = nu["lat"] - nv["lat"]
         dlon = nu["lon"] - nv["lon"]
         dist_km = math.sqrt(dlat**2 + dlon**2) * 111.0
-        return (dist_km / 50.0) * 60.0
+        # Use walking speed (5 km/h) for conservative heuristic in flood scenarios
+        return (dist_km / 5.0) * 60.0
 
     try:
         return nx.astar_path(G, src, dst, heuristic=heuristic, weight=cost)
@@ -114,10 +119,10 @@ def generate_steps(G: nx.DiGraph, path: list[int], street_names: dict = None) ->
 
 
 def route_summary(G: nx.DiGraph, path: list[int], impassable_depth: float = 0.25) -> dict:
-    """Computes total distance, time, and max flood depth for route."""
+    """Computes total distance, time (accounting for live traffic), and max flood depth for route."""
     total_dist = sum(G[path[i]][path[i + 1]]["length"] for i in range(len(path) - 1))
     total_time = sum(
-        (G[path[i]][path[i + 1]]["length"] / 1000) / G[path[i]][path[i + 1]]["speed_kph"] * 60
+        (G[path[i]][path[i + 1]]["length"] / 1000) / (G[path[i]][path[i + 1]].get("live_speed_kmh", G[path[i]][path[i + 1]].get("speed_kph", 40))) * 60
         for i in range(len(path) - 1)
     )
     max_depth = max(

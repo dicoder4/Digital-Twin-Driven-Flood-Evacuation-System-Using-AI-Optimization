@@ -105,8 +105,9 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
   const [watchId, setWatchId] = useState(null);
   const [rerouteCount, setRerouteCount] = useState(0);
   const [isRerouting, setIsRerouting] = useState(false);
-  
+
   const clickCountRef = useRef({ start_lastClick: 0, end_lastClick: 0 });
+  const debounceTimerRef = useRef(null);
 
   const rerouteIntervalRef = useRef(null);
   const mapRef = useRef(null);
@@ -185,6 +186,14 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSearchInputChange = (value) => {
+    setSearchQuery(value);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      handleGeocodeSearch(value);
+    }, 400);
   };
 
   const handleSelectDestination = (result) => {
@@ -417,6 +426,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
     return () => {
       if (rerouteIntervalRef.current) clearInterval(rerouteIntervalRef.current);
       if (watchIdVal !== null) navigator.geolocation.clearWatch(watchIdVal);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   }, [phase, routeData, destination]);
 
@@ -662,10 +672,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
               type="text"
               placeholder={translations.search_destination}
               value={searchQuery}
-              onChange={e => {
-                setSearchQuery(e.target.value);
-                handleGeocodeSearch(e.target.value);
-              }}
+              onChange={e => handleSearchInputChange(e.target.value)}
               autoFocus
               style={{
                 flex: 1, border: 'none', outline: 'none', background: 'transparent',
@@ -742,7 +749,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
                 {routeData.eta_minutes || Math.round((routeData.total_distance_m / 1000) / 30 * 60)} min
               </div>
               <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, marginTop: 4 }}>
-                {(routeData.total_distance_m / 1000).toFixed(1)} km • ETA
+                {(routeData.total_distance_m / 1000).toFixed(1)} km • ETA (inc. traffic)
               </div>
             </div>
             <div style={{
@@ -915,7 +922,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, marginTop: 4 }}>
-                  {Math.round(distanceRemaining / 1000 * 10) / 10} km remaining • Step {stepIdx + 1}/{routeData.steps.length}
+                  {Math.round(distanceRemaining / 1000 * 10) / 10} km remaining • with live traffic • Step {stepIdx + 1}/{routeData.steps.length}
                 </div>
               </div>
               <button
