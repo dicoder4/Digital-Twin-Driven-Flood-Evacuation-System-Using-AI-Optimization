@@ -18,20 +18,7 @@ harness can compare token counts, latency, and response content.
 import google.generativeai as genai
 import json
 import time
-from groq import Groq
 import os
-
-# Lazy initialization of Groq client to avoid errors when API key is not set
-_groq_client = None
-
-def _get_groq_client():
-    """Get or initialize Groq client lazily."""
-    global _groq_client
-    if _groq_client is None:
-        groq_key = os.environ.get("GROQ_API_KEY")
-        if groq_key:
-            _groq_client = Groq(api_key=groq_key)
-    return _groq_client
 
 
 # All parameter-less tools we can pre-materialize.
@@ -125,21 +112,6 @@ def _clean_context(enriched_context: dict) -> dict:
     return {k: v for k, v in enriched_context.items() if k not in drop_keys}
 
 
-def _trim_context_for_groq(enriched_context: dict) -> dict:
-    """
-    Aggressively trim context to fit Groq's ~6K token safe limit.
-    Keeps simulation summary, top-20 shelters, top-5 routes, top-3 junctures.
-    Drops route_details (large), local_inventory, shelter_overview raw lists.
-    """
-    trimmed = {
-        "simulation":         enriched_context.get("simulation", {}),
-        "shelter_overview":   enriched_context.get("shelter_overview", {}),
-        "route_overview":     enriched_context.get("route_overview", {}),
-        "shelters":           enriched_context.get("shelters", [])[:20],
-        "pressure_junctures": enriched_context.get("pressure_junctures", [])[:3],
-        "route_details":      enriched_context.get("route_details", [])[:5],
-    }
-    return trimmed
 
 
 async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
@@ -153,7 +125,7 @@ async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
     Returns:
         {
           "mode": "non_mcp",
-          "provider": "gemini" | "groq",
+          "provider": "gemini" | "gemini_key2",
           "response_text": str,
           "prompt_words": int,
           "response_words": int,
@@ -166,7 +138,7 @@ async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
     tool_dump   = _materialize_tool_dump()
     context_str = json.dumps(_clean_context(enriched_context), indent=2)
 
-    # This is the full prompt — same one sent to both Gemini and (trimmed) Groq
+    # This is the full prompt — same one sent to both Gemini keys
     full_prompt = (
         f"=== SIMULATION CONTEXT (full data dump) ===\n{context_str}\n\n"
         f"=== PRE-MATERIALIZED TOOL DATA (read-only briefing) ===\n{tool_dump}\n\n"
@@ -188,14 +160,13 @@ async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
     }
 
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_key:
-        result["error"] = "GEMINI_API_KEY not set"
-        return result
 
     t0 = time.time()  # Start timing before any provider attempt
 
     # ── Primary: Gemini 2.5 Flash ──────────────────────────────────────────────
     try:
+        if not gemini_key:
+            raise Exception("GEMINI_API_KEY not set — trying key 2")
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
             "gemini-2.5-flash",
@@ -205,55 +176,23 @@ async def analyze_no_mcp(question: str, enriched_context: dict) -> dict:
         text = response.text or ""
         result["provider"] = "gemini"
     except Exception as gemini_err:
-        print(f"Gemini failed for non-MCP, falling back to Groq: {gemini_err}")
+        print(f"Gemini key 1 failed for non-MCP ({type(gemini_err).__name__}), trying key 2: {gemini_err}")
 
-        # ── Fallback: Groq with trimmed context ────────────────────────────────
-        # Groq has a smaller context limit (~8K tokens) so we trim the context.
-        # The trimmed version retains top-50 shelters, top-10 routes, top-3 junctures.
-        groq_context_str = json.dumps(
-            _trim_context_for_groq(_clean_context(enriched_context)), indent=2
-        )
-        # Groq limit ~8K tokens: drop the tool dump (3K+ words) entirely —
-        # the trimmed context already contains the same data inline.
-        groq_prompt = (
-            f"=== SIMULATION CONTEXT (trimmed for context limit) ===\n{groq_context_str}\n\n"
-            f"=== USER QUESTION ===\n{question}\n"
-        )
-
-        try:
-            groq_client = _get_groq_client()
-            if groq_client:
-                import groq as groq_lib
-                import asyncio
-                delay = 10
-                for attempt in range(2):
-                    try:
-                        groq_resp = groq_client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
-                            messages=[
-                                {"role": "system", "content": SYSTEM_PROMPT},
-                                {"role": "user",   "content": groq_prompt},
-                            ],
-                            temperature=0.2,
-                            max_tokens=1500,
-                        )
-                        break
-                    except groq_lib.RateLimitError as e:
-                        if "tokens per day" in str(e) or attempt == 1:
-                            raise
-                        print(f"[non-MCP] Groq 429 — backing off {delay}s")
-                        await asyncio.sleep(delay)
-                        delay = min(delay * 2, 30)
-                text = groq_resp.choices[0].message.content or ""
-                result["provider"] = "groq"
-                result["prompt_words"] = len(groq_prompt.split())
-                result["prompt_chars"] = len(groq_prompt)
-            else:
-                result["error"] = f"Gemini failed and GROQ_API_KEY not set. Gemini error: {gemini_err}"
+        # ── Fallback: Gemini key 2 ─────────────────────────────────────────────
+        gemini_key_2 = os.environ.get("GEMINI_API_KEY_2")
+        if gemini_key_2:
+            try:
+                genai.configure(api_key=gemini_key_2)
+                model2 = genai.GenerativeModel("gemini-2.5-flash", system_instruction=SYSTEM_PROMPT)
+                response2 = model2.generate_content(full_prompt)
+                text = response2.text or ""
+                result["provider"] = "gemini_key2"
+            except Exception as gemini_err2:
+                result["error"] = f"Both Gemini keys failed. Key1: {gemini_err} | Key2: {gemini_err2}"
                 result["latency_s"] = round(time.time() - t0, 2)
                 return result
-        except Exception as groq_err:
-            result["error"] = f"Both providers failed. Gemini: {gemini_err} | Groq: {groq_err}"
+        else:
+            result["error"] = f"Gemini key 1 failed and GEMINI_API_KEY_2 not set. Error: {gemini_err}"
             result["latency_s"] = round(time.time() - t0, 2)
             return result
 

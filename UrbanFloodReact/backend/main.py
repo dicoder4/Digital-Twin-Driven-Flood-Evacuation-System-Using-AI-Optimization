@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
         print("Running in container/GCP environment (paths adjusted).")
     
     print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
-    print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
+    print(f"DEBUG: GEMINI_API_KEY_2 loaded: {os.getenv('GEMINI_API_KEY_2')}")
     
     # Bootstrap MongoDB
     try:

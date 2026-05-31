@@ -86,7 +86,7 @@ AGENT_TOOLS = [
 async def stream_chat(question: str, context_data: dict):
     """
     Stream an answer to a free-form user question about the evacuation.
-    Primary: Gemini 2.5 Flash  →  Fallback: Groq llama-3.1-8b-instant.
+    Primary: Gemini 2.5 Flash (GEMINI_API_KEY)  →  Fallback: Gemini 2.5 Flash (GEMINI_API_KEY_2).
     """
     # 1. Load Standards
     guidelines_text = _load_guidelines_text()
@@ -170,48 +170,52 @@ User Question: {question}
                 pass
             return  # success
         except Exception as e:
-            err_text = f"_(Gemini error: {e} — falling back to Groq...)_\n\n"
-            yield "data: " + json.dumps({"text": err_text}) + nl
+            yield "data: " + json.dumps({"text": f"_(Gemini key 1 {type(e).__name__} — trying key 2...)_\n\n"}) + nl
 
-    # ── Fallback: Groq llama-3.1-8b-instant ──────────────────────────────────
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        groq_url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {groq_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-                {"role": "user",   "content": user_prompt},
-            ],
-            "stream": True,
-        }
+    # ── Fallback: Gemini key 2 ────────────────────────────────────────────────
+    gemini_key_2 = os.getenv("GEMINI_API_KEY_2")
+    if gemini_key_2:
         try:
-            async with httpx.AsyncClient() as client:
-                async with client.stream("POST", groq_url, headers=headers, json=payload, timeout=None) as response:
-                    if response.status_code == 200:
-                        async for line in response.aiter_lines():
-                            if line.startswith("data: "):
-                                data_str = line[6:].strip()
-                                if data_str == "[DONE]":
-                                    break
-                                try:
-                                    data = json.loads(data_str)
-                                    content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                    if content:
-                                        yield "data: " + json.dumps({"text": content}) + nl
-                                except json.JSONDecodeError:
-                                    continue
-                        return
-                    else:
-                        err = f"_(Groq API error {response.status_code})_\n\n"
-                        yield "data: " + json.dumps({"text": err}) + nl
-        except Exception as e:
-            yield "data: " + json.dumps({"text": f"_(Groq connection failed: {e})_\n\n"}) + nl
+            import google.generativeai as genai
+            import inspect
+            genai.configure(api_key=gemini_key_2)
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                system_instruction=CHAT_SYSTEM_PROMPT,
+                tools=AGENT_TOOLS
+            )
+            chat = model.start_chat()
+            response = chat.send_message(user_prompt)
+            for i in range(10):
+                if not response.candidates or not response.candidates[0].content.parts:
+                    break
+                parts = response.candidates[0].content.parts
+                found_call = False
+                for part in parts:
+                    if part.function_call:
+                        found_call = True
+                        fc = part.function_call
+                        args = {k: v for k, v in fc.args.items()}
+                        func = next((t for t in AGENT_TOOLS if t.__name__ == fc.name), None)
+                        if func:
+                            try:
+                                result = await func(**args) if inspect.iscoroutinefunction(func) else func(**args)
+                            except Exception as tool_e:
+                                result = f"Error: {tool_e}"
+                            response = chat.send_message(
+                                genai.protos.Content(parts=[genai.protos.Part(
+                                    function_response=genai.protos.FunctionResponse(
+                                        name=fc.name, response={"result": result}))])
+                            )
+                if not found_call:
+                    break
+            try:
+                if response.text:
+                    yield "data: " + json.dumps({"text": response.text}) + nl
+            except ValueError:
+                pass
             return
+        except Exception as e2:
+            yield "data: " + json.dumps({"text": f"_(Gemini key 2 also failed: {type(e2).__name__})_\n\n"}) + nl
 
-    # ── All providers unavailable ─────────────────────────────────────────────
-    yield "data: " + json.dumps({"text": "_(No AI provider available. Set GEMINI_API_KEY or GROQ_API_KEY.)_"}) + nl
+    yield "data: " + json.dumps({"text": "_(No Gemini key available. Set GEMINI_API_KEY or GEMINI_API_KEY_2.)_"}) + nl

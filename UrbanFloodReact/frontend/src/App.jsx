@@ -788,6 +788,8 @@ export default function App() {
                   onSelectMetro={setSelectedMetro}
                   selectedMetroId={selectedMetro ? (selectedMetro.id || `${selectedMetro.name}::${selectedMetro.line || ''}`) : null}
                   loadedHobli={loadedHobli}
+                  onMetroLinesLoaded={setMetroLines}
+                  metroLinesLoaded={!!(metroLines?.features?.length > 0 || (Array.isArray(metroLines) && metroLines.length > 0))}
                 />
                 {compareResults && compareActiveAlgo ? (
                   <>

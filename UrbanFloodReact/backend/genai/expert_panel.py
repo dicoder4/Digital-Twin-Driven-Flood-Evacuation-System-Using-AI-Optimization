@@ -2,7 +2,7 @@
 expert_panel.py — Streaming expert advice via Gemini 2.5 Flash
 ──────────────────────────────────────────────────────────────
 Primary: Gemini 2.5 Flash (google-generativeai SDK, non-streaming REST).
-Fallback: Groq llama-3.1-8b-instant (SSE stream).
+Fallback: Gemini 2.5 Flash (GEMINI_API_KEY_2) (SSE stream).
 
 PATCH LOG:
   Bug 1 — Removed specific item names from PERSONAS["logistics"] example table.
@@ -873,7 +873,7 @@ def format_guidelines_reference_card() -> str:
 async def stream_advice(persona: str, summary_data: dict):
     """
     Stream expert advice for the given persona.
-    Primary: Gemini 2.5 Flash. Fallback: Groq llama-3.1-8b-instant.
+    Primary: Gemini 2.5 Flash. Fallback: Gemini 2.5 Flash (GEMINI_API_KEY_2).
     """
     location_name = summary_data.get("simulation", {}).get("location", "TARGET_ZONE_UNSPECIFIED")
     if location_name == "Unknown":
@@ -912,9 +912,13 @@ async def stream_advice(persona: str, summary_data: dict):
     )
     nl = "\n\n"
 
-    # ── Primary: Gemini 2.5 Flash ─────────────────────────────────────────────
+    # ── Primary: Gemini key 1 — buffered so mid-generation failures are clean ──
+    # Key 1 accumulates all chunks before sending any to the client.
+    # If it fails at any point (start OR mid-generation), the buffer is discarded
+    # and key 2 takes over — the client never sees partial key 1 output.
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
+        key1_buf = []
         try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
@@ -924,70 +928,61 @@ async def stream_advice(persona: str, summary_data: dict):
             )
             response = model.generate_content(prompt_text, stream=True)
             for chunk in response:
-                text = getattr(chunk, "text", None)
+                try:
+                    text = chunk.text
+                except (ValueError, AttributeError):
+                    text = None
                 if text:
-                    yield "data: " + json.dumps({"text": text}) + nl
+                    key1_buf.append(text)
+            # Key 1 completed fully — flush buffer to client
+            for text in key1_buf:
+                yield "data: " + json.dumps({"text": text}) + nl
             return
         except Exception as e:
-            err_msg = str(e)
-            if "finish_reason" in err_msg:
-                err_msg = "Safety filter triggered"
-            elif "429" in err_msg:
-                err_msg = "Quota exceeded"
-            err_text = f"_(Gemini: {err_msg} — falling back to Groq...)_\n\n"
+            # Key 1 failed — discard any partial buffer silently
+            e_str = str(e)
+            if "429" in e_str or "quota" in e_str.lower():
+                err_short = "quota exceeded"
+            elif "API_KEY_INVALID" in e_str or "API key not valid" in e_str or "403" in e_str:
+                err_short = "API key invalid"
+            elif "finish_reason" in e_str:
+                err_short = "safety filter"
+            elif "blocked" in e_str.lower():
+                err_short = "key blocked"
+            else:
+                err_short = type(e).__name__
+            err_text = f"_(⚠ Key 1 {err_short} — using key 2...)_\n\n"
             yield "data: " + json.dumps({"text": err_text}) + nl
 
-    # ── Fallback: Groq llama-3.1-8b-instant ──────────────────────────────────
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        groq_url = "https://api.groq.com/openai/v1/chat/completions"
-        headers  = {
-            "Authorization": f"Bearer {groq_key}",
-            "Content-Type":  "application/json",
-        }
-        payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": prompt_text},
-            ],
-            "stream": True,
-        }
+    # ── Fallback: Gemini key 2 — streams live ────────────────────────────────
+    gemini_key_2 = os.getenv("GEMINI_API_KEY_2")
+    if gemini_key_2:
+        k2_sent = False
         try:
-            async with httpx.AsyncClient() as client:
-                async with client.stream(
-                    "POST", groq_url, headers=headers, json=payload, timeout=None
-                ) as response:
-                    if response.status_code == 200:
-                        async for line in response.aiter_lines():
-                            if line.startswith("data: "):
-                                data_str = line[6:].strip()
-                                if data_str == "[DONE]":
-                                    break
-                                try:
-                                    data    = json.loads(data_str)
-                                    content = (
-                                        data.get("choices", [{}])[0]
-                                        .get("delta", {})
-                                        .get("content", "")
-                                    )
-                                    if content:
-                                        yield "data: " + json.dumps({"text": content}) + nl
-                                except json.JSONDecodeError:
-                                    continue
-                        return
-                    else:
-                        yield "data: " + json.dumps({
-                            "text": f"_(Groq API error {response.status_code})_\n\n"
-                        }) + nl
-        except Exception as e:
-            yield "data: " + json.dumps({
-                "text": f"_(Groq connection failed: {e})_\n\n"
-            }) + nl
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key_2)
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                system_instruction=system_prompt,
+            )
+            for chunk in model.generate_content(prompt_text, stream=True):
+                try:
+                    text = chunk.text
+                except (ValueError, AttributeError):
+                    text = None
+                if text:
+                    yield "data: " + json.dumps({"text": text}) + nl
+                    k2_sent = True
             return
+        except Exception as e2:
+            if not k2_sent:
+                yield "data: " + json.dumps({
+                    "text": f"_(Gemini key 2 failed: {type(e2).__name__})_\n\n"
+                }) + nl
+        return  # key 2 existed — never fall through to "no provider"
 
     yield "data: " + json.dumps({
-        "text": "_(No AI provider available. Set GEMINI_API_KEY or GROQ_API_KEY.)_"
+        "text": "_(No Gemini key available. Set GEMINI_API_KEY or GEMINI_API_KEY_2.)_"
     }) + nl
 
 async def stream_algorithm_analysis(metrics: dict, location: str):
@@ -1009,21 +1004,51 @@ async def stream_algorithm_analysis(metrics: dict, location: str):
     )
     nl = "\n\n"
     
-    # ── Primary: Gemini 2.5 Flash ──
+    # ── Primary: Gemini key 1 — buffered ──────────────────────────────────────
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
+        buf = []
         try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
-            response = model.generate_content(prompt_text, stream=True)
-            for chunk in response:
-                if chunk.text:
-                    yield "data: " + json.dumps({"text": chunk.text}) + nl
+            for chunk in model.generate_content(prompt_text, stream=True):
+                try:
+                    text = chunk.text
+                except (ValueError, AttributeError):
+                    text = None
+                if text:
+                    buf.append(text)
+            for text in buf:
+                yield "data: " + json.dumps({"text": text}) + nl
             return
         except Exception as e:
-            yield "data: " + json.dumps({"text": f"_(Gemini error: {e})_"}) + nl
-    
+            yield "data: " + json.dumps({"text": f"_(⚠ Key 1 {type(e).__name__} — using key 2...)_\n\n"}) + nl
+
+    # ── Fallback: Gemini key 2 — streams live ─────────────────────────────────
+    gemini_key_2 = os.getenv("GEMINI_API_KEY_2")
+    if gemini_key_2:
+        k2_sent = False
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key_2)
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+            for chunk in model.generate_content(prompt_text, stream=True):
+                try:
+                    text = chunk.text
+                except (ValueError, AttributeError):
+                    text = None
+                if text:
+                    yield "data: " + json.dumps({"text": text}) + nl
+                    k2_sent = True
+            return
+        except Exception as e2:
+            if not k2_sent:
+                yield "data: " + json.dumps({"text": f"_(Key 2 failed: {type(e2).__name__})_\n\n"}) + nl
+        return
+
+    yield "data: " + json.dumps({"text": "_(No Gemini key available. Set GEMINI_API_KEY or GEMINI_API_KEY_2.)_"}) + nl
+
 
 async def stream_scenario_analysis(metrics: dict, location: str):
     """
@@ -1042,18 +1067,48 @@ async def stream_scenario_analysis(metrics: dict, location: str):
     )
     nl = "\n\n"
     
-    # ── Primary: Gemini 2.5 Flash ──
+    # ── Primary: Gemini key 1 — buffered ──────────────────────────────────────
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
+        buf = []
         try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
-            response = model.generate_content(prompt_text, stream=True)
-            for chunk in response:
-                if chunk.text:
-                    yield "data: " + json.dumps({"text": chunk.text}) + nl
+            for chunk in model.generate_content(prompt_text, stream=True):
+                try:
+                    text = chunk.text
+                except (ValueError, AttributeError):
+                    text = None
+                if text:
+                    buf.append(text)
+            for text in buf:
+                yield "data: " + json.dumps({"text": text}) + nl
             return
         except Exception as e:
-            yield "data: " + json.dumps({"text": f"_(Gemini error: {e})_"}) + nl
+            yield "data: " + json.dumps({"text": f"_(⚠ Key 1 {type(e).__name__} — using key 2...)_\n\n"}) + nl
+
+    # ── Fallback: Gemini key 2 — streams live ─────────────────────────────────
+    gemini_key_2 = os.getenv("GEMINI_API_KEY_2")
+    if gemini_key_2:
+        k2_sent = False
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key_2)
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+            for chunk in model.generate_content(prompt_text, stream=True):
+                try:
+                    text = chunk.text
+                except (ValueError, AttributeError):
+                    text = None
+                if text:
+                    yield "data: " + json.dumps({"text": text}) + nl
+                    k2_sent = True
+            return
+        except Exception as e2:
+            if not k2_sent:
+                yield "data: " + json.dumps({"text": f"_(Key 2 failed: {type(e2).__name__})_\n\n"}) + nl
+        return
+
+    yield "data: " + json.dumps({"text": "_(No Gemini key available. Set GEMINI_API_KEY or GEMINI_API_KEY_2.)_"}) + nl
 

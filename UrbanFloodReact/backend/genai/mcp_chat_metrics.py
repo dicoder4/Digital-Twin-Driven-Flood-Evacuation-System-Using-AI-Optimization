@@ -76,24 +76,6 @@ def _tools_to_openai_schema(tools: list) -> list[dict]:
     return schemas
 
 
-async def _groq_create_with_retry(groq_client: Any, max_retries: int = 2, **kwargs) -> Any:
-    """Call groq_client.chat.completions.create with backoff on 429.
-    Only 2 retries — if daily token quota is exhausted, retrying indefinitely wastes time."""
-    import groq as groq_lib
-    delay = 10
-    for attempt in range(max_retries):
-        try:
-            return groq_client.chat.completions.create(**kwargs)
-        except groq_lib.RateLimitError as e:
-            # If it's a daily token limit (not per-minute), don't retry at all
-            if "tokens per day" in str(e):
-                raise
-            if attempt == max_retries - 1:
-                raise
-            print(f"[MCP] Groq 429 — backing off {delay}s (attempt {attempt+1}/{max_retries})")
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, 30)
-
 
 def _fill_tool_defaults(fn_name: str, args: dict, enriched_context: dict) -> dict:
     """Fill missing required args with sensible defaults from the simulation context."""
@@ -115,95 +97,6 @@ def _fill_tool_defaults(fn_name: str, args: dict, enriched_context: dict) -> dic
             args["zone_name"] = sim.get("location", "")
     return args
 
-
-async def _run_groq_tool_loop(
-    groq_client: Any,
-    tools: list,
-    user_prompt: str,
-    result: dict,
-    enriched_context: dict,
-    max_loops: int = 10,
-) -> str:
-    """
-    Full OpenAI-format tool-calling loop for Groq with retry on 429.
-    Mirrors the Gemini loop: send → execute tools → feed results back → repeat.
-    """
-    tool_schemas = _tools_to_openai_schema(tools)
-    tool_map = {fn.__name__: fn for fn in tools}
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_prompt},
-    ]
-
-    for _ in range(max_loops):
-        resp = await _groq_create_with_retry(
-            groq_client,
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            tools=tool_schemas,
-            tool_choice="auto",
-            temperature=0.2,
-            max_tokens=2000,
-        )
-        msg = resp.choices[0].message
-
-        if not msg.tool_calls:
-            return msg.content or ""
-
-        messages.append({
-            "role": "assistant",
-            "content": msg.content,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in msg.tool_calls
-            ],
-        })
-
-        for tc in msg.tool_calls:
-            fn_name = tc.function.name
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
-
-            args = _fill_tool_defaults(fn_name, args, enriched_context)
-
-            func = tool_map.get(fn_name)
-            if func is None:
-                tool_result = f"Tool '{fn_name}' not found"
-            else:
-                try:
-                    if inspect.iscoroutinefunction(func):
-                        tool_result = await func(**args)
-                    else:
-                        tool_result = func(**args)
-                except Exception as e:
-                    tool_result = f"Error executing tool: {e}"
-
-            preview = (str(tool_result)[:300] + "...") if len(str(tool_result)) > 300 else str(tool_result)
-            result["tool_calls"].append({"name": fn_name, "args": args, "result_preview": preview})
-
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": str(tool_result),
-            })
-
-    # Max loops reached — ask for final answer
-    messages.append({"role": "user", "content": "Please summarize your findings based on the tool results above."})
-    final = await _groq_create_with_retry(
-        groq_client,
-        model="llama-3.3-70b-versatile",
-        messages=messages,
-        temperature=0.2,
-        max_tokens=2000,
-    )
-    return final.choices[0].message.content or ""
 
 
 def _load_tools():
@@ -307,13 +200,11 @@ async def analyze_with_mcp(question: str, enriched_context: dict, max_tool_loops
     }
 
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_key:
-        result["error"] = "GEMINI_API_KEY not set"
-        return result
-
     t0 = time.time()
 
     try:
+        if not gemini_key:
+            raise Exception("GEMINI_API_KEY not set — trying key 2")
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
@@ -394,27 +285,66 @@ async def analyze_with_mcp(question: str, enriched_context: dict, max_tool_loops
 
     except Exception as e:
         result["error"] = str(e)
-        
-        # Fallback to Groq with full tool-calling loop
-        print(f"[MCP] Gemini failed: {e}. Attempting Groq tool-calling fallback...")
-        try:
-            from groq import Groq
-            groq_key = os.environ.get("GROQ_API_KEY")
-            if groq_key:
-                groq_client = Groq(api_key=groq_key)
-                text = await _run_groq_tool_loop(groq_client, tools, user_prompt, result, enriched_context)
-                result["response_text"]  = text
-                result["response_chars"] = len(text)
-                result["response_words"] = len(text.split())
+
+        # ── Fallback: Gemini key 2, same tool-calling loop ─────────────────────
+        print(f"[MCP] Gemini key 1 failed ({type(e).__name__}): {e}. Trying key 2...")
+        gemini_key_2 = os.environ.get("GEMINI_API_KEY_2")
+        if gemini_key_2:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=gemini_key_2)
+                model2 = genai.GenerativeModel(
+                    model_name="gemini-2.5-flash",
+                    system_instruction=SYSTEM_PROMPT,
+                    tools=tools,
+                )
+                chat2 = model2.start_chat()
+                response2 = chat2.send_message(user_prompt)
+
+                for _ in range(10):
+                    if not response2.candidates or not response2.candidates[0].content or not response2.candidates[0].content.parts:
+                        break
+                    parts = response2.candidates[0].content.parts
+                    found_call = False
+                    for part in parts:
+                        if part.function_call:
+                            found_call = True
+                            fc = part.function_call
+                            fn_name = fc.name
+                            args = _fill_tool_defaults(fn_name, {k: v for k, v in fc.args.items()}, enriched_context)
+                            func = next((t for t in tools if t.__name__ == fn_name), None)
+                            if func is None:
+                                tool_result = f"Tool '{fn_name}' not found"
+                            else:
+                                try:
+                                    tool_result = await func(**args) if inspect.iscoroutinefunction(func) else func(**args)
+                                except Exception as tool_e:
+                                    tool_result = f"Error: {tool_e}"
+                            preview = (str(tool_result)[:300] + "...") if len(str(tool_result)) > 300 else str(tool_result)
+                            result["tool_calls"].append({"name": fn_name, "args": args, "result_preview": preview})
+                            response2 = chat2.send_message(
+                                genai.protos.Content(parts=[genai.protos.Part(
+                                    function_response=genai.protos.FunctionResponse(
+                                        name=fn_name, response={"result": tool_result}))])
+                            )
+                            break
+                    if not found_call:
+                        break
+
+                text_parts2 = [p.text for p in response2.candidates[0].content.parts if p.text] if response2.candidates and response2.candidates[0].content else []
+                text = "\n".join(text_parts2)
+                result["response_text"]   = text
+                result["response_chars"]  = len(text)
+                result["response_words"]  = len(text.split())
                 result["tool_call_count"] = len(result["tool_calls"])
-                result["error"] = None
-                result["provider"] = "groq"
+                result["error"]           = None
+                result["provider"]        = "gemini_key2"
+                result["latency_s"]       = round(time.time() - t0, 2)
+                print(f"[MCP] Gemini key 2 fallback succeeded: {result['tool_call_count']} tools, {len(text)} chars")
+            except Exception as e2:
                 result["latency_s"] = round(time.time() - t0, 2)
-                print(f"[MCP] Groq tool-calling fallback succeeded: {result['tool_call_count']} tools, {len(text)} chars")
-            else:
-                print("[MCP] Groq API key not available for fallback")
-        except Exception as groq_e:
-            result["latency_s"] = round(time.time() - t0, 2)
-            print(f"[MCP] Groq fallback also failed: {groq_e}")
+                print(f"[MCP] Gemini key 2 also failed: {e2}")
+        else:
+            print("[MCP] GEMINI_API_KEY_2 not set")
 
     return result

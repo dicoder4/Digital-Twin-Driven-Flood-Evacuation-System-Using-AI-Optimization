@@ -482,10 +482,10 @@ def generate_evacuation_strategy() -> str:
         return "No simulation data available. Run a simulation first."
 
     gemini_key = os.getenv("GEMINI_API_KEY")
-    groq_key = os.getenv("GROQ_API_KEY")
+    gemini_key_2 = os.getenv("GEMINI_API_KEY_2")
 
-    if not gemini_key and not groq_key:
-        return "Error: Neither GEMINI_API_KEY nor GROQ_API_KEY is set in the environment."
+    if not gemini_key and not gemini_key_2:
+        return "Error: Neither GEMINI_API_KEY nor GEMINI_API_KEY_2 is set in the environment."
 
     system_prompt = """You are the Chief Strategy Officer for a Digital Twin-Driven Flood Evacuation System.
 Analyze the provided real-time simulation data and generate a comprehensive tactical evacuation strategy.
@@ -513,32 +513,20 @@ Rules:
             response = model.generate_content(prompt_text)
             return response.text if response.text else "Strategy generation returned an empty response."
         except Exception as e:
-            if not groq_key:
-                return f"Error generating strategy via Gemini: {e}"
-            # Fall through to Groq if Gemini fails but Groq is available
+            if not gemini_key_2:
+                return f"Error generating strategy via Gemini key 1: {e}"
+            # Fall through to key 2
 
-    # Fallback: Groq
-    if groq_key:
-        import httpx
+    # Fallback: Gemini key 2
+    if gemini_key_2:
         try:
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {groq_key}",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "model": "llama-3.1-8b-instant",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt_text},
-                ],
-            }
-            resp = httpx.post(url, headers=headers, json=payload, timeout=30.0)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            return f"Error generating strategy via Groq fallback: {e}"
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key_2)
+            model2 = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+            response2 = model2.generate_content(prompt_text)
+            return response2.text if response2.text else "Strategy generation returned an empty response."
+        except Exception as e2:
+            return f"Both Gemini keys failed. Key2 error: {e2}"
 
     return "Failed to generate strategy."
 

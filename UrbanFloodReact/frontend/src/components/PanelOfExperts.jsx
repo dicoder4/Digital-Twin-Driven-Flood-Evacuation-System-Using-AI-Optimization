@@ -383,6 +383,18 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
     const [downloading, setDownloading] = useState({ docx: false, pdf: false });
 
     // Handle Notify Actions Role-based
+    // Strip leading _( ... )_ system notes from AI report before emailing
+    const extractCleanReport = (raw) => {
+        if (!raw) return "";
+        let rest = raw;
+        while (rest.startsWith('_(')) {
+            const ci = rest.indexOf(')_');
+            if (ci === -1) break;
+            rest = rest.slice(ci + 2).replace(/^\n+/, '');
+        }
+        return rest.trim();
+    };
+
     const handleNotifyActions = async () => {
         setNotifyLoading(true);
         try {
@@ -410,7 +422,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                    total_at_risk: summary?.total_at_risk_initial || summary?.simulation_population || 0
                 },
                 location_data: { location_name: locationName || 'Unknown' },
-                ai_report: (user?.role === 'authority') ? (responses['sos_expert'] || responses['civic']) : (responses['civic'] || ""),
+                ai_report: (user?.role === 'authority') ? extractCleanReport(responses['sos_expert'] || responses['civic']) : extractCleanReport(responses['civic'] || ""),
                 map_image_base64: mapImageBase64
             };
             const res = await fetch(`${API_URL}${endpoint}`, {
@@ -732,6 +744,18 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
         if (!isExpanded) return null;
         const mdComponents = makeMarkdownComponents(activeTab, false);
 
+        // Same system-note extraction as InlineReport
+        const rawModal = responses[activeTab] || '';
+        const modalSysNotes = [];
+        let modalRest = rawModal;
+        while (modalRest.startsWith('_(')) {
+            const ci = modalRest.indexOf(')_');
+            if (ci === -1) break;
+            modalSysNotes.push(modalRest.slice(2, ci).trim());
+            modalRest = modalRest.slice(ci + 2).replace(/^\n+/, '');
+        }
+        const modalContent = modalSysNotes.length ? modalRest : rawModal;
+
         return createPortal(
             <div
                 style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, backdropFilter: 'blur(3px)' }}
@@ -801,8 +825,19 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                     </div>
 
                     <div className="custom-scrollbar" style={{ padding: '28px 32px', overflowY: 'auto', flex: 1, background: '#fafafa' }}>
+                        {modalSysNotes.length > 0 && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                background: '#fef9c3', border: '1px solid #fde047',
+                                borderRadius: '6px', padding: '6px 12px', marginBottom: '16px',
+                                fontSize: '12px', color: '#854d0e',
+                            }}>
+                                <AlertTriangle size={13} style={{ color: '#ca8a04', flexShrink: 0 }} />
+                                <span>{modalSysNotes.join(' · ')}</span>
+                            </div>
+                        )}
                         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                            {responses[activeTab]}
+                            {modalContent}
                         </ReactMarkdown>
                     </div>
                 </div>
@@ -814,8 +849,34 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
     // ── Inline report preview ────────────────────────────────────────────────
     const InlineReport = () => {
         const mdComponents = makeMarkdownComponents(activeTab, true);
+        const raw = responses[activeTab] || '';
+
+        // Strip leading _( ... )_ system notes from report body
+        const sysNotes = [];
+        let rest = raw;
+        while (rest.startsWith('_(')) {
+            const closeIdx = rest.indexOf(')_');
+            if (closeIdx === -1) break;
+            sysNotes.push(rest.slice(2, closeIdx).trim());
+            rest = rest.slice(closeIdx + 2).replace(/^\n+/, '');
+        }
+        const reportContent = sysNotes.length ? rest : raw;
+
         return (
             <div style={{ position: 'relative' }}>
+                {/* System note banner — shown only when key 1 fell back to key 2 */}
+                {sysNotes.length > 0 && (
+                    <div style={{
+                        display: 'flex', alignItems: 'flex-start', gap: '6px',
+                        background: '#fef9c3', border: '1px solid #fde047',
+                        borderRadius: '6px', padding: '5px 10px', marginBottom: '10px',
+                        fontSize: '11px', color: '#854d0e', lineHeight: 1.4,
+                        maxWidth: 'calc(100% - 150px)',
+                    }}>
+                        <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: '1px', color: '#ca8a04' }} />
+                        <span>{sysNotes.join(' · ')}</span>
+                    </div>
+                )}
                 {/* Action bar: Expand + Download buttons */}
                 <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 10,
                               display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -889,7 +950,7 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                 </div>
 
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                    {responses[activeTab]}
+                    {reportContent}
                 </ReactMarkdown>
 
                 {loading[activeTab] && (

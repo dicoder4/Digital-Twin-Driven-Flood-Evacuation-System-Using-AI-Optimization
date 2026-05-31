@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
 import html
+import re
 from twilio.rest import Client
 from dotenv import load_dotenv
 from db import _get_db
@@ -110,13 +111,63 @@ class SOSRequest(BaseModel):
     frontend_base_url: Optional[str] = "http://localhost:5173"
 
 
+def _strip_system_notes(text: str) -> str:
+    """Remove _( ... )_ AI fallback notices — backend safety net."""
+    return re.sub(r'_\(.*?\)_\n*', '', text, flags=re.DOTALL).strip()
+
+
+def _md_to_html(text: str) -> str:
+    """Reliable markdown→HTML covering the report format without external deps."""
+    def inline(s):
+        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+        s = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', r'<em>\1</em>', s)
+        return s
+
+    lines = text.split('\n')
+    out, in_ul = [], False
+
+    for line in lines:
+        s = line.rstrip()
+        if s.startswith('### '):
+            if in_ul: out.append('</ul>'); in_ul = False
+            out.append(f'<h3 style="color:#2c3e50;margin:14px 0 6px">{inline(s[4:])}</h3>')
+        elif s.startswith('## '):
+            if in_ul: out.append('</ul>'); in_ul = False
+            out.append(f'<h2 style="color:#2c3e50;border-bottom:1px solid #e8e8e8;padding-bottom:4px;margin:18px 0 8px">{inline(s[3:])}</h2>')
+        elif s.startswith('# '):
+            if in_ul: out.append('</ul>'); in_ul = False
+            out.append(f'<h1 style="color:#2c3e50;font-size:18px;margin:20px 0 10px">{inline(s[2:])}</h1>')
+        elif s.startswith('- ') or s.startswith('* '):
+            if not in_ul: out.append('<ul style="margin:6px 0;padding-left:20px">'); in_ul = True
+            out.append(f'<li style="margin-bottom:3px">{inline(s[2:])}</li>')
+        elif s in ('---', '***', '___'):
+            if in_ul: out.append('</ul>'); in_ul = False
+            out.append('<hr style="border:none;border-top:1px solid #e8e8e8;margin:14px 0"/>')
+        elif s == '':
+            if in_ul: out.append('</ul>'); in_ul = False
+        else:
+            if in_ul: out.append('</ul>'); in_ul = False
+            out.append(f'<p style="margin:5px 0">{inline(s)}</p>')
+
+    if in_ul:
+        out.append('</ul>')
+    return '\n'.join(out)
+
+
 def render_report_markdown(raw_text: Optional[str]) -> str:
     if not raw_text:
         return ""
+    # Strip any _( ... )_ system notices before rendering
+    text = _strip_system_notes(raw_text)
+    if not text:
+        return ""
     if markdown_lib is not None:
-        return markdown_lib.markdown(raw_text)
-    # Fallback keeps SOS/notifications functional when markdown isn't installed.
-    return html.escape(raw_text).replace("\n", "<br/>")
+        try:
+            return markdown_lib.markdown(text, extensions=['nl2br'])
+        except Exception:
+            pass
+    # Own converter — handles all report patterns reliably
+    return _md_to_html(text)
 
 
 def normalize_evacuation_metrics(evacuation_data: Dict[str, Any]) -> Dict[str, Any]:

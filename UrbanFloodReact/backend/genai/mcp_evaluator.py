@@ -161,9 +161,8 @@ async def llm_judge(question: str, response_text: str, enriched_context: dict) -
     Blind LLM-judge with Gemini primary + Groq fallback.
 
     Uses Gemini 2.5 Flash first. On any error (including 429 quota exhaustion),
-    falls back to Groq llama-3.3-70b which has a much higher free-tier limit.
-    This means the research harness keeps working even after Gemini's 20-req/day
-    free quota is hit.
+    falls back to GEMINI_API_KEY_2 so the research harness keeps working
+    even after the primary key's quota is exhausted.
     """
     _empty = {"accuracy": None, "specificity": None, "actionability": None,
               "hallucination_severity": None, "reason": "judge skipped"}
@@ -202,35 +201,25 @@ async def llm_judge(question: str, response_text: str, enriched_context: dict) -
         except Exception:
             pass  # fall through to Groq on any Gemini failure (quota, safety, network)
 
-    # ── Fallback: Groq llama-3.3-70b ──────────────────────────────────────────
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        import httpx
-        messages = [
-            {"role": "system", "content": JUDGE_PROMPT},
-            {"role": "user",   "content": judge_user},
-        ]
+    # ── Fallback: Gemini key 2 ────────────────────────────────────────────────
+    gemini_key_2 = os.getenv("GEMINI_API_KEY_2")
+    if gemini_key_2:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {groq_key}",
-                             "Content-Type": "application/json"},
-                    json={"model": "llama-3.3-70b-versatile", "messages": messages,
-                          "temperature": 0.1},
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
-                content = resp.json()["choices"][0]["message"]["content"]
-                parsed  = _parse_judge_json(content.strip())
-                if parsed:
-                    parsed["provider"] = "groq"
-                    return parsed
-                return {**_empty, "reason": "groq judge returned non-JSON"}
-        except Exception as groq_err:
-            return {**_empty, "reason": f"both providers failed — groq: {groq_err}"}
+            import google.generativeai as genai
+            import asyncio
+            genai.configure(api_key=gemini_key_2)
+            model2 = genai.GenerativeModel("gemini-2.5-flash", system_instruction=JUDGE_PROMPT)
+            loop   = asyncio.get_event_loop()
+            resp2  = await loop.run_in_executor(None, lambda: model2.generate_content(judge_user))
+            parsed = _parse_judge_json((resp2.text or "").strip())
+            if parsed:
+                parsed["provider"] = "gemini_key2"
+                return parsed
+            return {**_empty, "reason": "gemini key2 judge returned non-JSON"}
+        except Exception as e2:
+            return {**_empty, "reason": f"both Gemini keys failed — key2: {e2}"}
 
-    return {**_empty, "reason": "no API keys available for judge"}
+    return {**_empty, "reason": "no Gemini key available for judge"}
 
 
 # ── Top-level comparison ──────────────────────────────────────────────────────

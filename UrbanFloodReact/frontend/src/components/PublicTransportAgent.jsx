@@ -13,15 +13,18 @@ export function PublicTransportAgent({
     onSelectBus,
     metroReports = [], // Array of { name, lat, lon, flooded } from final simulation report
     metroStations = [],
-    onSelectMetro,     // Callback to show metro pin on map
-    selectedMetroId,   // ID/Name of metro to highlight
-    loadedHobli
+    onSelectMetro,       // Callback to show metro pin on map
+    selectedMetroId,     // ID/Name of metro to highlight
+    loadedHobli,
+    onMetroLinesLoaded,  // Callback to push metro lines GeoJSON to the map
+    metroLinesLoaded,    // True when App.jsx already has metro lines from handleLoadRegion
 }) {
     const { lang } = useLanguage();
     const [manifest, setManifest] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [stations, setStations] = useState([]); // Initial station list
+    const [metroLoading, setMetroLoading] = useState(false);
 
     // UI state for independent dropdowns
     const [busOpen, setBusOpen] = useState(true);
@@ -30,6 +33,32 @@ export function PublicTransportAgent({
     useEffect(() => {
         setStations(metroStations || []);
     }, [metroStations]);
+
+    // Auto-fetch metro stations + lines when accordion opens and lines aren't loaded yet.
+    // Skip only if BOTH static stations AND lines are already available (e.g. after handleLoadRegion).
+    // metroReports alone (from simulation) does NOT mean lines are loaded.
+    useEffect(() => {
+        if (!metroOpen) return;
+        if (stations.length > 0 && metroLinesLoaded) return;
+        if (!loadedHobli) return;
+        setMetroLoading(true);
+        fetch(`${API_URL}/metro-stations/${encodeURIComponent(loadedHobli)}`)
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(data => {
+                const list = Array.isArray(data) ? data : (data?.stations || []);
+                setStations(list);
+                // Forward the lines GeoJSON to the map layer in App.jsx
+                const lines = data?.lines;
+                if (lines && onMetroLinesLoaded) {
+                    const geoJson = Array.isArray(lines)
+                        ? { type: 'FeatureCollection', features: lines }
+                        : lines;
+                    onMetroLinesLoaded(geoJson);
+                }
+            })
+            .catch(() => {})
+            .finally(() => setMetroLoading(false));
+    }, [metroOpen, loadedHobli]);
 
     // Merge static station list with live physics reports if available
     // Sort: Metro first, then Railway
@@ -253,11 +282,11 @@ export function PublicTransportAgent({
 
                     {metroOpen && (
                         <div className="pta-accordion-content">
-                            <div style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #dcfce7', borderRadius: '8px', padding: '0.6rem 0.75rem', marginBottom: '1rem', fontSize: '0.75rem' }}>
-                                {t('metro_hint', lang)}
-                            </div>
-
-                            {displayMetro.length === 0 ? (
+                            {metroLoading ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '1rem', color: '#64748b', fontSize: '0.8rem' }}>
+                                    <Loader size={14} className="spin" color="#059669" /> Loading metro network…
+                                </div>
+                            ) : displayMetro.length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8', fontSize: '0.8rem' }}>
                                     <Train size={24} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
                                     <p>{t('no_metro', lang)}</p>

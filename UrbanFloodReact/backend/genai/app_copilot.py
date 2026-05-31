@@ -358,7 +358,8 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
     # ── Otherwise, send to LLM for general queries / navigation / params ──
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return {"type": "message", "content": "Error: GEMINI_API_KEY is not set.", "options": []}
+        print("[Copilot] GEMINI_API_KEY not set — skipping to key 2...")
+        return await _fallback_ask_gemini2(messages, available_hoblis, flat_taluks, regions_tree, latest_user_msg, map_pin)
 
     try:
         genai.configure(api_key=api_key)
@@ -469,141 +470,77 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
         return {"type": "message", "content": "I'm sorry, I couldn't process that request properly. (Empty Response)", "options": []}
 
     except Exception as e:
-        print(f"[Copilot] CRITICAL ERROR: {e}")
-        # If Gemini fails (e.g. rate limit 429), attempt fallback to Groq
-        if "429" in str(e) or "quota" in str(e).lower():
-            print(f"Gemini rate limit hit, falling back to Groq... ({e})")
-            return await _fallback_ask_groq(messages, system_instruction)
-        return {"type": "message", "content": f"Copilot error: {str(e)}", "options": []}
+        reason = type(e).__name__
+        print(f"[Copilot] Gemini key 1 failed ({reason}): {e}. Trying key 2...")
+        result = await _fallback_ask_gemini2(messages, available_hoblis, flat_taluks, regions_tree, latest_user_msg, map_pin)
+        if result.get("type") == "message" and result.get("content"):
+            result["content"] = f"_[Gemini key 2 — key 1 {reason}]_\n\n" + result["content"]
+        return result
 
 
-async def _fallback_ask_groq(messages: list, system_instruction: str) -> dict:
-    """Fallback handler using Groq API (Llama 3.3 70B) if Gemini rate limits us."""
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if not groq_api_key:
-        return {"type": "message", "content": "Gemini rate limited and GROQ_API_KEY is missing.", "options": []}
-
-    # Translate tools to OpenAI schema for Groq
-    groq_tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "select_region",
-                "description": "Select a specific Hobli region. Call FIRST after fuzzy-matching.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"hobli": {"type": "string"}},
-                    "required": ["hobli"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "navigate",
-                "description": "Navigate to a specific tab.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"tab": {"type": "string", "enum": ["info", "config", "evacuate", "compare"]}},
-                    "required": ["tab"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "run_simulation",
-                "description": "Run a flood simulation.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "hobli": {"type": "string"},
-                        "algorithm": {"type": "string", "enum": ["ga", "aco", "pso", "all"]},
-                        "rainfall_mm": {"type": "integer"},
-                        "evacuation_mode": {"type": "boolean"},
-                        "use_traffic": {"type": "boolean"}
-                    },
-                    "required": ["hobli"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "ask_clarification",
-                "description": "Ask the user to clarify options.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "message": {"type": "string"},
-                        "options": {"type": "array", "items": {"type": "string"}}
-                    },
-                    "required": ["message", "options"]
-                }
-            }
-        }
-    ]
-
-    # Truncate system prompt for Groq's smaller context window
-    truncated_prompt = system_instruction[:4000] if len(system_instruction) > 4000 else system_instruction
-
-    # Build clean messages — Groq only accepts roles: system, user, assistant
-    clean_messages = [{"role": "system", "content": truncated_prompt}]
-    for msg in messages:
-        role = msg.get("role", "user")
-        if role not in ("user", "assistant", "system"):
-            role = "user"
-        content = msg.get("content", "")
-        if not content:
-            continue  # Groq rejects empty content
-        clean_messages.append({"role": role, "content": content})
+async def _fallback_ask_gemini2(messages: list, available_hoblis: list, flat_taluks: dict,
+                                 regions_tree: dict, latest_user_msg: str, map_pin: dict) -> dict:
+    """Fallback using GEMINI_API_KEY_2 — identical logic to primary, different key."""
+    api_key_2 = os.getenv("GEMINI_API_KEY_2")
+    if not api_key_2:
+        return {"type": "message", "content": "GEMINI_API_KEY_2 is not set.", "options": []}
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {groq_api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": clean_messages,
-                    "tools": groq_tools,
-                    "tool_choice": "auto",
-                    "temperature": 0.1
-                },
-                timeout=20.0
-            )
+        genai.configure(api_key=api_key_2)
+        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg, map_pin)
+        safety_settings = {
+            genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+        }
+        frontend_tools_obj = _build_tools(available_hoblis or [], flat_taluks)
+        backend_funcs = list(BACKEND_TOOLS.values())
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction=system_instruction,
+            tools=backend_funcs + frontend_tools_obj,
+            safety_settings=safety_settings
+        )
+        history = _convert_messages(messages[:-1]) if len(messages) > 1 else []
+        chat = model.start_chat(history=history)
+        response = chat.send_message(latest_user_msg)
 
-            if resp.status_code != 200:
-                error_body = resp.text
-                print(f"Groq API error {resp.status_code}: {error_body[:500]}")
-                return {"type": "message", "content": f"Groq fallback error (HTTP {resp.status_code}). Please try again in a moment.", "options": []}
+        for i in range(10):
+            if not response.candidates or not response.candidates[0].content or not response.candidates[0].content.parts:
+                break
+            parts = response.candidates[0].content.parts
+            has_backend_call = False
+            for part in parts:
+                if part.function_call:
+                    fc = part.function_call
+                    func_name = fc.name
+                    args = {k: v for k, v in fc.args.items()}
+                    if func_name in BACKEND_TOOLS:
+                        func = BACKEND_TOOLS[func_name]
+                        try:
+                            result = await func(**args) if inspect.iscoroutinefunction(func) else func(**args)
+                        except Exception as tool_e:
+                            result = f"Error: {tool_e}"
+                        response = chat.send_message(
+                            genai.protos.Content(parts=[genai.protos.Part(
+                                function_response=genai.protos.FunctionResponse(
+                                    name=func_name, response={"result": result}))])
+                        )
+                        has_backend_call = True
+                        break
+                    else:
+                        if func_name == "ask_clarification":
+                            return {"type": "message", "content": args.get("message", "Which option?"), "options": list(args.get("options", []))}
+                        return {"type": "tool_call", "name": func_name, "arguments": args}
+            if not has_backend_call:
+                break
 
-            data = resp.json()
-            choice = data["choices"][0]["message"]
-
-            if choice.get("tool_calls"):
-                tc = choice["tool_calls"][0]["function"]
-                func_name = tc["name"]
-                args = json.loads(tc["arguments"])
-
-                if func_name == "ask_clarification":
-                    return {
-                        "type": "message",
-                        "content": args.get("message", "Which option do you prefer?"),
-                        "options": args.get("options", [])
-                    }
-                return {
-                    "type": "tool_call",
-                    "name": func_name,
-                    "arguments": args
-                }
-
-            content = choice.get("content") or "I couldn't process that request."
-            return {"type": "message", "content": content, "options": []}
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            text_parts = [p.text for p in response.candidates[0].content.parts if p.text]
+            if text_parts:
+                return {"type": "message", "content": "\n".join(text_parts), "options": []}
+        return {"type": "message", "content": "I couldn't process that request. (Empty Response)", "options": []}
 
     except Exception as e:
-        print(f"Groq fallback exception: {e}")
-        return {"type": "message", "content": f"Both Gemini and Groq are unavailable. Please try again in a moment.", "options": []}
+        return {"type": "message", "content": f"Both Gemini keys failed: {e}", "options": []}
