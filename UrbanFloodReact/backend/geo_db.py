@@ -1,5 +1,5 @@
 """
-MONGO_URI2 connection and corridor query functions.
+MongoDB connection and corridor query functions.
 Database: flood_evacuation_db
 Collections: city_nodes, city_edges
 """
@@ -14,9 +14,9 @@ _geo_client = None
 def get_geo_db():
     global _geo_client
     if _geo_client is None:
-        uri = os.getenv("MONGO_URI2", "")
+        uri = os.getenv("MONGO_URI") or os.getenv("MONGO_URI2", "")
         if not uri:
-            raise RuntimeError("MONGO_URI2 environment variable not set")
+            raise RuntimeError("MONGO_URI or MONGO_URI2 environment variable not set")
         if "&authSource=admin" not in uri:
             uri = uri + "&authSource=admin"
         _geo_client = AsyncIOMotorClient(uri)

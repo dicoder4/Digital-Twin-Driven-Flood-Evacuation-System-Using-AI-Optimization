@@ -9,7 +9,7 @@ export function SimulationControls({
     onSteps, onDecay,
     isRunning, isPaused, simulationDone,
     currentStep, totalSteps, elapsedTime, progressPct,
-    onStart, onTogglePause, onReset,
+    onStart, onTogglePause, onStop, onRestart,
     compareMode = false,
     compareProgress = '',
 }) {
@@ -42,13 +42,24 @@ export function SimulationControls({
                     : <button className="btn-secondary" onClick={onTogglePause}>
                         {isPaused ? <><Play size={13} /> Resume</> : <><Pause size={13} /> Pause</>}
                       </button>}
-                <button
-                    className="btn-ghost"
-                    onClick={onReset}
-                    disabled={!isRunning && !simulationDone}
-                >
-                    <RefreshCw size={13} /> Reset
-                </button>
+                {isRunning && (
+                    <button
+                        className="btn-danger"
+                        onClick={onStop}
+                        title="Stop the running simulation"
+                    >
+                        ■ Stop Simulation
+                    </button>
+                )}
+                {simulationDone && !isRunning && (
+                    <button
+                        className="btn-ghost"
+                        onClick={onRestart}
+                        title="Clear results and start fresh"
+                    >
+                        <RefreshCw size={13} /> Restart
+                    </button>
+                )}
             </div>
 
             {compareProgress && (

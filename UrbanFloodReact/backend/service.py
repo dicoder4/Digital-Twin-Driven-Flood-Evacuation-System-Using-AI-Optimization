@@ -883,6 +883,13 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     center_lon = coords.get("lon")
     
     for i in range(steps):
+        # Check abort flag
+        import main as main_module
+        if main_module._sim_abort:
+            logger.info(f"[SIMULATE] Simulation aborted by user at step {i+1}/{steps}")
+            yield f"data: {json.dumps({'done': True, 'aborted': True, 'error': 'Simulation stopped by user'})}\n\n"
+            return
+
         await loop.run_in_executor(None, sim.propagate_flood_step, decay_factor)
         impact = await loop.run_in_executor(None, sim.calculate_flood_impact)
 

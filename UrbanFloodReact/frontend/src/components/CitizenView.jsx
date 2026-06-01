@@ -952,9 +952,10 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
               </button>
             </div>
 
-            {/* Prev / Next controls — always visible */}
+            {/* Prev / Reset / Next controls — always visible */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
               <button onClick={prevStep} disabled={stepIdx === 0} className="citizen-btn btn-secondary" style={{ flex: 1 }}>← Prev</button>
+              <button onClick={() => setStepIdx(0)} className="citizen-btn btn-secondary" style={{ flex: 0.8 }}>↻ Reset</button>
               <button onClick={nextStep} className="citizen-btn btn-primary" style={{ flex: 1 }}>Next →</button>
             </div>
 

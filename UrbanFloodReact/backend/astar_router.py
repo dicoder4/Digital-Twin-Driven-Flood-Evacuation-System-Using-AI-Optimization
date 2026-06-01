@@ -86,7 +86,17 @@ def generate_steps(G: nx.DiGraph, path: list[int], street_names: dict = None) ->
     if street_names is None:
         street_names = {}
 
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Debug: count how many edges have names
+    edges_with_names = sum(1 for u, v, data in G.edges(data=True) if data.get("name"))
+    edges_total = G.number_of_edges()
+    logger.info(f"[STEPS] Graph has {edges_with_names}/{edges_total} edges with names ({100*edges_with_names/edges_total:.1f}%)")
+
     steps = []
+    prev_road_name = None
+
     for i in range(len(path) - 1):
         u, v = path[i], path[i + 1]
         data = G[u][v]
@@ -94,20 +104,33 @@ def generate_steps(G: nx.DiGraph, path: list[int], street_names: dict = None) ->
         prev_bearing = _bearing(G.nodes[path[i - 1]], G.nodes[u]) if i > 0 else bearing
         turn = _turn_instruction(prev_bearing, bearing)
 
-        # Try to get street name from edge data (priority: name attribute > street_names dict > highway type)
+        # Try to get street name from edge data (priority: name > prev name > highway type)
         road_label = None
 
-        # First check edge 'name' attribute (from OSM)
+        # First check edge 'name' attribute (from MongoDB)
         if data.get("name"):
             road_label = data["name"]
-        # Then check street_names dict (backward compatibility)
-        elif (u, v, 0) in street_names:
-            road_label = street_names[(u, v, 0)]
-
-        # Fallback to highway type
-        if not road_label:
+            prev_road_name = road_label
+        # If no name, try to use previous road name (street might continue)
+        elif prev_road_name:
+            road_label = prev_road_name
+        # Fallback to highway type formatted nicely
+        else:
             highway = data.get("highway", "road")
-            road_label = highway.replace("_", " ").title()
+            # Map highway types to readable names
+            highway_names = {
+                "motorway": "Motorway",
+                "trunk": "Trunk Road",
+                "primary": "Primary Road",
+                "secondary": "Secondary Road",
+                "tertiary": "Tertiary Road",
+                "residential": "Residential Road",
+                "service": "Service Road",
+                "unclassified": "Unclassified Road",
+                "path": "Path",
+                "footway": "Footway",
+            }
+            road_label = highway_names.get(highway, highway.replace("_", " ").title())
 
         steps.append({
             "instruction": f"{turn} on {road_label}",

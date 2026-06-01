@@ -18,8 +18,136 @@ Time Scale Justification:
 """
 import networkx as nx
 import logging
+import osmnx as ox
+import hashlib
+from pymongo import MongoClient
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+from math import radians, cos, sin, asin, sqrt
 
 logger = logging.getLogger(__name__)
+
+# Load MongoDB connection
+current_dir = Path(__file__).resolve().parent
+env_path = current_dir / '.env'
+load_dotenv(dotenv_path=env_path)
+
+MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGO_URI2")
+ox.settings.timeout = 600
+
+def _haversine(lon1, lat1, lon2, lat2):
+    """Calculate distance in meters"""
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    return 6371 * c * 1000
+
+def _get_corridor_id(src_lat, src_lon, dst_lat, dst_lon):
+    """Generate unique corridor ID from coordinates"""
+    key = f"{src_lat:.4f}_{src_lon:.4f}_{dst_lat:.4f}_{dst_lon:.4f}"
+    return hashlib.md5(key.encode()).hexdigest()[:12]
+
+def _get_db():
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    return client.get_database("flood_evacuation_db")
+
+def _fetch_and_cache_hydrology(src_lat, src_lon, dst_lat, dst_lon, graph):
+    """Fetch hydrology for corridor bbox and cache in MongoDB"""
+    corridor_id = _get_corridor_id(src_lat, src_lon, dst_lat, dst_lon)
+
+    # Check cache first
+    db = _get_db()
+    cache = db["hydrology_cache"]
+    cached = cache.find_one({"_id": corridor_id})
+    if cached:
+        logger.debug(f"[HYDROLOGY] Cache hit for corridor {corridor_id}")
+        return cached.get("drain_nodes", []), cached.get("lake_nodes", [])
+
+    logger.debug(f"[HYDROLOGY] Fetching for corridor {corridor_id}...")
+
+    # Define corridor bbox with 2km buffer
+    min_lat = min(src_lat, dst_lat) - 0.02
+    max_lat = max(src_lat, dst_lat) + 0.02
+    min_lon = min(src_lon, dst_lon) - 0.02
+    max_lon = max(src_lon, dst_lon) + 0.02
+
+    lake_tags = {
+        "natural": ["water"],
+        "water": ["lake", "reservoir", "pond"],
+        "landuse": ["reservoir", "basin"],
+    }
+    drain_tags = {"waterway": ["drain", "canal", "ditch", "stream", "river"]}
+
+    drain_nodes = []
+    lake_nodes = []
+
+    try:
+        # Fetch lakes
+        try:
+            lakes_gdf = ox.features_from_bbox(
+                north=max_lat, south=min_lat, east=max_lon, west=min_lon,
+                tags=lake_tags
+            )
+            if not lakes_gdf.empty:
+                for _, row in lakes_gdf.iterrows():
+                    geom = row.geometry
+                    pt = geom.centroid if geom.geom_type != "Point" else geom
+                    min_dist = 1000
+                    nearest = None
+                    for node_id, node_data in graph.nodes(data=True):
+                        dist = _haversine(pt.x, pt.y, node_data['x'], node_data['y'])
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest = node_id
+                    if nearest:
+                        lake_nodes.append(nearest)
+        except Exception as e:
+            logger.debug(f"[HYDROLOGY] Lake fetch failed: {e}")
+
+        # Fetch drains
+        try:
+            drains_gdf = ox.features_from_bbox(
+                north=max_lat, south=min_lat, east=max_lon, west=min_lon,
+                tags=drain_tags
+            )
+            if not drains_gdf.empty:
+                for _, row in drains_gdf.iterrows():
+                    geom = row.geometry
+                    pt = geom.centroid if geom.geom_type != "Point" else geom
+                    min_dist = 1000
+                    nearest = None
+                    for node_id, node_data in graph.nodes(data=True):
+                        dist = _haversine(pt.x, pt.y, node_data['x'], node_data['y'])
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest = node_id
+                    if nearest:
+                        drain_nodes.append(nearest)
+        except Exception as e:
+            logger.debug(f"[HYDROLOGY] Drain fetch failed: {e}")
+
+        # Cache in MongoDB
+        cache.update_one(
+            {"_id": corridor_id},
+            {"$set": {
+                "src_lat": src_lat,
+                "src_lon": src_lon,
+                "dst_lat": dst_lat,
+                "dst_lon": dst_lon,
+                "drain_nodes": drain_nodes,
+                "lake_nodes": lake_nodes,
+            }},
+            upsert=True
+        )
+        logger.debug(f"[HYDROLOGY] Cached: {len(drain_nodes)} drains, {len(lake_nodes)} lakes")
+
+    except Exception as e:
+        logger.warning(f"[HYDROLOGY] Failed: {e}")
+
+    return drain_nodes, lake_nodes
 
 # Backend configuration — MUST match simulation_engine.py tick_mins
 TICK_MINS = 0.2  # Minutes per tick (12 seconds)
@@ -146,6 +274,10 @@ def compute_flood(
     graph: nx.DiGraph,
     rainfall_mm: dict,
     ward_for_node: dict,
+    src_lat: float = None,
+    src_lon: float = None,
+    dst_lat: float = None,
+    dst_lon: float = None,
 ) -> nx.DiGraph:
     """
     Computes time-aware flood depths on a corridor graph.
@@ -160,6 +292,7 @@ def compute_flood(
       graph: NetworkX graph with elevation, ward_for_node, drain/lake flags
       rainfall_mm: dict mapping ward name → rainfall (mm/hour)
       ward_for_node: dict mapping node_id → ward name
+      src_lat, src_lon, dst_lat, dst_lon: Corridor coordinates for hydrology lookup
 
     Returns: Same graph with water_depth and flood_risk annotated on edges
 
@@ -169,6 +302,20 @@ def compute_flood(
       - Each step ≈ 0.24 seconds — matches urban stormwater response time
       - Rainfall input is mm/hour, converted to per-step rates
     """
+    # Fetch and apply hydrology data for this corridor (drain/lake multipliers)
+    if src_lat is not None and src_lon is not None and dst_lat is not None and dst_lon is not None:
+        try:
+            drain_nodes, lake_nodes = _fetch_and_cache_hydrology(src_lat, src_lon, dst_lat, dst_lon, graph)
+            for node in drain_nodes:
+                if node in graph.nodes:
+                    graph.nodes[node]['is_drain'] = True
+            for node in lake_nodes:
+                if node in graph.nodes:
+                    graph.nodes[node]['is_lake'] = True
+            logger.info(f"[HYDROLOGY] Applied {len(drain_nodes)} drains, {len(lake_nodes)} lakes to graph")
+        except Exception as e:
+            logger.warning(f"[HYDROLOGY] Failed to fetch: {e}")
+
     # Initialize all node water depths
     nx.set_node_attributes(graph, 0.0, 'water_depth')
 

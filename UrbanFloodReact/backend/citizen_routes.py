@@ -15,7 +15,6 @@ from corridor_graph import build_graph, snap_to_node
 from rainfall_service import fetch_rainfall, assign_wards_to_nodes
 from corridor_flood import compute_flood
 from astar_router import astar_route, build_route_geojson, generate_steps, route_summary
-from osm_enrichment import enrich_edges_with_names
 from shelter_integration import get_shelter_candidates, rank_shelters_by_distance
 from realtime_traffic_service import get_route_traffic_eta, embed_live_traffic_in_path
 
@@ -92,7 +91,7 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
     ward_for_node = assign_wards_to_nodes(list(G.nodes), node_coords, ward_centroids)
 
     logger.debug("[CITIZEN ROUTE] Computing flood physics...")
-    G = compute_flood(G, rainfall_mm, ward_for_node)
+    G = compute_flood(G, rainfall_mm, ward_for_node, src_lat, src_lon, dst_lat, dst_lon)
 
     logger.info("[CITIZEN ROUTE] Computing A* route...")
     path = astar_route(G, src_node, dst_node)
@@ -109,17 +108,9 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
     except Exception as e:
         logger.exception("[CITIZEN ROUTE] Traffic data fetch failed. Using base speeds.")
 
-    # Enrich with street names (Phase 2)
-    logger.debug(f"[CITIZEN ROUTE] Enriching with street names: {include_street_names}")
-    street_names = {}
-    if include_street_names:
-        try:
-            street_names = enrich_edges_with_names(G, edges, src_lat, src_lon, dst_lat, dst_lon)
-        except Exception as e:
-            # Non-fatal: proceed without street names
-            import logging
-            logging.warning(f"Street name enrichment failed: {e}")
-            street_names = {}
+    # Street names are already in the graph from MongoDB (populated during setup)
+    # The generate_steps() function will use them directly from edge data
+    logger.debug("[CITIZEN ROUTE] Using street names from MongoDB")
 
     summary = route_summary(G, path)
     active_wards = list({ward_for_node.get(n, "unknown") for n in path})
@@ -135,7 +126,7 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
         "status": "ok",
         "session_id": str(uuid.uuid4()),
         "route_geojson": build_route_geojson(G, path),
-        "steps": generate_steps(G, path, street_names=street_names),
+        "steps": generate_steps(G, path),
         "total_distance_m": summary["total_distance_m"],
         "eta_minutes": live_eta_minutes,  # Use live traffic ETA
         "eta_minutes_base": summary["eta_minutes"],  # Keep base for reference

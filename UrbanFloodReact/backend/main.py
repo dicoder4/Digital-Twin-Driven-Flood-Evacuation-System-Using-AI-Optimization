@@ -331,6 +331,9 @@ async def get_map_data(hobli: str = Query(...)):
     return await service.fetch_map_geojson(hobli)
 
 
+# Global abort flag for simulation stop
+_sim_abort = False
+
 @app.get("/simulate-stream")
 async def simulate_stream(
     hobli:        str   = Query(...),
@@ -345,6 +348,8 @@ async def simulate_stream(
     extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """SSE stream of flood simulation steps."""
+    global _sim_abort
+    _sim_abort = False
     import json as _json
     extra = None
     if extra_shelters_json:
@@ -362,6 +367,13 @@ async def simulate_stream(
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+
+@app.post("/simulate-abort")
+async def simulate_abort():
+    """Stop the currently running simulation."""
+    global _sim_abort
+    _sim_abort = True
+    return {"status": "abort_signaled"}
 
 
 @app.get("/simulate-compare")

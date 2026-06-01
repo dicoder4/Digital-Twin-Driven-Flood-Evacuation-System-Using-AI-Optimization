@@ -36,6 +36,22 @@ export function useSimulation() {
         setTrafficRoadsData(null); setTrafficSegmentCount(0);
     }, []);
 
+    const stop = useCallback(() => {
+        // STOP: Abort running sim, keep results visible
+        esRef.current?.close(); esRef.current = null;
+        clearInterval(timerRef.current); timerRef.current = null;
+        setIsRunning(false); setIsPaused(false); pauseRef.current = false;
+        setStatusMsg('Simulation stopped');
+        // Signal backend to abort
+        fetch(`${API_URL}/simulate-abort`, { method: 'POST' }).catch(() => {});
+    }, []);
+
+    const restart = useCallback(() => {
+        // RESTART: Clear everything and go back to idle
+        reset();
+        setStatusMsg('Ready to run simulation');
+    }, [reset]);
+
     const clearMap = useCallback(() => {
         setFloodData(null);
         setRoadsData(null);
@@ -138,7 +154,7 @@ export function useSimulation() {
         evacuationPlan, shelterOccupancy, finalReport,
         trafficRoadsData, trafficSegmentCount,
         statusMsg, setStatusMsg, progressPct,
-        start, togglePause, reset, clearMap,
+        start, togglePause, stop, restart, reset, clearMap,
         // Exposed for compare mode: pipe flood frames from /simulate-compare
         setFloodData, setRoadsData,
     };

@@ -757,7 +757,8 @@ export default function App() {
                       progressPct={sim.progressPct}
                       onStart={compareMode ? handleCompare : handleStart}
                       onTogglePause={sim.togglePause}
-                      onReset={handleReset}
+                      onStop={sim.stop}
+                      onRestart={sim.restart}
                       compareMode={compareMode}
                       compareProgress={compareProgress}
                     />
