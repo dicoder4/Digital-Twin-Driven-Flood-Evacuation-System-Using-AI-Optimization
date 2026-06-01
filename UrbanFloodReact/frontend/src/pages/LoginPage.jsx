@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail, ArrowRight, Zap } from 'lucide-react';
+import { Droplets, ShieldAlert, Navigation, Map, Eye, EyeOff, ExternalLink, Mail, ArrowRight, Zap, GraduationCap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useTutorial } from '../context/TutorialContext';
+import TutorialOverlay from '../components/TutorialOverlay';
 import { t } from '../translations';
 import { API_URL } from '../config';
 
@@ -31,6 +33,7 @@ const LoginPage = () => {
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const { login } = useAuth();
   const { lang, toggle: toggleLang } = useLanguage();
+  const { startTutorial } = useTutorial();
   const navigate = useNavigate();
 
   useEffect(() => { const visited = localStorage.getItem('hasVisitedBefore'); if (!visited) { setIsFirstVisit(true); localStorage.setItem('hasVisitedBefore', 'true'); } }, []);
@@ -68,6 +71,15 @@ const LoginPage = () => {
       <button onClick={toggleLang} style={{ position: 'fixed', top: '16px', right: '16px', zIndex: 9999, fontSize: '12px', fontWeight: 700, padding: '5px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', color: '#334155', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
         {t('lang_toggle', lang)}
       </button>
+      {/* Take Tutorial button */}
+      <button
+        className="tutorial-trigger-btn tutorial-trigger-btn--login"
+        onClick={() => startTutorial('login')}
+      >
+        <GraduationCap size={15} />
+        Take Tutorial
+      </button>
+      <TutorialOverlay />
       {/* Left Hero */}
       <div style={{ display: 'none', width: '50%', background: 'linear-gradient(145deg, #1e3a8a 0%, #1d4ed8 50%, #2563eb 100%)', position: 'relative', overflow: 'hidden' }} className="login-hero-panel">
         <div style={{ position: 'absolute', bottom: '-80px', left: '-60px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(59,130,246,0.15)', filter: 'blur(60px)' }} />

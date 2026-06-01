@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain, GraduationCap } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -33,6 +33,8 @@ import { AutomationPanel } from './components/AutomationPanel';
 import { PublicTransportAgent } from './components/PublicTransportAgent';
 import { useAuth } from './context/AuthContext';
 import { useLanguage } from './context/LanguageContext';
+import { useTutorial } from './context/TutorialContext';
+import TutorialOverlay from './components/TutorialOverlay';
 import { t } from './translations';
 import CitizenView from './components/CitizenView';
 import SimulateCitizenView from './components/SimulateCitizenView';
@@ -41,6 +43,7 @@ import './App.css';
 export default function App() {
   const { user, logout, isSimulate, isCitizen } = useAuth();
   const { lang, toggle: toggleLang } = useLanguage();
+  const { startTutorial, registerTabSwitch } = useTutorial();
 
   // ── Map viewport ─────────────────────────────────────────────
   const [viewState, setViewState] = useState({
@@ -498,6 +501,7 @@ export default function App() {
             </div>
             <button
               onClick={toggleLang}
+              id="tutorial-lang-toggle"
               style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}
               title={lang === 'en' ? 'Switch to Kannada' : 'Switch to English'}
             >
@@ -515,6 +519,14 @@ export default function App() {
                 className="bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 text-red-600 hover:text-red-700 px-3 py-1.5 rounded transition-all duration-200 text-xs font-bold"
               >
                 {t('logout', lang)}
+              </button>
+              <button
+                className="tutorial-trigger-btn"
+                onClick={() => startTutorial(isDraMode ? 'authority' : 'researcher')}
+                title="Take a guided tutorial"
+              >
+                <GraduationCap size={13} />
+                Tutorial
               </button>
             </div>
         </div>
@@ -589,6 +601,7 @@ export default function App() {
             ) : (
               <>
                 <RegionSelector
+                  id="tutorial-region-selector"
                   districts={regions.districts}
                   taluks={regions.taluks}
                   hoblis={regions.hoblis}
@@ -606,22 +619,28 @@ export default function App() {
 
                 {regionLoaded && (
                   <>
+                    <div id="tutorial-population-panel">
                     <PopulationPanel
                       loadedHobli={loadedHobli}
                       onPopulationSet={setPopulationCount}
                     />
+                    </div>
 
+                    <div id="tutorial-shelters-panel">
                     <SheltersPanel
                       loadedHobli={loadedHobli}
                       shelters={sheltersWithSafety.length ? sheltersWithSafety : null}
                       onCandidates={setShelterCandidates}
                     />
+                    </div>
 
+                    <div id="tutorial-rainfall-panel">
                     <RainfallPanel
                       loadedHobli={loadedHobli}
                       rainfallMm={rainfallMm}
                       onRainfallChange={setRainfallMm}
                     />
+                    </div>
 
                     {/* ── Panel 1: Evacuation Mode (standalone) ───── */}
                     <div className="evac-mode-toggle panel">
@@ -723,6 +742,7 @@ export default function App() {
                     </div>
 
                     {/* ── Simulation Controls ─────────────────────── */}
+                    <div id="tutorial-sim-controls">
                     <SimulationControls
                       steps={steps}
                       decayFactor={decayFactor}
@@ -741,6 +761,7 @@ export default function App() {
                       compareMode={compareMode}
                       compareProgress={compareProgress}
                     />
+                    </div>
 
                     {/* Flood Impact summary */}
                     {sim.simulationDone && populationCount > 0 && (
@@ -970,6 +991,8 @@ export default function App() {
           }
         }}
       />
+
+      <TutorialOverlay />
     </div>
   );
 }
