@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MapComponent from './MapComponent';
 import { Marker, Source, Layer } from 'react-map-gl/maplibre';
-import { MapPin, Navigation, AlertCircle, ChevronUp, ChevronDown, Phone, Cloud, Search, Shield, X } from 'lucide-react';
+import { MapPin, Navigation, AlertCircle, ChevronUp, ChevronDown, Phone, Cloud, Search, Shield, X, GraduationCap } from 'lucide-react';
 import { API_URL } from '../config';
+import { useTutorial } from '../context/TutorialContext';
+import TutorialOverlay from './TutorialOverlay';
 import '../styles/citizen.css';
 
 const INITIAL_VIEW_STATE = {
@@ -77,6 +79,7 @@ const NotificationBanner = ({ message, type, icon: Icon }) => {
 };
 
 export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
+  const { startTutorial } = useTutorial();
   const [phase, setPhase] = useState('LOCATING');
   const [userLoc, setUserLoc] = useState(null);
   const [destination, setDestination] = useState(null);
@@ -480,7 +483,17 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
             <Navigation size={18} />
             {translations.citizen_title}
           </h1>
-          <button onClick={onLogout}>Logout</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="tutorial-trigger-btn tutorial-trigger-btn--header"
+              onClick={() => startTutorial('citizen')}
+              title={lang === 'en' ? 'Take a guided tutorial' : 'ಮಾರ್ಗದರ್ಶಿ ಟ್ಯುಟೋರಿಯಲ್'}
+            >
+              <GraduationCap size={13} />
+              {lang === 'en' ? 'Tutorial' : 'ಟ್ಯುಟೋರಿಯಲ್'}
+            </button>
+            <button onClick={onLogout}>Logout</button>
+          </div>
         </div>
       )}
 
@@ -1085,6 +1098,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
           </button>
         </div>
       )}
+      <TutorialOverlay />
     </div>
   );
 }

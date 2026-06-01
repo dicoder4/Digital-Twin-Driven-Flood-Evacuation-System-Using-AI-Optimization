@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Map, { Source, Layer, NavigationControl, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { AlertCircle, RotateCcw, Navigation, Cloud, Droplets, MapPin, Clock } from 'lucide-react';
+import { AlertCircle, RotateCcw, Navigation, Cloud, Droplets, MapPin, Clock, GraduationCap } from 'lucide-react';
 import { API_URL } from '../config';
+import { useTutorial } from '../context/TutorialContext';
+import TutorialOverlay from './TutorialOverlay';
 import '../styles/simulate.css';
 
 const INITIAL_VIEW_STATE = {
@@ -85,6 +87,7 @@ const NotificationBanner = ({ message, type, icon: Icon }) => {
 };
 
 export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang }) {
+  const { startTutorial } = useTutorial();
   const [phase, setPhase] = useState('SELECT_START');
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [startPoint, setStartPoint] = useState(null);
@@ -864,7 +867,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f9fafb' }}>
       {/* Header */}
-      <div style={{
+      <div id="tutorial-sim-header" style={{
         background: '#4f46e5',
         color: 'white',
         padding: '1rem',
@@ -877,24 +880,34 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           <Navigation size={24} />
           <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Evacuation Navigator</h1>
         </div>
-        <button onClick={onLogout} style={{
-          background: '#ef4444',
-          color: 'white',
-          border: 'none',
-          padding: '0.5rem 1rem',
-          borderRadius: '0.5rem',
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          fontSize: '0.875rem',
-        }}>
-          Logout
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            className="tutorial-trigger-btn tutorial-trigger-btn--header"
+            onClick={() => startTutorial('simulate')}
+            title={lang === 'en' ? 'Take a guided tutorial' : '\u0CAE\u0CBE\u0CB0\u0CCD\u0C97\u0CA6\u0CB0\u0CCD\u0CB6\u0CBF \u0C9F\u0CCD\u0CAF\u0CC1\u0C9F\u0CCB\u0CB0\u0CBF\u0CAF\u0CB2\u0CCD'}
+          >
+            <GraduationCap size={13} />
+            {lang === 'en' ? 'Tutorial' : '\u0C9F\u0CCD\u0CAF\u0CC1\u0C9F\u0CCB\u0CB0\u0CBF\u0CAF\u0CB2\u0CCD'}
+          </button>
+          <button onClick={onLogout} style={{
+            background: '#ef4444',
+            color: 'white',
+            border: 'none',
+            padding: '0.5rem 1rem',
+            borderRadius: '0.5rem',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontSize: '0.875rem',
+          }}>
+            Logout
+          </button>
+        </div>
       </div>
 
       {/* Main layout */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: '0' }}>
         {/* Left: Full map */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div id="tutorial-sim-map" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           <Map
             {...viewState}
             onMove={e => setViewState(e.viewState)}
@@ -1127,7 +1140,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
         </div>
 
         {/* Right: Phone-like panel */}
-        <div style={{
+        <div id="tutorial-sim-config" style={{
           width: '420px',
           background: 'white',
           borderRadius: '20px 0 0 20px',
@@ -2459,6 +2472,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           background: #9ca3af;
         }
       `}</style>
+      <TutorialOverlay />
     </div>
   );
 }

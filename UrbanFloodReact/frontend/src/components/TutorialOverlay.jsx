@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTutorial } from '../context/TutorialContext';
+import { useLanguage } from '../context/LanguageContext';
 import '../styles/tutorial.css';
 
 /**
  * TutorialOverlay — renders the spotlight + tooltip as a portal.
  * Auto-positions tooltip, scrolls target into view, supports keyboard nav.
+ * Supports bilingual (English / Kannada) via LanguageContext.
  */
 export default function TutorialOverlay() {
   const {
@@ -13,11 +15,32 @@ export default function TutorialOverlay() {
     nextStep, prevStep, skipTutorial,
   } = useTutorial();
 
+  const { lang } = useLanguage();
+
   const [targetRect, setTargetRect] = useState(null);
   const [tooltipStyle, setTooltipStyle] = useState({});
   const [arrowClass, setArrowClass] = useState('');
   const overlayRef = useRef(null);
   const tooltipRef = useRef(null);
+
+  // ── Get translated step content ────────────────────────────────────
+  const getTitle = (step) => {
+    if (!step) return '';
+    return lang === 'kn' && step.title_kn ? step.title_kn : step.title;
+  };
+
+  const getContent = (step) => {
+    if (!step) return '';
+    return lang === 'kn' && step.content_kn ? step.content_kn : step.content;
+  };
+
+  // ── UI labels ──────────────────────────────────────────────────────
+  const labels = {
+    skip: lang === 'kn' ? 'ಬಿಡಿ' : 'Skip',
+    back: lang === 'kn' ? '← ಹಿಂದೆ' : '← Back',
+    next: lang === 'kn' ? 'ಮುಂದೆ →' : 'Next →',
+    finish: lang === 'kn' ? 'ಮುಗಿಸಿ ✓' : 'Finish ✓',
+  };
 
   // ── Measure target element position ──────────────────────────────
   const measureTarget = useCallback(() => {
@@ -181,6 +204,9 @@ export default function TutorialOverlay() {
   const isFirst = stepIndex === 0;
   const isLast = stepIndex === totalSteps - 1;
 
+  const title = getTitle(currentStep);
+  const content = getContent(currentStep);
+
   // Generate clip-path for spotlight cutout
   const clipPath = targetRect
     ? `polygon(
@@ -234,12 +260,12 @@ export default function TutorialOverlay() {
 
         {/* Content */}
         <div className="tutorial-tooltip-content">
-          <h3 className="tutorial-tooltip-title">{currentStep.title}</h3>
+          <h3 className="tutorial-tooltip-title">{title}</h3>
           <p className="tutorial-tooltip-text">
-            {currentStep.content.split('\n').map((line, i) => (
+            {content.split('\n').map((line, i) => (
               <React.Fragment key={i}>
                 {line}
-                {i < currentStep.content.split('\n').length - 1 && <br />}
+                {i < content.split('\n').length - 1 && <br />}
               </React.Fragment>
             ))}
           </p>
@@ -255,21 +281,21 @@ export default function TutorialOverlay() {
               className="tutorial-btn tutorial-btn-skip"
               onClick={skipTutorial}
             >
-              Skip
+              {labels.skip}
             </button>
             {!isFirst && (
               <button
                 className="tutorial-btn tutorial-btn-prev"
                 onClick={prevStep}
               >
-                ← Back
+                {labels.back}
               </button>
             )}
             <button
               className="tutorial-btn tutorial-btn-next"
               onClick={nextStep}
             >
-              {isLast ? 'Finish ✓' : 'Next →'}
+              {isLast ? labels.finish : labels.next}
             </button>
           </div>
         </div>
