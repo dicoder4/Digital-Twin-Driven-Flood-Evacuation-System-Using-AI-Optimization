@@ -17,7 +17,7 @@ from corridor_flood import compute_flood
 from astar_router import astar_route, build_route_geojson, generate_steps, route_summary
 from osm_enrichment import enrich_edges_with_names
 from shelter_integration import get_shelter_candidates, rank_shelters_by_distance
-from realtime_traffic_service import get_route_traffic_eta
+from realtime_traffic_service import get_route_traffic_eta, embed_live_traffic_in_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
         ValueError on routing failure
     """
     logger.info(f"[CITIZEN ROUTE] Computing route: src=({src_lat}, {src_lon}), dst=({dst_lat}, {dst_lon})")
-    
+
     edges, nodes, _ = await fetch_corridor(src_lat, src_lon, dst_lat, dst_lon)
     if edges is None or (isinstance(edges, list) and len(edges) == 0):
         logger.error("[CITIZEN ROUTE] No road data found for corridor")
@@ -87,7 +87,7 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
     logger.debug("[CITIZEN ROUTE] Fetching rainfall data...")
     rainfall_mm, ward_centroids = await fetch_rainfall()
     logger.debug(f"[CITIZEN ROUTE] Rainfall: {len(rainfall_mm)} wards, {len(ward_centroids)} centroids")
-    
+
     node_coords = {n: (G.nodes[n]["lat"], G.nodes[n]["lon"]) for n in G.nodes}
     ward_for_node = assign_wards_to_nodes(list(G.nodes), node_coords, ward_centroids)
 
@@ -100,6 +100,14 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
         logger.error("[CITIZEN ROUTE] No passable route found (all paths flooded)")
         raise ValueError("No passable route — all paths are flooded.")
     logger.info(f"[CITIZEN ROUTE] Route found: {len(path)} nodes")
+
+    # NEW: Fetch live traffic data ONLY for the actual path (not entire corridor)
+    logger.info("[CITIZEN ROUTE] Fetching live TomTom traffic data for routing...")
+    try:
+        updated = await embed_live_traffic_in_path(G, path)
+        logger.info(f"[CITIZEN ROUTE] Traffic data embedded into {updated} edges in path")
+    except Exception as e:
+        logger.exception("[CITIZEN ROUTE] Traffic data fetch failed. Using base speeds.")
 
     # Enrich with street names (Phase 2)
     logger.debug(f"[CITIZEN ROUTE] Enriching with street names: {include_street_names}")
@@ -117,8 +125,8 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
     active_wards = list({ward_for_node.get(n, "unknown") for n in path})
     active_ward_rainfall = {w: rainfall_mm.get(w, 0.0) for w in active_wards}
 
-    # Fetch live traffic ETA for car mode (bikes/walk not affected by car traffic)
-    logger.info("[CITIZEN ROUTE] Fetching live TomTom traffic data for ETA...")
+    # Compute live ETA post-routing (now accounting for traffic-aware A*)
+    logger.info("[CITIZEN ROUTE] Computing final ETA with traffic...")
     traffic_eta_data = await get_route_traffic_eta(G, path, speed_mode="car")
     live_eta_minutes = traffic_eta_data.get("eta_minutes", summary["eta_minutes"])
     logger.info(f"[CITIZEN ROUTE] Live traffic ETA: {live_eta_minutes} min (vs base: {summary['eta_minutes']} min)")
