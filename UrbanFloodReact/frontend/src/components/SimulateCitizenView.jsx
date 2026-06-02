@@ -2288,19 +2288,23 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                       width: '100%',
                       background: '#ef4444',
                       color: 'white',
-                      padding: '0.75rem',
+                      padding: '0.875rem',
                       borderRadius: '0.5rem',
                       border: 'none',
                       fontWeight: 'bold',
                       cursor: 'pointer',
-                      fontSize: '0.875rem',
+                      fontSize: '0.9rem',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '0.5rem'
+                      gap: '0.5rem',
+                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+                      transition: 'all 0.2s'
                     }}
+                    onMouseOver={(e) => e.target.style.background = '#dc2626'}
+                    onMouseOut={(e) => e.target.style.background = '#ef4444'}
                   >
-                    <X size={18} /> Exit Navigation
+                    <X size={20} /> Exit Navigation
                   </button>
                 </div>
               )}
