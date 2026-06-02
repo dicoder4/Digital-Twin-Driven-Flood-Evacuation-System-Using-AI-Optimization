@@ -91,7 +91,7 @@ async def _compute_route(src_lat, src_lon, dst_lat, dst_lon, include_street_name
     ward_for_node = assign_wards_to_nodes(list(G.nodes), node_coords, ward_centroids)
 
     logger.debug("[CITIZEN ROUTE] Computing flood physics...")
-    G = compute_flood(G, rainfall_mm, ward_for_node, src_lat, src_lon, dst_lat, dst_lon)
+    G = compute_flood(G, rainfall_mm, ward_for_node)
 
     logger.info("[CITIZEN ROUTE] Computing A* route...")
     path = astar_route(G, src_node, dst_node)

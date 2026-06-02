@@ -1,5 +1,5 @@
 """
-MongoDB connection and corridor query functions.
+MONGO_URI2 connection and corridor query functions.
 Database: flood_evacuation_db
 Collections: city_nodes, city_edges
 """
@@ -9,14 +9,27 @@ import os
 
 
 _geo_client = None
+_names_client = None
+
+
+def get_names_db():
+    global _names_client
+    if _names_client is None:
+        uri = os.getenv("MONGO_URI", "")
+        if not uri:
+            raise RuntimeError("MONGO_URI environment variable not set")
+        if "&authSource=admin" not in uri:
+            uri = uri + "&authSource=admin"
+        _names_client = AsyncIOMotorClient(uri)
+    return _names_client["flood_evacuation_db"]
 
 
 def get_geo_db():
     global _geo_client
     if _geo_client is None:
-        uri = os.getenv("MONGO_URI") or os.getenv("MONGO_URI2", "")
+        uri = os.getenv("MONGO_URI2", "")
         if not uri:
-            raise RuntimeError("MONGO_URI or MONGO_URI2 environment variable not set")
+            raise RuntimeError("MONGO_URI2 environment variable not set")
         if "&authSource=admin" not in uri:
             uri = uri + "&authSource=admin"
         _geo_client = AsyncIOMotorClient(uri)
@@ -50,6 +63,25 @@ def _build_corridor_bbox(src_lat, src_lon, dst_lat, dst_lon, buffer_km=1.0):
     )
 
 
+async def fetch_road_names(edge_ids: list) -> dict:
+    """
+    Fetches road names from MONGO_URI for given edge IDs.
+    Returns dict mapping edge_id to name (or empty string if not found).
+    """
+    if not edge_ids:
+        return {}
+    try:
+        db = get_names_db()
+        names_collection = db["city_edges"]
+        docs = await names_collection.find(
+            {"_id": {"$in": edge_ids}},
+            {"_id": 1, "name": 1}
+        ).to_list(length=len(edge_ids))
+        return {doc["_id"]: doc.get("name", "") for doc in docs}
+    except Exception as e:
+        return {}
+
+
 async def fetch_corridor(src_lat, src_lon, dst_lat, dst_lon, buffer_km=1.0):
     """
     Fetches all edges and nodes within corridor bounding box.
@@ -65,6 +97,12 @@ async def fetch_corridor(src_lat, src_lon, dst_lat, dst_lon, buffer_km=1.0):
     edges = await db.city_edges.find(
         {"location": {"$geoIntersects": {"$geometry": poly}}}
     ).to_list(length=60000)
+
+    # Fetch road names from MONGO_URI
+    edge_ids = [e["_id"] for e in edges]
+    road_names = await fetch_road_names(edge_ids)
+    for edge in edges:
+        edge["name"] = road_names.get(edge["_id"], edge.get("name"))
 
     # Collect all node IDs referenced by these edges
     node_ids = set()
