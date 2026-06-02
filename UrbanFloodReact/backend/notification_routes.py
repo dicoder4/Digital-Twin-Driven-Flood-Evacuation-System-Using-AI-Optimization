@@ -8,9 +8,15 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
+import html
 from twilio.rest import Client
 from dotenv import load_dotenv
 from db import _get_db
+
+try:
+    import markdown as markdown_lib  # type: ignore[import-not-found]
+except ImportError:
+    markdown_lib = None
 
 load_dotenv()
 
@@ -103,6 +109,37 @@ class SOSRequest(BaseModel):
     simulation_params: Optional[Dict[str, Any]] = None
     frontend_base_url: Optional[str] = "http://localhost:5173"
 
+
+def render_report_markdown(raw_text: Optional[str]) -> str:
+    if not raw_text:
+        return ""
+    if markdown_lib is not None:
+        return markdown_lib.markdown(raw_text)
+    # Fallback keeps SOS/notifications functional when markdown isn't installed.
+    return html.escape(raw_text).replace("\n", "<br/>")
+
+
+def normalize_evacuation_metrics(evacuation_data: Dict[str, Any]) -> Dict[str, Any]:
+    total_evacuated = int(evacuation_data.get('total_evacuated') or 0)
+    evacuated_count = int(evacuation_data.get('evacuated_count') or total_evacuated)
+    total_at_risk_remaining = int(evacuation_data.get('total_at_risk_remaining') or 0)
+    total_at_risk_initial = int(evacuation_data.get('total_at_risk_initial') or (total_evacuated + total_at_risk_remaining))
+    total_at_risk = int(evacuation_data.get('total_at_risk') or total_at_risk_initial)
+    success_rate_pct = evacuation_data.get('success_rate_pct')
+    if success_rate_pct is None:
+        success_rate_pct = (evacuated_count / total_at_risk * 100) if total_at_risk > 0 else 0.0
+
+    normalized = dict(evacuation_data)
+    normalized.update({
+        'total_evacuated': total_evacuated,
+        'evacuated_count': evacuated_count,
+        'total_at_risk_remaining': total_at_risk_remaining,
+        'total_at_risk_initial': total_at_risk_initial,
+        'total_at_risk': total_at_risk,
+        'success_rate_pct': float(success_rate_pct),
+    })
+    return normalized
+
 def get_all_users_by_role(role: str):
     db = _get_db()
     if db is None:
@@ -118,7 +155,7 @@ def get_all_users():
 @router.post("/notify-authorities")
 async def notify_authorities(req: NotifyAuthoritiesRequest):
     researcher_data = req.researcher_data
-    evacuation_data = req.evacuation_data
+    evacuation_data = normalize_evacuation_metrics(req.evacuation_data)
     location_data = req.location_data
     map_image_base64 = req.map_image_base64
     
@@ -165,8 +202,7 @@ async def notify_authorities(req: NotifyAuthoritiesRequest):
     # Format the AI Report as HTML if provided
     ai_report_html = ""
     if req.ai_report:
-        import markdown
-        html_content = markdown.markdown(req.ai_report)
+        html_content = render_report_markdown(req.ai_report)
 
         ai_report_html = f"""
         <div style="background: #fdfbf7; padding: 20px; border-radius: 8px; border-left: 4px solid #f39c12; margin-bottom: 25px;">
@@ -251,7 +287,7 @@ async def notify_authorities(req: NotifyAuthoritiesRequest):
 @router.post("/sos")
 async def mass_sos(req: SOSRequest):
     user_data = req.user_data
-    evacuation_data = req.evacuation_data
+    evacuation_data = normalize_evacuation_metrics(req.evacuation_data)
     location_data = req.location_data
     
     # Needs to be sent to ALL users as it's a global SOS
@@ -284,8 +320,7 @@ async def mass_sos(req: SOSRequest):
     # Add AI generated report if present
     ai_report_html = ""
     if req.ai_report:
-        import markdown
-        html_content = markdown.markdown(req.ai_report)
+        html_content = render_report_markdown(req.ai_report)
         ai_report_html = f"""
         <div style="background-color: #f8d7da; color: #721c24; padding: 15px; margin-bottom: 20px; border-left: 4px solid #f5c6cb;">
             <h3 style="margin-top: 0;">📢 Civic AI Public Broadcast Message</h3>

@@ -121,6 +121,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 * Aditri B Ray
 * Anisha Ajit 
 * Diya D Shah
-* Contributions welcome via pull requests!
+* Contributions welcome via pull requests!!
 
 ---

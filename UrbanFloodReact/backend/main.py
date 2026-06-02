@@ -1,6 +1,7 @@
 """
 main.py — Urban Flood Digital Twin API
 ─────────────────────────────────────
+# CI/CD test: auto-deploy via GitHub Actions
 Thin FastAPI layer. All business logic lives in:
   coord_loader.py    — coordinate JSON loading
   rainfall_loader.py — Excel rainfall loading
@@ -74,11 +75,16 @@ from weather_watcher import router as automation_router, weather_watcher_loop
 async def lifespan(app: FastAPI):
     print("== Urban Flood Backend starting ==")
 
-    # Force load .env from project root
-    env_path = Path(__file__).resolve().parents[2] / ".env"
-    print(f"Loading .env from: {env_path}")
-    load_dotenv(dotenv_path=env_path, override=True)
-
+    # Try to load .env from project root if it exists locally
+    try:
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+        if env_path.exists():
+            print(f"Loading .env from: {env_path}")
+            load_dotenv(dotenv_path=env_path, override=True)
+        else:
+            print("Running in container/GCP environment (no local .env needed).")
+    except IndexError:
+        print("Running in container/GCP environment (paths adjusted).")
     print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
     print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
 
@@ -114,11 +120,14 @@ app = FastAPI(lifespan=lifespan, title="Urban Flood Digital Twin API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
-                   "http://localhost:5174", "http://127.0.0.1:5174",
-                   "http://localhost:5175", "http://127.0.0.1:5175",
-                   "http://localhost:5176", "http://127.0.0.1:5176",
-                   "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174",
+        "http://localhost:5175", "http://127.0.0.1:5175",
+        "http://localhost:5176", "http://127.0.0.1:5176",
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "https://urbanflood-frontend-244754524479.asia-south1.run.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
