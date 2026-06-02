@@ -14,6 +14,15 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+import warnings
+
+# Suppress MongoDB boolean check warning at all levels
+warnings.filterwarnings("ignore", message=".*Database objects do not implement truth value testing.*")
+warnings.simplefilter("ignore", DeprecationWarning)
+
+class MongoWarningFilter(logging.Filter):
+    def filter(self, record):
+        return "Database objects do not implement truth value testing" not in record.getMessage()
 
 # Configure logging EARLY so all module loggers are captured
 logging.basicConfig(
@@ -21,9 +30,16 @@ logging.basicConfig(
     format='%(levelname)s:%(name)s:%(message)s',
     handlers=[logging.StreamHandler()]
 )
+
+# Add filter to all handlers
+for handler in logging.root.handlers:
+    handler.addFilter(MongoWarningFilter())
+
 # Set uvicorn loggers to INFO to capture MongoDB logs
 for logger_name in ['db', 'region_manager', 'shelter_generator', 'gis_terrain_loader', 'service']:
-    logging.getLogger(logger_name).setLevel(logging.INFO)
+    logger_obj = logging.getLogger(logger_name)
+    logger_obj.setLevel(logging.INFO)
+    logger_obj.addFilter(MongoWarningFilter())
 
 # Ensure backend directory is in python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -58,7 +74,7 @@ from weather_watcher import router as automation_router, weather_watcher_loop
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("== Urban Flood Backend starting ==")
-    
+
     # Try to load .env from project root if it exists locally
     try:
         env_path = Path(__file__).resolve().parents[2] / ".env"
@@ -69,16 +85,20 @@ async def lifespan(app: FastAPI):
             print("Running in container/GCP environment (no local .env needed).")
     except IndexError:
         print("Running in container/GCP environment (paths adjusted).")
-    
     print(f"DEBUG: GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')}")
     print(f"DEBUG: GROQ_API_KEY loaded: {os.getenv('GROQ_API_KEY')}")
-    
+
     # Bootstrap MongoDB
     try:
         from db import bootstrap_mongo_data
         bootstrap_mongo_data()
     except Exception as e:
         print(f"[MONGO DEBUG] Bootstrap failed: {e}")
+
+    # Clear any old simulation sessions from previous server run
+    from simulate_routes import SIMULATE_SESSIONS
+    SIMULATE_SESSIONS.clear()
+    print("== Cleared old simulation sessions ==")
 
     initialise()
     load_population(POPULATION_CSV, REGIONS_TREE, norm_key)
@@ -103,6 +123,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173", "http://127.0.0.1:5173",
         "http://localhost:5174", "http://127.0.0.1:5174",
+        "http://localhost:5175", "http://127.0.0.1:5175",
+        "http://localhost:5176", "http://127.0.0.1:5176",
         "http://localhost:3000", "http://127.0.0.1:3000",
         "https://urbanflood-frontend-244754524479.asia-south1.run.app"
     ],
@@ -113,10 +135,14 @@ app.add_middleware(
 
 from auth_routes import router as auth_router
 from notification_routes import router as notification_router
+from citizen_routes import citizen_router
+from simulate_routes import simulate_router
 
 app.include_router(automation_router)
 app.include_router(auth_router)
 app.include_router(notification_router)
+app.include_router(citizen_router)
+app.include_router(simulate_router)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
@@ -314,6 +340,9 @@ async def get_map_data(hobli: str = Query(...)):
     return await service.fetch_map_geojson(hobli)
 
 
+# Global abort flag for simulation stop
+_sim_abort = False
+
 @app.get("/simulate-stream")
 async def simulate_stream(
     hobli:        str   = Query(...),
@@ -328,6 +357,8 @@ async def simulate_stream(
     extra_shelters_json: str | None = Query(None, description="JSON array of suggested shelter objects"),
 ):
     """SSE stream of flood simulation steps."""
+    global _sim_abort
+    _sim_abort = False
     import json as _json
     extra = None
     if extra_shelters_json:
@@ -345,6 +376,13 @@ async def simulate_stream(
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+
+@app.post("/simulate-abort")
+async def simulate_abort():
+    """Stop the currently running simulation."""
+    global _sim_abort
+    _sim_abort = True
+    return {"status": "abort_signaled"}
 
 
 @app.get("/simulate-compare")

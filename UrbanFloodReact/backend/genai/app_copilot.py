@@ -13,6 +13,7 @@ import difflib
 import google.generativeai as genai
 import inspect
 import httpx
+import requests
 
 from genai.mcp_evacuation_server import (
     get_simulation_state, get_shelter_status, get_route_summary,

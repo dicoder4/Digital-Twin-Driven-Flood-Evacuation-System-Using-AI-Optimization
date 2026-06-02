@@ -60,6 +60,20 @@ DEMO_USERS = {
         "name": "Demo Authority",
         "email": "authority@floodsystem.com",
         "phone": "+911234567893",
+    },
+    "citizen": {
+        "username": "citizen",
+        "role": "citizen",
+        "name": "Demo Citizen",
+        "email": "citizen@floodsystem.com",
+        "phone": "+910000000000",
+    },
+    "simulate": {
+        "username": "simulate",
+        "role": "simulate",
+        "name": "Demo Simulate",
+        "email": "simulate@floodsystem.com",
+        "phone": "+910000000000",
     }
 }
 
@@ -76,7 +90,7 @@ async def register(req: RegisterRequest):
     users_col = db["users"]
     
     # Check if username already exists
-    if users_col.find_one({"username": req.username}):
+    if users_col.find_one({"username": req.username}) is not None:
         raise HTTPException(status_code=400, detail="Username already exists")
         
     new_user = {
@@ -148,7 +162,9 @@ async def demo_login(req: DemoLoginRequest):
         # Create demo user in MongoDB if it doesn't exist
         demo_names = {
             "researcher": "Demo Researcher",
-            "authority": "Demo Authority"
+            "authority": "Demo Authority",
+            "citizen": "Demo Citizen",
+            "simulate": "Demo Simulate"
         }
         user = {
             "username": demo_username,

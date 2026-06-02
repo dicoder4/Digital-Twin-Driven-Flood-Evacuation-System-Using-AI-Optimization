@@ -16,11 +16,15 @@ import os
 import json
 import base64
 import logging
+import warnings
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure, OperationFailure
+
+# Suppress MongoDB boolean check warning
+warnings.filterwarnings("ignore", message=".*Database objects do not implement truth value testing.*")
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +244,7 @@ def get_resource_definitions() -> dict:
         raise ConnectionError("MongoDB not available")
     
     doc = db["resource_definitions"].find_one({"_id": "definitions"})
-    if not doc or "data" not in doc:
+    if doc is None or "data" not in doc:
         raise ValueError("No resource definitions in Mongo")
     
     logger.info("[MONGO] resource_definitions: fetched")
@@ -303,7 +307,7 @@ def get_metro_lines_geojson() -> dict:
         raise ConnectionError("MongoDB not available")
 
     doc = db["metro_lines_geojson"].find_one({"_id": "metro_lines"})
-    if not doc or "data" not in doc:
+    if doc is None or "data" not in doc:
         raise ValueError("No metro lines GeoJSON in Mongo")
 
     logger.info("[MONGO] metro_lines_geojson: fetched")
@@ -366,7 +370,7 @@ def get_shelter_cache(hobli_key: str) -> list | None:
         logger.warning("[MONGO] shelter_cache: DB unavailable — cache miss for '%s'", hobli_key)
         return None
     doc = db["shelter_cache"].find_one({"_id": hobli_key})
-    if doc and "candidates" in doc:
+    if doc is not None and "candidates" in doc:
         logger.info("[MONGO] shelter_cache HIT  — %d shelters loaded from MongoDB for '%s'",
                     len(doc["candidates"]), hobli_key)
         return doc["candidates"]
@@ -397,7 +401,7 @@ def get_dem_cache(dem_key: str) -> bytes | None:
         logger.warning("[MONGO] dem_cache: DB unavailable — cache miss for '%s'", dem_key)
         return None
     doc = db["dem_cache"].find_one({"_id": dem_key})
-    if doc and "data_b64" in doc:
+    if doc is not None and "data_b64" in doc:
         raw = base64.b64decode(doc["data_b64"])
         logger.info("[MONGO] dem_cache HIT  — %d KB DEM loaded from MongoDB for '%s'",
                     len(raw) // 1024, dem_key)
@@ -490,3 +494,63 @@ def set_mcp_state(summary_data: dict, evacuation_plan: list = None,
         upsert=True,
     )
     logger.info("[MONGO] mcp_state WRITE — simulation state saved for hobli '%s'", hobli or "unknown")
+
+# ── Map Corridor Routing (Citizen Platform) ──────────────────────────────────
+
+def get_corridor_graph(min_lon: float, min_lat: float, max_lon: float, max_lat: float):
+    """
+    Extracts a sub-graph (Corridor) from the 'city_nodes' and 'city_edges' collections
+    using a geospatial bounding box query. Returns a NetworkX MultiDiGraph.
+    """
+    import networkx as nx
+    db = _get_db()
+    if db is None:
+        raise ConnectionError("MongoDB not available")
+
+    logger.info(f"[MONGO] Extracting Corridor: ({min_lon},{min_lat}) to ({max_lon},{max_lat})")
+
+    # Define the bounding box query
+    box_query = {
+        "location": {
+            "$geoWithin": {
+                "$box": [
+                    [min_lon, min_lat],
+                    [max_lon, max_lat]
+                ]
+            }
+        }
+    }
+
+    # Fetch nodes
+    nodes_cursor = db["city_nodes"].find(box_query)
+    node_docs = list(nodes_cursor)
+    
+    # We need a set of valid node IDs to ensure we don't add edges with missing nodes
+    valid_nodes = {doc["_id"] for doc in node_docs}
+    
+    # Fetch edges
+    # We query edges that intersect the box
+    edges_cursor = db["city_edges"].find(box_query)
+    edge_docs = list(edges_cursor)
+
+    G = nx.MultiDiGraph()
+
+    # Add nodes to graph
+    for doc in node_docs:
+        # Keep all properties except location and _id
+        attrs = {k: v for k, v in doc.items() if k not in ["_id", "location"]}
+        G.add_node(doc["_id"], **attrs)
+
+    # Add edges to graph
+    edge_count = 0
+    for doc in edge_docs:
+        u, v, k = doc["u"], doc["v"], doc["k"]
+        # Only add edge if BOTH nodes exist in our extracted bounding box
+        # (Otherwise NetworkX will implicitly create empty nodes without coordinates/elevation)
+        if u in valid_nodes and v in valid_nodes:
+            attrs = {key: val for key, val in doc.items() if key not in ["_id", "u", "v", "k", "location"]}
+            G.add_edge(u, v, key=k, **attrs)
+            edge_count += 1
+
+    logger.info(f"[MONGO] Corridor extracted: {len(valid_nodes)} nodes, {edge_count} edges.")
+    return G

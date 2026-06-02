@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain, GraduationCap, LogOut, Menu, X } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -33,12 +33,17 @@ import { AutomationPanel } from './components/AutomationPanel';
 import { PublicTransportAgent } from './components/PublicTransportAgent';
 import { useAuth } from './context/AuthContext';
 import { useLanguage } from './context/LanguageContext';
+import { useTutorial } from './context/TutorialContext';
+import TutorialOverlay from './components/TutorialOverlay';
 import { t } from './translations';
+import CitizenView from './components/CitizenView';
+import SimulateCitizenView from './components/SimulateCitizenView';
 import './App.css';
 
 export default function App() {
-  const { user, logout } = useAuth();
+  const { user, logout, isSimulate, isCitizen } = useAuth();
   const { lang, toggle: toggleLang } = useLanguage();
+  const { startTutorial, registerTabSwitch } = useTutorial();
 
   // ── Map viewport ─────────────────────────────────────────────
   const [viewState, setViewState] = useState({
@@ -102,6 +107,8 @@ export default function App() {
   const sidebarRef = useRef(null);
   const isResizingRef = useRef(false);
 
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const handleResizeMouseDown = useCallback((e) => {
     e.preventDefault();
     isResizingRef.current = true;
@@ -128,6 +135,14 @@ export default function App() {
   // ── Hooks ─────────────────────────────────────────────────────
   const regions = useRegions();
   const sim = useSimulation();
+
+  if (isSimulate) {
+    return <SimulateCitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
+
+  if (isCitizen) {
+    return <CitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
 
   // Recompute shelter safety on every flood update, then override with backend source of truth
   const sheltersWithSafety = useMemo(() => {
@@ -463,10 +478,29 @@ export default function App() {
   }, [isDraMode, regionLoaded, loadedHobli, populationCount, shelterCandidates.length]);
 
   // ── Render ────────────────────────────────────────────────────
+  const isCitizenMode = user?.role === 'citizen';
+  if (isCitizenMode) {
+    return <CitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
+
+  const isSimulateMode = user?.role === 'simulate';
+  if (isSimulateMode) {
+    return <SimulateCitizenView user={user} onLogout={logout} lang={lang} onToggleLang={toggleLang} />;
+  }
+
   return (
     <div className="app-container" style={{ '--sidebar-w': `${sidebarWidth}px` }}>
+      {/* Mobile Toggle Button */}
+      <button 
+        className="mobile-sidebar-toggle"
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        title="Toggle Menu"
+      >
+        {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
       {/* ─── Sidebar ───────────────────────────────────────── */}
-      <aside className="sidebar" ref={sidebarRef} style={{ width: sidebarWidth }}>
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`} ref={sidebarRef} style={{ width: sidebarWidth }}>
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -478,6 +512,7 @@ export default function App() {
             </div>
             <button
               onClick={toggleLang}
+              id="tutorial-lang-toggle"
               style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}
               title={lang === 'en' ? 'Switch to Kannada' : 'Switch to English'}
             >
@@ -485,17 +520,28 @@ export default function App() {
             </button>
           </div>
             {/* User Profile & Logout */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 backdrop-blur-sm">
-              <div className="flex flex-col text-left">
-                <span className="text-slate-800 text-sm font-bold">{user?.username || 'Guest'}</span>
-                <span className="text-slate-500 font-medium text-xs capitalize tracking-wide">{user?.role || 'Viewer'}</span>
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 shadow-sm backdrop-blur-sm">
+              <div className="flex flex-col text-left mr-2">
+                <span className="text-slate-800 text-sm font-bold truncate max-w-[100px]">{user?.username || 'Guest'}</span>
+                <span className="text-slate-500 font-semibold text-[10px] uppercase tracking-wider">{user?.role || 'Viewer'}</span>
               </div>
-              <button
-                onClick={logout}
-                className="bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 text-red-600 hover:text-red-700 px-3 py-1.5 rounded transition-all duration-200 text-xs font-bold"
-              >
-                {t('logout', lang)}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="tutorial-trigger-btn flex items-center gap-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1.5 rounded-lg transition-all duration-200 text-xs font-semibold shadow-sm"
+                  onClick={() => startTutorial(isDraMode ? 'authority' : 'researcher')}
+                  title="Take a guided tutorial"
+                >
+                  <GraduationCap size={14} className="text-blue-600" />
+                  <span className="hidden sm:inline">Tutorial</span>
+                </button>
+                <button
+                  onClick={logout}
+                  className="flex items-center justify-center bg-red-50 hover:bg-red-500 border border-red-200 text-red-600 hover:text-white hover:border-red-600 w-8 h-8 rounded-lg transition-all duration-200 shadow-sm"
+                  title={t('logout', lang)}
+                >
+                  <LogOut size={15} strokeWidth={2.5} />
+                </button>
+              </div>
             </div>
         </div>
 
@@ -569,6 +615,7 @@ export default function App() {
             ) : (
               <>
                 <RegionSelector
+                  id="tutorial-region-selector"
                   districts={regions.districts}
                   taluks={regions.taluks}
                   hoblis={regions.hoblis}
@@ -586,22 +633,28 @@ export default function App() {
 
                 {regionLoaded && (
                   <>
+                    <div id="tutorial-population-panel">
                     <PopulationPanel
                       loadedHobli={loadedHobli}
                       onPopulationSet={setPopulationCount}
                     />
+                    </div>
 
+                    <div id="tutorial-shelters-panel">
                     <SheltersPanel
                       loadedHobli={loadedHobli}
                       shelters={sheltersWithSafety.length ? sheltersWithSafety : null}
                       onCandidates={setShelterCandidates}
                     />
+                    </div>
 
+                    <div id="tutorial-rainfall-panel">
                     <RainfallPanel
                       loadedHobli={loadedHobli}
                       rainfallMm={rainfallMm}
                       onRainfallChange={setRainfallMm}
                     />
+                    </div>
 
                     {/* ── Panel 1: Evacuation Mode (standalone) ───── */}
                     <div className="evac-mode-toggle panel">
@@ -703,6 +756,7 @@ export default function App() {
                     </div>
 
                     {/* ── Simulation Controls ─────────────────────── */}
+                    <div id="tutorial-sim-controls">
                     <SimulationControls
                       steps={steps}
                       decayFactor={decayFactor}
@@ -717,10 +771,12 @@ export default function App() {
                       progressPct={sim.progressPct}
                       onStart={compareMode ? handleCompare : handleStart}
                       onTogglePause={sim.togglePause}
-                      onReset={handleReset}
+                      onStop={sim.stop}
+                      onRestart={sim.restart}
                       compareMode={compareMode}
                       compareProgress={compareProgress}
                     />
+                    </div>
 
                     {/* Flood Impact summary */}
                     {sim.simulationDone && populationCount > 0 && (
@@ -950,6 +1006,8 @@ export default function App() {
           }
         }}
       />
+
+      <TutorialOverlay />
     </div>
   );
 }
