@@ -67,19 +67,8 @@ const LoginPage = () => {
 
   return (
     <div style={{ height: '100vh', display: 'flex', fontFamily: "'Inter', sans-serif", background: '#f8fafc', overflow: 'hidden' }}>
-      {/* Language toggle — fixed top-right */}
-      <button onClick={toggleLang} style={{ position: 'fixed', top: '16px', right: '16px', zIndex: 9999, fontSize: '12px', fontWeight: 700, padding: '5px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', color: '#334155', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
-        {t('lang_toggle', lang)}
-      </button>
-      {/* Take Tutorial button */}
-      <button
-        className="tutorial-trigger-btn tutorial-trigger-btn--login"
-        onClick={() => startTutorial('login')}
-      >
-        <GraduationCap size={15} />
-        Take Tutorial
-      </button>
       <TutorialOverlay />
+      
       {/* Left Hero */}
       <div style={{ display: 'none', width: '50%', background: 'linear-gradient(145deg, #1e3a8a 0%, #1d4ed8 50%, #2563eb 100%)', position: 'relative', overflow: 'hidden' }} className="login-hero-panel">
         <div style={{ position: 'absolute', bottom: '-80px', left: '-60px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(59,130,246,0.15)', filter: 'blur(60px)' }} />
@@ -116,7 +105,37 @@ const LoginPage = () => {
       </div>
 
       {/* Right Form */}
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem', overflowY: 'auto' }} className="login-form-panel">
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '1.5rem 2rem 2rem', overflowY: 'auto' }} className="login-form-panel">
+        
+        {/* Top actions (Language + Tutorial) */}
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '1.5rem' }}>
+          <button onClick={toggleLang} style={{ fontSize: '13px', fontWeight: 700, padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', color: '#334155', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.06)', transition: 'all 0.2s' }}>
+            {t('lang_toggle', lang)}
+          </button>
+          
+          <button
+            className="tutorial-trigger-btn"
+            onClick={() => startTutorial('login')}
+            style={{
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            <GraduationCap size={16} />
+            Take Tutorial
+          </button>
+        </div>
+
         <div style={{ maxWidth: '520px', width: '100%', margin: 'auto 0' }}>
           <div className="login-mobile-header" style={{ display: 'none', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '2rem' }}>
             <div style={{ background: '#2563eb', padding: '8px', borderRadius: '12px', display: 'flex' }}><Droplets size={24} color="white" /></div>
@@ -130,7 +149,7 @@ const LoginPage = () => {
 
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {isRegistering && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="reg-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('account_type', lang)}</label><select name="role" value={formData.role} onChange={handleInputChange} style={inputStyle}><option value="authority">{t('dra_option', lang)}</option><option value="researcher">{t('researcher_option', lang)}</option><option value="citizen">Citizen — Flood Navigation</option></select></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('choose_username', lang)}</label><input type="text" name="username" required value={formData.username} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_username', lang)} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('full_name', lang)}</label><input type="text" name="name" required value={formData.name} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_full_name', lang)} /></div>
@@ -159,7 +178,7 @@ const LoginPage = () => {
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '1.25rem' }}>
               <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} /><span style={{ padding: '0 14px', color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('sandbox_access', lang)}</span><div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+            <div className="demo-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
               <button type="button" onClick={() => handleDemoLogin('authority')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #fed7aa', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                 <div style={{ background: '#fff7ed', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><ShieldAlert size={18} color="#f97316" /></div>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#9a3412' }}>{t('authority_role', lang)}</span>
@@ -189,6 +208,10 @@ const LoginPage = () => {
       <style>{`
         @media (min-width: 1024px) { .login-hero-panel { display: flex !important; } .login-form-panel { width: 50% !important; } .login-mobile-header { display: none !important; } }
         @media (max-width: 1023px) { .login-mobile-header { display: flex !important; } }
+        @media (max-width: 640px) { 
+          .demo-grid { grid-template-columns: 1fr 1fr !important; } 
+          .reg-grid > div { grid-column: 1 / -1 !important; } 
+        }
       `}</style>
     </div>
   );

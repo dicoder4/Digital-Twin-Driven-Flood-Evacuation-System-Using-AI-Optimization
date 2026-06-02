@@ -179,7 +179,6 @@ function ShelterGapAnalysis({ suggestions = [], atRiskRemaining = 0, onRerun }) 
 
 export function EvacuationPanel({ locationName, summary, evacuationMode, selectedShelterId, onSelectShelter, trafficSegmentCount = 0, showTraffic = false, compareResults = null, compareActiveAlgo = null, onSetCompareAlgo = null, isDraMode = false, evacuationPlan = [], onRerunWithSuggestions = null, simulationParams = {}, user = null, floodData = null, roadsData = null, trafficRoadsData = null, metroLines = null, metroStations = [], busManifest = null }) {
     const { lang } = useLanguage();
-    const [genaiOpen, setGenaiOpen] = useState(false);
     const [notifyLoading, setNotifyLoading] = useState(false);
 
     const handleNotifyActions = async (targetSummary, targetPlan) => {
@@ -762,44 +761,6 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                         </div>
                     </section>
                 )}
-
-                {/* ── GenAI Agent (compare mode) ─────────────────── */}
-                {ad && (
-                    <section className="panel evac-section genai-dropdown">
-                        <button
-                            className="genai-dropdown-toggle"
-                            onClick={() => setGenaiOpen(prev => !prev)}
-                        >
-                            <span className="genai-dropdown-title">
-                                <Cpu size={14} />
-                                {t('genai_agent', lang)}
-                            </span>
-                            <ChevronDown
-                                size={14}
-                                className={`genai-chevron ${genaiOpen ? 'genai-chevron--open' : ''}`}
-                            />
-                        </button>
-                        {genaiOpen && (
-                            <div className="genai-dropdown-content">
-                                <PanelOfExperts
-                                    locationName={locationName}
-                                    summary={ad}
-                                    evacuationPlan={compareActiveAlgo ? (compareResults[compareActiveAlgo]?.evacuation_plan ?? []) : []}
-                                />
-                                <EvacuationChat context={{
-                                    mode: 'compare',
-                                    active_algo: compareActiveAlgo,
-                                    // Strip the heavy geojson/plan data so context doesn't explode
-                                    summaries: Object.keys(compareResults).reduce((acc, k) => {
-                                        const { evacuation_plan, traffic_geojson, ...rest } = compareResults[k];
-                                        acc[k] = rest;
-                                        return acc;
-                                    }, {})
-                                }} />
-                            </div>
-                        )}
-                    </section>
-                )}
             </div>
         );
     }
@@ -937,34 +898,6 @@ export function EvacuationPanel({ locationName, summary, evacuationMode, selecte
                 </section>
             )}
 
-            {/* ── GenAI Agent ────────────────────────────────── */}
-            {summary && (
-                <section className="panel evac-section genai-dropdown">
-                    <button
-                        className="genai-dropdown-toggle"
-                        onClick={() => setGenaiOpen(prev => !prev)}
-                    >
-                        <span className="genai-dropdown-title">
-                            <Cpu size={14} />
-                            {t('genai_agent', lang)}
-                        </span>
-                        <ChevronDown
-                            size={14}
-                            className={`genai-chevron ${genaiOpen ? 'genai-chevron--open' : ''}`}
-                        />
-                    </button>
-                    {genaiOpen && (
-                        <div className="genai-dropdown-content">
-                            <PanelOfExperts
-                                locationName={locationName}
-                                summary={summary}
-                                evacuationPlan={evacuationPlan}
-                            />
-                            <EvacuationChat context={summary} evacuationPlan={evacuationPlan} />
-                        </div>
-                    )}
-                </section>
-            )}
 
             {/* ── Shelter Gap Analysis ──────────────────── */}
             <ShelterGapAnalysis

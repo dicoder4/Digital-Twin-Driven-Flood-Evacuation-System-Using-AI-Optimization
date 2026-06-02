@@ -438,3 +438,7 @@
   .nav-top-bar .nav-instruction { font-size: 18px; }
   .nav-top-bar .nav-distance-block .nav-distance-value { font-size: 22px; }
 }
+
+@media (max-width: 768px) {
+  /* removed .citizen-sidebar */
+}

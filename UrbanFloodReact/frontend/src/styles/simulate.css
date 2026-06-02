@@ -195,3 +195,19 @@
   from { transform: translateY(-20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+@media (max-width: 768px) {
+  #tutorial-sim-config {
+    position: absolute !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    height: 50vh !important;
+    max-height: 50vh;
+    border-radius: 20px 20px 0 0 !important;
+    border-left: none !important;
+    border-top: 1px solid #e5e7eb;
+    z-index: 1000;
+  }
+}

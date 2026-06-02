@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Map, { Source, Layer, NavigationControl, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { AlertCircle, RotateCcw, Navigation, Cloud, Droplets, MapPin, Clock, GraduationCap } from 'lucide-react';
+import { AlertCircle, RotateCcw, Navigation, Cloud, Droplets, MapPin, Clock, GraduationCap, LogOut, X } from 'lucide-react';
 import { API_URL } from '../config';
 import { useTutorial } from '../context/TutorialContext';
 import TutorialOverlay from './TutorialOverlay';
@@ -628,6 +628,7 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
 
   const startTickLoop = (sid, tickDurationMs = 110) => {
     if (tickTimerRef.current) clearTimeout(tickTimerRef.current);
+    tickTimerRef.current = 'active';
 
     const runTick = async () => {
       try {
@@ -641,6 +642,8 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         }).then(r => r.json());
+
+        if (!tickTimerRef.current) return;
 
         if (res.status === 'error') {
           setPhase('COMPLETE');
@@ -745,11 +748,13 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
           setPhase('COMPLETE');
           addNotification('✅ Arrived at destination!', 'success');
         } else {
-          tickTimerRef.current = setTimeout(runTick, playbackSpeedRef.current);
+          const delay = navMode === 'realtime' ? 5000 : playbackSpeedRef.current;
+          tickTimerRef.current = setTimeout(runTick, delay);
         }
       } catch (err) {
         console.error(err);
-        tickTimerRef.current = setTimeout(runTick, playbackSpeedRef.current);
+        const delay = navMode === 'realtime' ? 5000 : playbackSpeedRef.current;
+        tickTimerRef.current = setTimeout(runTick, delay);
       }
     };
 
@@ -826,7 +831,10 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
   };
 
   const handleReset = async () => {
-    if (tickTimerRef.current) clearInterval(tickTimerRef.current);
+    if (tickTimerRef.current) {
+      clearTimeout(tickTimerRef.current);
+      tickTimerRef.current = null;
+    }
     if (sessionId) {
       try {
         await fetch(`${API_URL}/simulate/reset`, {
@@ -893,13 +901,17 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
             background: '#ef4444',
             color: 'white',
             border: 'none',
-            padding: '0.5rem 1rem',
+            padding: '0.5rem 0.75rem',
             borderRadius: '0.5rem',
             cursor: 'pointer',
             fontWeight: 'bold',
             fontSize: '0.875rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
           }}>
-            Logout
+            <LogOut size={16} />
+            <span className="logout-text">Logout</span>
           </button>
         </div>
       </div>
@@ -2266,6 +2278,31 @@ export default function SimulateCitizenView({ user, onLogout, lang, onToggleLang
                     </button>
                   </div>
                 </>
+              )}
+
+              {navMode === 'realtime' && (phase === 'RUNNING' || phase === 'PAUSED') && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <button
+                    onClick={handleReset}
+                    style={{
+                      width: '100%',
+                      background: '#ef4444',
+                      color: 'white',
+                      padding: '0.75rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    <X size={18} /> Exit Navigation
+                  </button>
+                </div>
               )}
             </div>
           )}

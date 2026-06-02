@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MapComponent from './MapComponent';
 import { Marker, Source, Layer } from 'react-map-gl/maplibre';
-import { MapPin, Navigation, AlertCircle, ChevronUp, ChevronDown, Phone, Cloud, Search, Shield, X, GraduationCap } from 'lucide-react';
+import { MapPin, Navigation, AlertCircle, ChevronUp, ChevronDown, Phone, Cloud, Search, Shield, X, GraduationCap, LogOut } from 'lucide-react';
 import { API_URL } from '../config';
 import { useTutorial } from '../context/TutorialContext';
 import TutorialOverlay from './TutorialOverlay';
@@ -483,43 +483,26 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
     return '✅ No flooding — Safe passage';
   };
 
+  const handleSheetTouchStart = (e) => {
+    sheetTouchStartY.current = e.touches[0].clientY;
+  };
+  const handleSheetTouchMove = (e) => {
+    if (!sheetTouchStartY.current) return;
+    const currentY = e.touches[0].clientY;
+    const diff = sheetTouchStartY.current - currentY;
+    if (diff > 50) setBottomSheetExpanded(true);
+    else if (diff < -50) setBottomSheetExpanded(false);
+  };
+  const handleSheetTouchEnd = () => {
+    sheetTouchStartY.current = null;
+  };
+
   return (
     <div className="citizen-view">
-
-      {/* ─── FLOATING GLASS HEADER (non-navigation phases) ─── */}
-      {phase !== 'NAVIGATING' && (
-        <div className="floating-glass-header">
-          <h1>
-            <Navigation size={18} />
-            {translations.citizen_title}
-          </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              className="tutorial-trigger-btn tutorial-trigger-btn--header"
-              onClick={() => startTutorial('citizen')}
-              title={lang === 'en' ? 'Take a guided tutorial' : 'ಮಾರ್ಗದರ್ಶಿ ಟ್ಯುಟೋರಿಯಲ್'}
-            >
-              <GraduationCap size={13} />
-              {lang === 'en' ? 'Tutorial' : 'ಟ್ಯುಟೋರಿಯಲ್'}
-            </button>
-            <button onClick={onLogout}>Logout</button>
-          </div>
-        </div>
-      )}
-
-      {/* ─── NOTIFICATION TOASTS ─── */}
-      <div style={{ position: 'absolute', top: phase === 'NAVIGATING' ? '160px' : '70px', left: '12px', right: '12px', zIndex: 200, pointerEvents: 'none' }}>
-        {notifications.map(n => (
-          <div key={n.id} style={{ pointerEvents: 'auto' }}>
-            <NotificationBanner message={n.msg} type={n.type} icon={n.type === 'warning' ? AlertCircle : n.type === 'error' ? AlertCircle : n.type === 'success' ? MapPin : Cloud} />
-          </div>
-        ))}
-      </div>
-
-      {/* ─── MAP (full-bleed) ─── */}
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
+      {/* ─── FULL-SCREEN MAP ─── */}
+      <div id="tutorial-sim-map" style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
         {error && (
-          <div style={{ position: 'absolute', top: 70, left: 12, right: 12, zIndex: 100, background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '12px 16px', borderRadius: 14, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, fontWeight: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+          <div style={{ position: 'absolute', top: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '12px 16px', borderRadius: 14, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, fontWeight: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.08)', width: 'max-content', maxWidth: '90%' }}>
             <AlertCircle size={16} />
             {error === 'gps_denied' ? translations.gps_denied : error}
             <button onClick={() => setError(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#991b1b' }}><X size={16} /></button>
@@ -567,20 +550,18 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
             <Marker longitude={userLoc.lon} latitude={userLoc.lat} anchor="bottom">
               <div
                 style={{
-                  width: '36px', height: '36px', background: '#2563eb', borderRadius: '50%',
+                  width: '28px', height: '28px', background: '#2563eb', borderRadius: '50%',
                   border: draggedMarker === 'start' ? '3px solid #fbbf24' : '3px solid white',
                   boxShadow: draggedMarker === 'start' ? '0 0 0 8px rgba(251, 191, 36, 0.3)' : '0 2px 8px rgba(37, 99, 235, 0.4)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '16px', fontWeight: 'bold', color: 'white',
+                  fontSize: '12px', fontWeight: 'bold', color: 'white',
                   cursor: draggedMarker === 'start' ? 'grabbing' : 'grab',
                   transition: 'box-shadow 0.2s', userSelect: 'none',
                 }}
                 onMouseDown={(e) => handleMarkerMouseDown(e, 'start')}
                 onClick={(e) => handleMarkerClick(e, 'start')}
                 title="Drag to move, double-click to remove"
-              >
-                A
-              </div>
+              />
             </Marker>
           )}
 
@@ -588,11 +569,11 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
             <Marker longitude={destination.lon} latitude={destination.lat} anchor="bottom">
               <div
                 style={{
-                  width: '36px', height: '36px', background: '#dc2626', borderRadius: '50%',
+                  width: '32px', height: '32px', background: '#dc2626', borderRadius: '50%',
                   border: draggedMarker === 'end' ? '3px solid #fbbf24' : '3px solid white',
                   boxShadow: draggedMarker === 'end' ? '0 0 0 8px rgba(251, 191, 36, 0.3)' : '0 2px 8px rgba(220, 38, 38, 0.4)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '16px', fontWeight: 'bold', color: 'white',
+                  fontSize: '14px', fontWeight: 'bold', color: 'white',
                   cursor: draggedMarker === 'end' ? 'grabbing' : 'grab',
                   transition: 'box-shadow 0.2s', userSelect: 'none',
                 }}
@@ -605,508 +586,315 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
             </Marker>
           )}
         </MapComponent>
-
         {(phase === 'NAVIGATING' || phase === 'SHELTER_EVACUATION') && <RainOverlay intensity={maxFloodIntensity} />}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/*  BOTTOM SHEETS — one per phase                                */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-
-      {/* ── LOCATING ── */}
-      {phase === 'LOCATING' && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 24 }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b' }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>📍</div>
-            <div style={{ fontWeight: 600 }}>{translations.finding_location}</div>
-          </div>
-        </div>
-      )}
-
-      {/* ── IDLE — Google Maps style home screen ── */}
-      {phase === 'IDLE' && userLoc && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 28 }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: '#64748b', fontWeight: 500 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }}></div>
-            Your location detected
-          </div>
-          <button
-            onClick={() => setPhase('DESTINATION_INPUT')}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '14px 18px',
-              background: '#f1f5f9',
-              border: 'none',
-              borderRadius: 16,
-              cursor: 'pointer',
-              marginBottom: 12,
-              transition: 'background 0.15s',
-            }}
-            onMouseOver={e => e.currentTarget.style.background = '#e2e8f0'}
-            onMouseOut={e => e.currentTarget.style.background = '#f1f5f9'}
-          >
-            <Search size={18} style={{ color: '#2563eb' }} />
-            <span style={{ color: '#64748b', fontSize: 15, fontWeight: 500 }}>Search destination...</span>
-          </button>
-          <div style={{ display: 'flex', gap: 10 }}>
+      {/* ─── FLOATING TOP HEADER ─── */}
+      {(phase === 'IDLE' || phase === 'CONFIG' || phase === 'DESTINATION_INPUT' || phase === 'LOCATING' || phase === 'ARRIVED') && (
+        <div className="floating-glass-header" id="tutorial-sim-header">
+          <h1><Navigation size={20} /> {translations.citizen_title}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
-              onClick={() => setPhase('DESTINATION_INPUT')}
-              className="citizen-btn btn-primary"
-              style={{ flex: 1 }}
+              className="tutorial-trigger-btn tutorial-trigger-btn--header"
+              onClick={() => startTutorial('citizen')}
+              style={{ padding: '6px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.8)', color: '#475569', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <Navigation size={16} />
-              {translations.find_route}
+              <GraduationCap size={14} />
+              {lang === 'en' ? 'Tutorial' : 'ಟ್ಯುಟೋರಿಯಲ್'}
             </button>
-            <button
-              onClick={handleNearestShelter}
-              disabled={isLoading}
-              className="citizen-btn btn-green"
-              style={{ flex: 1 }}
-            >
-              <Shield size={16} />
-              {isLoading ? '...' : translations.nearest_shelter}
+            <button onClick={onLogout} style={{ background: '#fee2e2', color: '#dc2626', padding: '6px', borderRadius: '8px', display: 'flex' }}>
+              <LogOut size={16} />
             </button>
           </div>
         </div>
       )}
 
-      {/* ── DESTINATION INPUT ── */}
-      {phase === 'DESTINATION_INPUT' && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 24 }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f1f5f9', borderRadius: 14, padding: '4px 4px 4px 16px', marginBottom: 10 }}>
-            <Search size={16} style={{ color: '#94a3b8', flexShrink: 0 }} />
-            <input
-              type="text"
-              placeholder={translations.search_destination}
-              value={searchQuery}
-              onChange={e => handleSearchInputChange(e.target.value)}
-              autoFocus
-              style={{
-                flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                padding: '12px 0', fontSize: 15, fontWeight: 500, color: '#1e293b',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            />
-            {searchQuery && (
-              <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}>
-                <X size={16} style={{ color: '#94a3b8' }} />
-              </button>
-            )}
-          </div>
-
-          <button
-            onClick={() => setMapTapMode(!mapTapMode)}
-            style={{
-              background: mapTapMode ? '#dbeafe' : 'transparent',
-              border: mapTapMode ? '1px solid #93c5fd' : '1px solid transparent',
-              padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
-              fontSize: 13, color: '#2563eb', fontWeight: 600, marginBottom: 8,
-              display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-            }}
-          >
-            <MapPin size={14} />
-            {translations.tap_on_map}
-            {mapTapMode && ' ✓'}
-          </button>
-
-          <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 12 }}>
-            {searchResults.map((r, i) => (
-              <button
-                key={i}
-                onClick={() => handleSelectDestination(r)}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '12px 14px',
-                  background: 'transparent', border: 'none', borderBottom: '1px solid #f1f5f9',
-                  cursor: 'pointer', fontSize: 13, color: '#374151', fontWeight: 500,
-                  transition: 'background 0.1s', display: 'flex', alignItems: 'flex-start', gap: 10,
-                }}
-                onMouseOver={e => e.currentTarget.style.background = '#f8fafc'}
-                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <MapPin size={14} style={{ color: '#94a3b8', marginTop: 2, flexShrink: 0 }} />
-                <span>{r.display_name}</span>
-              </button>
-            ))}
-          </div>
-
-          <button onClick={() => setPhase('IDLE')} className="citizen-btn btn-secondary" style={{ marginTop: 8 }}>
-            Back
-          </button>
-        </div>
-      )}
-
-      {/* ── ROUTING (loading) ── */}
-      {phase === 'ROUTING' && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 24 }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ textAlign: 'center', padding: '24px 0', color: '#64748b' }}>
-            <div style={{ fontSize: 28, marginBottom: 8, animation: 'citizen-pulse 1.5s infinite' }}>🗺️</div>
-            <div style={{ fontWeight: 600 }}>{translations.calculating_route}</div>
-          </div>
-        </div>
-      )}
-
-      {/* ── CONFIG — Route preview ── */}
-      {phase === 'CONFIG' && routeData && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 24 }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div>
-              <div style={{ fontSize: 26, fontWeight: 900, color: '#059669', lineHeight: 1 }}>
-                {routeData.eta_minutes || Math.round((routeData.total_distance_m / 1000) / 30 * 60)} min
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, marginTop: 4 }}>
-                {(routeData.total_distance_m / 1000).toFixed(1)} km • ETA (inc. traffic)
-              </div>
-            </div>
-            <div style={{
-              padding: '6px 14px',
-              borderRadius: 10,
-              fontWeight: 700,
-              fontSize: 12,
-              background: routeData.safe ? '#dcfce7' : '#fef3c7',
-              color: routeData.safe ? '#166534' : '#92400e',
-            }}>
-              {routeData.safe ? '✅ Safe Route' : '⚠️ Has Flooding'}
-            </div>
-          </div>
-
-          <div className="journey-stats" style={{ marginBottom: 12 }}>
-            <div className="stat-row">
-              <span>🛣️ Distance</span>
-              <strong>{(routeData.total_distance_m / 1000).toFixed(1)} km</strong>
-            </div>
-            <hr className="stat-divider" />
-            <div className="stat-row">
-              <span>💧 Max Flood Depth</span>
-              <strong style={{ color: getFloodColor(floodDepth) }}>{floodDepth.toFixed(2)} m</strong>
-            </div>
-            <hr className="stat-divider" />
-            <div className="stat-row">
-              <span>📊 Flood Assessment</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: getFloodColor(floodDepth) }}>{getFloodNote(floodDepth)}</span>
-            </div>
-            {alternativeRoutes?.length > 0 && (
-              <>
-                <hr className="stat-divider" />
-                <div className="stat-row">
-                  <span>🔀 Alternative Routes</span>
-                  <strong>{alternativeRoutes.length} found</strong>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => { setPhase('NAVIGATING'); setStepIdx(0); }}
-              className="citizen-btn btn-primary"
-              style={{ flex: 2 }}
-            >
-              <Navigation size={16} /> Start Navigation
-            </button>
-            <button
-              onClick={cancelRoute}
-              className="citizen-btn btn-secondary"
-              style={{ flex: 1 }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── SHELTER EVACUATION ── */}
-      {phase === 'SHELTER_EVACUATION' && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 24, borderTop: '4px solid #dc2626' }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <AlertCircle size={22} style={{ color: '#dc2626' }} />
-            <span style={{ fontWeight: 800, fontSize: 17, color: '#991b1b' }}>Severe Flood Warning</span>
-          </div>
-          <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6, marginBottom: 14 }}>
-            Your destination route is blocked by impassable floods. 
-            For your safety, evacuate to the nearest emergency shelter immediately.
-          </p>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={handleNearestShelter}
-              disabled={isLoading}
-              className="citizen-btn btn-danger"
-              style={{ flex: 2 }}
-            >
-              {isLoading ? 'Routing...' : '🚨 Route to Safe Shelter'}
-            </button>
-            <button
-              onClick={() => { setPhase('IDLE'); setDestination(null); }}
-              className="citizen-btn btn-secondary"
-              style={{ flex: 1 }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/*  NAVIGATING — Google Maps style top bar + bottom sheet        */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* ─── NAVIGATING TOP BAR (Google Maps style) ─── */}
       {phase === 'NAVIGATING' && routeData && currentStep && (
-        <>
-          {/* ── Top Navigation Bar (Google Maps green bar) ── */}
-          <div className="nav-top-bar">
-            <div className="nav-instruction-area">
-              <div className="nav-label">
-                <Navigation size={12} style={{ animation: 'citizen-pulse 2s infinite' }} />
-                NEXT TURN
-              </div>
-              <div className="nav-instruction">{currentStep.instruction}</div>
-              <div className="nav-meta-row">
-                <div className="nav-distance-block">
-                  <div className="nav-distance-label">Distance</div>
-                  <div className="nav-distance-value">
-                    {currentStep.distance_m >= 1000
-                      ? `${(currentStep.distance_m / 1000).toFixed(1)} km`
-                      : `${currentStep.distance_m} m`}
-                  </div>
-                </div>
-                {currentStep.flood_depth_m > 0.1 && (
-                  <div className="nav-flood-chip">
-                    <span className="nav-flood-chip-label">⚠️ Flood</span>
-                    <span className="nav-flood-chip-value">{currentStep.flood_depth_m.toFixed(2)}m</span>
-                  </div>
-                )}
-              </div>
+        <div className="nav-top-bar">
+          <div className="nav-instruction-area">
+            <div className="nav-label">
+              <Navigation size={12} style={{ animation: 'citizen-pulse 2s infinite' }} />
+              NEXT TURN
             </div>
-            {/* Progress bar */}
-            <div className="nav-progress-bar">
-              <div className="nav-progress-bar-fill" style={{ width: `${progressPercent}%` }}></div>
+            <div className="nav-instruction">{currentStep.instruction}</div>
+            
+            <div className="nav-meta-row">
+              <div className="nav-distance-block">
+                <div className="nav-distance-label">DISTANCE</div>
+                <div className="nav-distance-value">
+                  {currentStep.distance_m >= 1000 ? `${(currentStep.distance_m / 1000).toFixed(1)} km` : `${currentStep.distance_m} m`}
+                </div>
+              </div>
+              
+              {currentStep.flood_depth_m > 0.1 && (
+                <div className="nav-flood-chip">
+                  <div className="nav-flood-chip-label">⚠️ FLOOD</div>
+                  <div className="nav-flood-chip-value">{currentStep.flood_depth_m.toFixed(2)}m</div>
+                </div>
+              )}
             </div>
           </div>
+          
+          <div className="nav-progress-bar">
+            <div className="nav-progress-bar-fill" style={{ width: `${progressPercent}%` }}></div>
+          </div>
 
-          {/* ── Rerouting Banner ── */}
           {isRerouting && (
-            <div style={{ position: 'absolute', top: 170, left: 12, right: 12, zIndex: 100 }}>
-              <div className="reroute-banner">
-                🔄 Checking for safer route...
-              </div>
+            <div style={{ background: '#f59e0b', padding: '6px 16px', color: '#fff', fontWeight: 'bold', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+              <AlertCircle size={14} /> Rerouting due to live conditions...
             </div>
           )}
+        </div>
+      )}
 
-          {/* ── Bottom Navigation Sheet (expandable) ── */}
-          <div
-            className="citizen-bottom-sheet"
-            style={{
-              paddingBottom: 28,
-              maxHeight: bottomSheetExpanded ? '80vh' : '200px',
-              transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-              overflowY: bottomSheetExpanded ? 'auto' : 'hidden',
-            }}
-          >
-            {/* Draggable / tappable handle */}
-            <div
-              className="bottom-sheet-handle"
-              style={{ cursor: 'grab', padding: '8px 0', marginBottom: 8 }}
-              onClick={() => setBottomSheetExpanded(prev => !prev)}
-              onTouchStart={(e) => { sheetTouchStartY.current = e.touches[0].clientY; }}
-              onTouchEnd={(e) => {
-                if (sheetTouchStartY.current !== null) {
-                  const dy = e.changedTouches[0].clientY - sheetTouchStartY.current;
-                  if (dy < -30) setBottomSheetExpanded(true);   // swipe up → expand
-                  if (dy > 30)  setBottomSheetExpanded(false);  // swipe down → collapse
-                  sheetTouchStartY.current = null;
-                }
+      {/* ─── FLOATING NOTIFICATIONS ─── */}
+      <div style={{ position: 'absolute', top: phase === 'NAVIGATING' ? '140px' : '80px', left: '16px', right: '16px', zIndex: 100, pointerEvents: 'none' }}>
+        {notifications.map(n => (
+          <div key={n.id} style={{ pointerEvents: 'auto' }}>
+            <NotificationBanner message={n.msg} type={n.type} icon={n.type === 'warning' ? AlertCircle : n.type === 'error' ? AlertCircle : n.type === 'success' ? MapPin : Cloud} />
+          </div>
+        ))}
+      </div>
+
+      {/* ─── FLOATING ACTION BUTTONS (Right side) ─── */}
+      {(phase === 'IDLE' || phase === 'CONFIG') && userLoc && (
+        <div style={{ position: 'absolute', right: '16px', bottom: bottomSheetExpanded ? '85vh' : '45vh', zIndex: 50, display: 'flex', flexDirection: 'column', gap: '10px', transition: 'bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+           <button onClick={() => setViewState(prev => ({ ...prev, longitude: userLoc.lon, latitude: userLoc.lat, zoom: 15 }))} style={{ width: 44, height: 44, borderRadius: '50%', background: 'white', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#2563eb' }}>
+             <Navigation size={20} />
+           </button>
+        </div>
+      )}
+
+      {/* ─── BOTTOM SHEET ─── */}
+      <div 
+        className="citizen-bottom-sheet" id="tutorial-sim-config"
+        style={{ maxHeight: bottomSheetExpanded ? '85vh' : (phase === 'NAVIGATING' ? '40vh' : '45vh') }}
+        onTouchStart={handleSheetTouchStart}
+        onTouchMove={handleSheetTouchMove}
+        onTouchEnd={handleSheetTouchEnd}
+      >
+        <div className="bottom-sheet-handle"></div>
+
+        {/* ── LOCATING ── */}
+        {phase === 'LOCATING' && (
+          <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📍</div>
+            <div style={{ fontWeight: 600 }}>{translations.finding_location}</div>
+          </div>
+        )}
+
+        {/* ── IDLE ── */}
+        {phase === 'IDLE' && userLoc && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', fontSize: 13, color: '#166534', fontWeight: 600, marginBottom: '16px' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', animation: 'citizen-pulse 2s infinite' }}></div>
+              Location live
+            </div>
+
+            <button
+              onClick={() => setPhase('DESTINATION_INPUT')}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '16px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 16, cursor: 'pointer', marginBottom: 16, transition: 'background 0.15s',
               }}
-            ></div>
+            >
+              <Search size={20} style={{ color: '#2563eb' }} />
+              <span style={{ color: '#64748b', fontSize: 15, fontWeight: 500 }}>{translations.search_destination}</span>
+            </button>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <button
+                onClick={handleNearestShelter}
+                disabled={isLoading}
+                className="citizen-btn btn-green"
+                style={{ padding: '16px', borderRadius: '14px', fontSize: '1rem', fontWeight: 700 }}
+              >
+                <Shield size={20} /> {isLoading ? 'Searching...' : translations.nearest_shelter}
+              </button>
+            </div>
+          </div>
+        )}
 
-            {/* ── ALWAYS VISIBLE: ETA row + Prev/Next ── */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        {/* ── DESTINATION INPUT ── */}
+        {phase === 'DESTINATION_INPUT' && (
+          <div style={{ height: bottomSheetExpanded ? '75vh' : 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f1f5f9', borderRadius: 14, padding: '4px 4px 4px 16px', marginBottom: 12 }}>
+              <Search size={18} style={{ color: '#94a3b8', flexShrink: 0 }} />
+              <input
+                type="text"
+                placeholder={translations.search_destination}
+                value={searchQuery}
+                onChange={e => handleSearchInputChange(e.target.value)}
+                autoFocus
+                style={{
+                  flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                  padding: '14px 0', fontSize: 15, fontWeight: 500, color: '#1e293b',
+                }}
+              />
+              {searchQuery && (
+                <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}>
+                  <X size={18} style={{ color: '#94a3b8' }} />
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setMapTapMode(!mapTapMode)}
+              style={{
+                background: mapTapMode ? '#dbeafe' : '#f8fafc',
+                border: mapTapMode ? '1px solid #93c5fd' : '1px solid #e2e8f0',
+                padding: '12px', borderRadius: 12, cursor: 'pointer',
+                fontSize: 14, color: mapTapMode ? '#2563eb' : '#475569', fontWeight: 600, marginBottom: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.15s', width: '100%'
+              }}
+            >
+              <MapPin size={16} />
+              {translations.tap_on_map}
+              {mapTapMode && ' ✓'}
+            </button>
+
+            <div style={{ overflowY: 'auto', maxHeight: '50vh', paddingBottom: '16px' }}>
+              {searchResults.map((r, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSelectDestination(r)}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '16px',
+                    background: 'white', borderBottom: '1px solid #f1f5f9',
+                    cursor: 'pointer', fontSize: 14, color: '#374151', fontWeight: 500,
+                    display: 'flex', alignItems: 'center', gap: 14,
+                  }}
+                >
+                  <MapPin size={18} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                  <span>{r.display_name}</span>
+                </button>
+              ))}
+            </div>
+
+            <button onClick={() => setPhase('IDLE')} className="citizen-btn btn-secondary" style={{ marginTop: '16px' }}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* ── ROUTING ── */}
+        {phase === 'ROUTING' && (
+          <div style={{ textAlign: 'center', padding: '30px 0', color: '#64748b' }}>
+            <div style={{ fontSize: 36, marginBottom: 16, animation: 'citizen-pulse 1.5s infinite' }}>🗺️</div>
+            <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>{translations.calculating_route}</div>
+          </div>
+        )}
+
+        {/* ── CONFIG ── */}
+        {phase === 'CONFIG' && routeData && (
+          <div>
+            <div style={{ background: routeData.safe ? '#f0fdf4' : '#fef2f2', border: `1px solid ${routeData.safe ? '#86efac' : '#fecaca'}`, padding: '1rem', borderRadius: '16px', marginBottom: '1rem' }}>
+              <div style={{ fontSize: 28, fontWeight: 900, color: routeData.safe ? '#059669' : '#dc2626', lineHeight: 1 }}>
+                {routeData.eta_minutes || Math.round((routeData.total_distance_m / 1000) / 30 * 60)} min
+              </div>
+              <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginTop: 6 }}>
+                {(routeData.total_distance_m / 1000).toFixed(1)} km • Fastest route
+              </div>
+            </div>
+
+            <div style={{ background: 'white', padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <span style={{ color: '#64748b', fontSize: '14px', fontWeight: 600 }}>💧 Max Flood Depth</span>
+                <strong style={{ color: getFloodColor(floodDepth), fontSize: '14px' }}>{floodDepth.toFixed(2)} m</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b', fontSize: '14px', fontWeight: 600 }}>🛡️ Safety Status</span>
+                <strong style={{ color: routeData.safe ? '#16a34a' : '#dc2626', fontSize: '14px' }}>{routeData.safe ? 'SAFE ✅' : 'RISKY ⚠️'}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={cancelRoute} className="citizen-btn btn-secondary" style={{ flex: 1, padding: '14px' }}>Cancel</button>
+              <button onClick={() => { setPhase('NAVIGATING'); setStepIdx(0); setBottomSheetExpanded(false); }} className="citizen-btn btn-primary" style={{ flex: 2, padding: '14px', fontSize: '1.05rem' }}>
+                <Navigation size={18} /> Start
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SHELTER EVACUATION ── */}
+        {phase === 'SHELTER_EVACUATION' && (
+          <div>
+            <div style={{ padding: '1.25rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '16px', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <AlertCircle size={24} style={{ color: '#dc2626' }} />
+                <span style={{ fontWeight: 800, fontSize: 18, color: '#991b1b' }}>Severe Flood</span>
+              </div>
+              <p style={{ fontSize: 14, color: '#7f1d1d', lineHeight: 1.5, margin: 0, fontWeight: 500 }}>
+                Destination unreachable. Evacuate to the nearest shelter immediately.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={() => { setPhase('IDLE'); setDestination(null); }} className="citizen-btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+              <button onClick={handleNearestShelter} disabled={isLoading} className="citizen-btn btn-danger" style={{ flex: 2 }}>
+                <Shield size={18} /> {isLoading ? '...' : 'Route to Shelter'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── NAVIGATING ── */}
+        {phase === 'NAVIGATING' && routeData && (
+          <div style={{ display: 'flex', flexDirection: 'column', height: bottomSheetExpanded ? '75vh' : 'auto' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span className="live-badge" style={{ fontSize: 14, padding: '6px 12px' }}>LIVE</span>
-                  <span style={{ fontSize: 22, fontWeight: 900, color: '#059669' }}>
-                    {routeData.eta_minutes || Math.round((routeData.total_distance_m / 1000) / 30 * 60)} min
-                  </span>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#059669', lineHeight: 1 }}>
+                  {routeData.eta_minutes || Math.round((routeData.total_distance_m / 1000) / 30 * 60)} min
                 </div>
-                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, marginTop: 4 }}>
-                  {Math.round(distanceRemaining / 1000 * 10) / 10} km remaining • with live traffic • Step {stepIdx + 1}/{routeData.steps.length}
+                <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginTop: 4 }}>
+                  {Math.round(distanceRemaining / 1000 * 10) / 10} km • {routeData.steps.length - stepIdx} steps left
                 </div>
               </div>
               <button
                 onClick={cancelRoute}
-                style={{
-                  background: '#fee2e2', color: '#dc2626', border: 'none',
-                  borderRadius: 12, padding: '10px 18px', fontWeight: 700, fontSize: 13,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}
-                onMouseOver={e => { e.currentTarget.style.background = '#fecaca'; }}
-                onMouseOut={e => { e.currentTarget.style.background = '#fee2e2'; }}
+                style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '24px', padding: '8px 16px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
               >
                 Exit
               </button>
             </div>
 
-            {/* Prev / Reset / Next controls — always visible */}
-            <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
-              <button onClick={prevStep} disabled={stepIdx === 0} className="citizen-btn btn-secondary" style={{ flex: 1 }}>← Prev</button>
-              <button onClick={() => setStepIdx(0)} className="citizen-btn btn-secondary" style={{ flex: 0.8 }}>↻ Reset</button>
-              <button onClick={nextStep} className="citizen-btn btn-primary" style={{ flex: 1 }}>Next →</button>
-            </div>
-
-            {/* Expand hint */}
-            <div
-              onClick={() => setBottomSheetExpanded(prev => !prev)}
-              style={{ textAlign: 'center', padding: '6px 0 2px 0', cursor: 'pointer', color: '#94a3b8', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
-            >
-              {bottomSheetExpanded ? <><ChevronDown size={14} /> Less details</> : <><ChevronUp size={14} /> More details</>}
-            </div>
-
-            {/* ── EXPANDED CONTENT ── */}
+            {/* Turns List - Only visible if expanded */}
             {bottomSheetExpanded && (
-              <div style={{ animation: 'fadeIn 0.25s ease-out', marginTop: 8 }}>
-                {/* Journey progress */}
-                <div className="journey-stats" style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>📍 Journey Progress</span>
-                    <span style={{ fontWeight: 800, color: '#059669', fontSize: 13 }}>{progressPercent}%</span>
-                  </div>
-                  <div style={{ width: '100%', height: 5, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden', marginBottom: 10 }}>
-                    <div style={{
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #10b981, #34d399)',
-                      width: `${progressPercent}%`,
-                      transition: 'width 0.4s ease',
-                      borderRadius: '0 3px 3px 0',
-                    }} />
-                  </div>
-                  <div className="stat-row">
-                    <span>🛣️ Distance Remaining</span>
-                    <strong>{(distanceRemaining / 1000).toFixed(1)} km</strong>
-                  </div>
-                  <hr className="stat-divider" />
-                  <div className="stat-row" style={{ color: getFloodColor(floodDepth), fontWeight: 700 }}>
-                    <span>💧 Max Flood Level</span>
-                    <span>{floodDepth.toFixed(2)}m {floodDepth > 1.5 ? '🚫' : floodDepth > 0.5 ? '⚠️' : '✅'}</span>
-                  </div>
-                  <hr className="stat-divider" />
-                  <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500 }}>
-                    {getFloodNote(floodDepth)}
-                  </div>
-                </div>
-
-                {/* Reroute count */}
-                {rerouteCount > 0 && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 12px', background: '#fef3c7', border: '1px solid #fcd34d',
-                    borderRadius: 10, fontSize: 12, color: '#92400e', fontWeight: 600, marginBottom: 10,
-                  }}>
-                    🔄 <strong>{rerouteCount}</strong> reroute{rerouteCount > 1 ? 's' : ''} so far
-                  </div>
-                )}
-
-                {/* ── Full Turn-by-turn list (collapsible within expanded) ── */}
-                <div className="turns-list-container" style={{ marginBottom: 10 }}>
-                  <div className="turns-list-header" onClick={() => setShowAllTurns(!showAllTurns)} style={{ cursor: 'pointer' }}>
-                    <span>📍 ALL TURNS</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {stepIdx + 1} of {routeData.steps.length}
-                      {showAllTurns ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </span>
-                  </div>
-                  {showAllTurns && (
-                    <div className="turns-list-body">
-                      {routeData.steps.map((step, idx) => (
-                        <div
-                          key={idx}
-                          className={`turn-item ${idx === stepIdx ? 'active' : idx < stepIdx ? 'done' : ''}`}
-                        >
-                          <div className="turn-instruction">
-                            {idx === stepIdx ? '▶️ ' : idx < stepIdx ? '✓ ' : '◯ '}
-                            {step.instruction}
-                          </div>
-                          <div className="turn-meta">
-                            <span>{step.distance_m >= 1000 ? `${(step.distance_m / 1000).toFixed(1)} km` : `${step.distance_m} m`}</span>
-                            {step.flood_depth_m > 0.1 && (
-                              <span className={`turn-flood-badge ${step.flood_depth_m > 0.25 ? 'danger' : 'warning'}`}>
-                                ⚠️ {step.flood_depth_m.toFixed(2)}m
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+              <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', marginBottom: 12 }}>
+                <div style={{ padding: '12px', background: 'white', borderBottom: '1px solid #e2e8f0', fontWeight: 700, color: '#334155', position: 'sticky', top: 0 }}>📍 Route Steps</div>
+                <div style={{ padding: '8px' }}>
+                  {routeData.steps.map((step, idx) => (
+                    <div key={idx} style={{ padding: '12px', marginBottom: '8px', borderRadius: '8px', background: idx === stepIdx ? '#eff6ff' : idx < stepIdx ? 'white' : '#f1f5f9', border: `1px solid ${idx === stepIdx ? '#bfdbfe' : 'transparent'}`, opacity: idx < stepIdx ? 0.6 : 1 }}>
+                      <div style={{ display: 'flex', gap: '8px', fontWeight: 600, color: idx === stepIdx ? '#1d4ed8' : '#334155', fontSize: '13px' }}>
+                        <span>{idx === stepIdx ? '▶️' : idx < stepIdx ? '✓' : '◯'}</span>
+                        <span>{step.instruction}</span>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
-          </div>
-        </>
-      )}
 
-      {/* ── ARRIVED ── */}
-      {phase === 'ARRIVED' && (
-        <div className="citizen-bottom-sheet" style={{ paddingBottom: 28 }}>
-          <div className="bottom-sheet-handle"></div>
-          <div style={{ textAlign: 'center', padding: '12px 0 20px 0' }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
-            <p style={{ fontSize: 20, fontWeight: 800, color: '#059669', marginBottom: 4 }}>
-              {translations.arrived}
-            </p>
-            {routeData?.shelter && (
-              <p style={{ fontSize: 13, color: '#64748b', fontWeight: 500 }}>
-                {translations.shelter_arrived.replace('{name}', routeData.shelter.name)}
-              </p>
-            )}
-
-            {routeData && (
-              <div className="journey-stats" style={{ margin: '16px 0', textAlign: 'left' }}>
-                <div className="stat-row">
-                  <span>🛣️ Distance Covered</span>
-                  <strong style={{ color: '#059669' }}>{(routeData.total_distance_m / 1000).toFixed(1)} km</strong>
-                </div>
-                <hr className="stat-divider" />
-                <div className="stat-row">
-                  <span>💧 Max Flood Encountered</span>
-                  <strong style={{ color: getFloodColor(floodDepth) }}>{floodDepth.toFixed(2)} m</strong>
-                </div>
-                <hr className="stat-divider" />
-                <div className="stat-row">
-                  <span>🛡️ Route Status</span>
-                  <strong style={{ color: routeData.safe ? '#16a34a' : '#dc2626' }}>{routeData.safe ? '✅ SAFE' : '⚠️ CHALLENGING'}</strong>
-                </div>
-                {rerouteCount > 0 && (
-                  <>
-                    <hr className="stat-divider" />
-                    <div className="stat-row">
-                      <span>🔄 Reroutes</span>
-                      <strong>{rerouteCount}</strong>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
+            {/* Manual Controls for demo purposes */}
+            <div style={{ display: 'flex', gap: 8, marginTop: bottomSheetExpanded ? 'auto' : '0' }}>
+              <button onClick={prevStep} disabled={stepIdx === 0} className="citizen-btn btn-secondary" style={{ flex: 1, padding: '10px' }}>←</button>
+              <button onClick={() => setStepIdx(0)} className="citizen-btn btn-secondary" style={{ flex: 1, padding: '10px' }}>Reset</button>
+              <button onClick={nextStep} className="citizen-btn btn-primary" style={{ flex: 2, padding: '10px' }}>Next →</button>
+            </div>
           </div>
-          <button
-            onClick={() => {
-              setPhase('IDLE');
-              setRouteData(null);
-              setDestination(null);
-              setRerouteCount(0);
-            }}
-            className="citizen-btn btn-primary"
-          >
-            Start New Route
-          </button>
-        </div>
-      )}
-      <TutorialOverlay />
+        )}
+
+        {/* ── ARRIVED ── */}
+        {phase === 'ARRIVED' && (
+          <div style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+            <div style={{ fontSize: 50, marginBottom: 10 }}>🎉</div>
+            <p style={{ fontSize: 22, fontWeight: 800, color: '#059669', margin: '0 0 8px 0' }}>{translations.arrived}</p>
+            {routeData?.shelter && <p style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>{translations.shelter_arrived.replace('{name}', routeData.shelter.name)}</p>}
+            <button onClick={() => { setPhase('IDLE'); setRouteData(null); setDestination(null); }} className="citizen-btn btn-primary" style={{ marginTop: '24px' }}>Start New Route</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

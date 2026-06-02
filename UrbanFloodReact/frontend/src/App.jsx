@@ -11,7 +11,7 @@
  *       → Evacuation tab: analysis shown after simulation completes
  */
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain, GraduationCap } from 'lucide-react';
+import { Droplets, Activity, Route, GitCompare, Zap, Radio, Info, Cpu, CloudRain, GraduationCap, LogOut, Menu, X } from 'lucide-react';
 import axios from 'axios';
 
 import { useRegions } from './hooks/useRegions';
@@ -106,6 +106,8 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const sidebarRef = useRef(null);
   const isResizingRef = useRef(false);
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleResizeMouseDown = useCallback((e) => {
     e.preventDefault();
@@ -488,8 +490,17 @@ export default function App() {
 
   return (
     <div className="app-container" style={{ '--sidebar-w': `${sidebarWidth}px` }}>
+      {/* Mobile Toggle Button */}
+      <button 
+        className="mobile-sidebar-toggle"
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        title="Toggle Menu"
+      >
+        {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
       {/* ─── Sidebar ───────────────────────────────────────── */}
-      <aside className="sidebar" ref={sidebarRef} style={{ width: sidebarWidth }}>
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`} ref={sidebarRef} style={{ width: sidebarWidth }}>
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -509,25 +520,28 @@ export default function App() {
             </button>
           </div>
             {/* User Profile & Logout */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 backdrop-blur-sm">
-              <div className="flex flex-col text-left">
-                <span className="text-slate-800 text-sm font-bold">{user?.username || 'Guest'}</span>
-                <span className="text-slate-500 font-medium text-xs capitalize tracking-wide">{user?.role || 'Viewer'}</span>
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 shadow-sm backdrop-blur-sm">
+              <div className="flex flex-col text-left mr-2">
+                <span className="text-slate-800 text-sm font-bold truncate max-w-[100px]">{user?.username || 'Guest'}</span>
+                <span className="text-slate-500 font-semibold text-[10px] uppercase tracking-wider">{user?.role || 'Viewer'}</span>
               </div>
-              <button
-                onClick={logout}
-                className="bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 text-red-600 hover:text-red-700 px-3 py-1.5 rounded transition-all duration-200 text-xs font-bold"
-              >
-                {t('logout', lang)}
-              </button>
-              <button
-                className="tutorial-trigger-btn"
-                onClick={() => startTutorial(isDraMode ? 'authority' : 'researcher')}
-                title="Take a guided tutorial"
-              >
-                <GraduationCap size={13} />
-                Tutorial
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="tutorial-trigger-btn flex items-center gap-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1.5 rounded-lg transition-all duration-200 text-xs font-semibold shadow-sm"
+                  onClick={() => startTutorial(isDraMode ? 'authority' : 'researcher')}
+                  title="Take a guided tutorial"
+                >
+                  <GraduationCap size={14} className="text-blue-600" />
+                  <span className="hidden sm:inline">Tutorial</span>
+                </button>
+                <button
+                  onClick={logout}
+                  className="flex items-center justify-center bg-red-50 hover:bg-red-500 border border-red-200 text-red-600 hover:text-white hover:border-red-600 w-8 h-8 rounded-lg transition-all duration-200 shadow-sm"
+                  title={t('logout', lang)}
+                >
+                  <LogOut size={15} strokeWidth={2.5} />
+                </button>
+              </div>
             </div>
         </div>
 
