@@ -97,6 +97,8 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
   const [showAllTurns, setShowAllTurns] = useState(false);
   const [bottomSheetExpanded, setBottomSheetExpanded] = useState(false);
   const sheetTouchStartY = useRef(null);
+  const [showBetaModal, setShowBetaModal] = useState(true);
+  const betaModalTimerRef = useRef(null);
 
   // New state variables for realtime mode features
   const [notifications, setNotifications] = useState([]);
@@ -150,6 +152,13 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
       setNotifications(prev => prev.filter(n => n.id !== id));
     }, 4000);
   };
+
+  useEffect(() => {
+    if (showBetaModal) {
+      betaModalTimerRef.current = setTimeout(() => setShowBetaModal(false), 4000);
+      return () => clearTimeout(betaModalTimerRef.current);
+    }
+  }, [showBetaModal]);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -614,6 +623,29 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
             style={{ cursor: 'pointer' }}
           />
           <div className="profile-actions">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowBetaModal(true); }}
+              style={{
+                background: '#d1fae5',
+                border: '1px solid #86efac',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.75rem',
+                color: '#15803d',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap'
+              }}
+              onMouseEnter={(e) => e.target.style.background = '#bbf7d0'}
+              onMouseLeave={(e) => e.target.style.background = '#d1fae5'}
+            >
+              <span style={{ background: '#10b981', color: 'white', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>β</span>
+              Beta
+            </button>
             <button onClick={(e) => { e.stopPropagation(); startTutorial('citizen'); }} className="tutorial-trigger-btn tutorial-trigger-btn--header logout-icon-btn" style={{ color: '#64748b' }}>
               <GraduationCap size={18} />
             </button>
@@ -909,6 +941,64 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
         )}
       </div>
       )}
+
+      {/* ─── BETA DISCLAIMER POPUP ─── */}
+      {showBetaModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '68px',
+            right: '16px',
+            background: 'white',
+            borderRadius: '10px',
+            padding: '12px 14px',
+            maxWidth: '280px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+            border: '1px solid #e2e8f0',
+            zIndex: 200,
+            animation: 'popIn 0.3s ease-out'
+          }}
+        >
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <div style={{ background: '#d1fae5', color: '#10b981', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 'bold', flexShrink: 0, marginTop: '2px' }}>
+              β
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
+                Beta Version
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.4' }}>
+                Ongoing validation and optimization in progress.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowBetaModal(false)}
+            style={{
+              background: 'none',
+              color: '#10b981',
+              border: 'none',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              marginTop: '10px',
+              padding: '4px 0',
+              transition: 'color 0.2s'
+            }}
+            onMouseEnter={(e) => e.target.style.color = '#059669'}
+            onMouseLeave={(e) => e.target.style.color = '#10b981'}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes popIn {
+          from { transform: scale(0.9) translateY(-10px); opacity: 0; }
+          to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
