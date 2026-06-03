@@ -150,7 +150,7 @@ const LoginPage = () => {
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {isRegistering && (
               <div className="reg-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('account_type', lang)}</label><select name="role" value={formData.role} onChange={handleInputChange} style={inputStyle}><option value="authority">{t('dra_option', lang)}</option><option value="researcher">{t('researcher_option', lang)}</option><option value="citizen">Citizen — Flood Navigation</option></select></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('account_type', lang)}</label><select name="role" value={formData.role} onChange={handleInputChange} style={inputStyle}><option value="authority">{t('dra_option', lang)}</option><option value="researcher">{t('researcher_option', lang)}</option><option value="citizen">{t('citizen_option', lang)}</option></select></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('choose_username', lang)}</label><input type="text" name="username" required value={formData.username} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_username', lang)} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>{t('full_name', lang)}</label><input type="text" name="name" required value={formData.name} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_full_name', lang)} /></div>
                 <div><label style={labelStyle}>{t('email', lang)}</label><input type="email" name="email" required value={formData.email} onChange={handleInputChange} style={inputStyle} placeholder={t('enter_email', lang)} /></div>
@@ -191,13 +191,13 @@ const LoginPage = () => {
               </button>
               <button type="button" onClick={() => handleDemoLogin('citizen')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #bbf7d0', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                 <div style={{ background: '#f0fdf4', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><Navigation size={18} color="#16a34a" /></div>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>Citizen</span>
-                <span style={{ fontSize: '0.7rem', color: '#15803d', marginTop: '2px' }}>Navigate to safety</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534' }}>{t('citizen_role', lang)}</span>
+                <span style={{ fontSize: '0.7rem', color: '#15803d', marginTop: '2px' }}>{t('navigate_safety', lang)}</span>
               </button>
               <button type="button" onClick={() => handleDemoLogin('simulate')} disabled={loading} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 12px', border: '2px solid #e9d5ff', background: 'white', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
                 <div style={{ background: '#faf5ff', padding: '8px', borderRadius: '50%', display: 'flex', marginBottom: '6px' }}><Zap size={18} color="#a855f7" /></div>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#6b21a8' }}>Simulate</span>
-                <span style={{ fontSize: '0.7rem', color: '#7e22ce', marginTop: '2px' }}>Test flood routing</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#6b21a8' }}>{t('simulate_role_short', lang)}</span>
+                <span style={{ fontSize: '0.7rem', color: '#7e22ce', marginTop: '2px' }}>{t('test_routing', lang)}</span>
               </button>
             </div>
           </div>
