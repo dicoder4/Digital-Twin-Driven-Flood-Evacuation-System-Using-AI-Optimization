@@ -647,7 +647,6 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 <FilterPill id="all" label="All" color="#64748b" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="logistics" label="Logistics" color="#3b82f6" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="tactical" label="Tactical" color="#f59e0b" active={resourceFilter} onClick={setResourceFilter} />
-                                <FilterPill id="civic" label="Civic" color="#16a34a" active={resourceFilter} onClick={setResourceFilter} />
                             </div>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('dist_filter', lang)}</span>
