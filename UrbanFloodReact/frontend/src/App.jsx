@@ -175,12 +175,16 @@ export default function App() {
     ? Math.max(1, Math.floor(populationCount / 100))
     : populationCount;
 
-  const selectedShelter = useMemo(
-    () => selectedShelterId
-      ? sheltersWithSafety.find(s => s.id === selectedShelterId) || null
-      : null,
-    [selectedShelterId, sheltersWithSafety],
-  );
+  const selectedShelter = useMemo(() => {
+    if (!selectedShelterId) return null;
+    // First look in OSM shelter candidates
+    const found = sheltersWithSafety.find(s => s.id === selectedShelterId);
+    if (found) return found;
+    // Fall back to shelter_reports (covers synthetic emergency shelters)
+    const shelterReports = sim.finalReport?.summary?.shelter_reports || [];
+    const fromReport = shelterReports.find(s => s.id === selectedShelterId);
+    return fromReport || null;
+  }, [selectedShelterId, sheltersWithSafety, sim.finalReport]);
 
   // ── Load Region ───────────────────────────────────────────────
   const handleLoadRegion = useCallback(async (hobliOverride) => {
