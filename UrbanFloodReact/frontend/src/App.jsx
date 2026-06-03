@@ -607,7 +607,7 @@ export default function App() {
                     if (!pinResolvedHobli?.hobli_name) return;
                     // Switch region to the resolved hobli, then run
                     await handleLoadRegion(pinResolvedHobli.hobli_name);
-                    sim.start(pinResolvedHobli.hobli_name, rainfallMm, steps, decayFactor, false, true, 'ga', 0);
+                    sim.start(pinResolvedHobli.hobli_name, rainfallMm, steps, decayFactor, false, true, 'aco', 0);
                     setActiveTab('evacuation');
                     setPinDropMode(false);
                     setMapPinBox(null);

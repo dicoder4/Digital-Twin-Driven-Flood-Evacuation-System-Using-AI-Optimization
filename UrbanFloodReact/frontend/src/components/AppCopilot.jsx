@@ -368,14 +368,27 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                                 }),
                             });
                             const followData = await followRes.json();
-                            if (followData.options && followData.options.length > 0) {
+                            const text = followData.content || '';
+                            if (text) {
                                 setMessages(prev => [...prev, {
                                     role: 'assistant',
-                                    content: followData.content,
-                                    options: followData.options
+                                    content: '',
+                                    options: followData.options || []
                                 }]);
-                            } else if (followData.content) {
-                                setMessages(prev => [...prev, { role: 'assistant', content: followData.content }]);
+                                let i = 0;
+                                const interval = setInterval(() => {
+                                    i += 3;
+                                    if (i > text.length) i = text.length;
+                                    setMessages(prev => {
+                                        const next = [...prev];
+                                        next[next.length - 1] = {
+                                            ...next[next.length - 1],
+                                            content: text.substring(0, i)
+                                        };
+                                        return next;
+                                    });
+                                    if (i >= text.length) clearInterval(interval);
+                                }, 10);
                             }
                         } catch (e) {
                             console.warn('Follow-up request failed:', e);
@@ -385,9 +398,29 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
             } else {
                 setMessages(prev => [...prev, {
                     role: 'assistant',
-                    content: data.content,
+                    content: '',
                     options: data.options || []
                 }]);
+                
+                const text = data.content || '';
+                if (text) {
+                    let i = 0;
+                    const interval = setInterval(() => {
+                        i += 3;
+                        if (i > text.length) i = text.length;
+                        
+                        setMessages(prev => {
+                            const next = [...prev];
+                            next[next.length - 1] = {
+                                ...next[next.length - 1],
+                                content: text.substring(0, i)
+                            };
+                            return next;
+                        });
+                        
+                        if (i >= text.length) clearInterval(interval);
+                    }, 10);
+                }
             }
         } catch (err) {
             setMessages(prev => [...prev, { role: 'assistant', content: "Error connecting to Copilot: " + err.message }]);
