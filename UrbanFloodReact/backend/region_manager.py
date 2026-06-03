@@ -234,6 +234,10 @@ def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
         or (isinstance(existing_lines, dict) and len(existing_lines.get("features", [])) > 0)
     )
 
+    has_cached_lines = (
+        isinstance(existing_lines, dict) and len(existing_lines.get("features", [])) > 0
+    )
+
     if has_cached_metro:
         print(f"  [on-demand] Metro data already cached for {hobli_key} "
               f"({len(existing_metro)} stations) — skipping Overpass queries")
@@ -242,6 +246,23 @@ def extract_metro_data(hobli_key: str, include_rail: bool = False) -> dict:
         entry["metro_stations"] = _enrich_station_lines_from_dataset(
             existing_metro, csv_station_line_map
         )
+        # If stations are cached but lines are missing (e.g. older cache entry),
+        # reload lines from the authoritative GeoJSON (no network needed).
+        if not has_cached_lines:
+            print(f"  [on-demand] Metro lines missing for {hobli_key} — reloading from GeoJSON")
+            metro_lines = _load_metro_lines_from_geojson(center)
+            if metro_lines.get("features"):
+                entry["metro_stations"] = _enrich_station_lines_from_network(
+                    entry["metro_stations"], metro_lines
+                )
+            entry["metro_lines"] = metro_lines
+            features_b64 = _features_to_b64(
+                entry.get("drain_nodes", []),
+                entry.get("lake_nodes", []),
+                entry["metro_stations"],
+                metro_lines,
+            )
+            db.update_region_features(hobli_key, features_b64)
         return entry
 
     # ── No cached metro data — query Overpass (first-time load only) ──────
