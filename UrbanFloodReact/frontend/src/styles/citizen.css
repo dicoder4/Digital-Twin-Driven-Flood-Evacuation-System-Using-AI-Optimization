@@ -10,54 +10,68 @@
   background: #0f172a;
 }
 
-/* ── Floating Glass Header (non-nav phases) ── */
-.floating-glass-header {
+/* ── Floating Search Card (Google Maps style) ── */
+.floating-search-card {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
+  top: 16px;
+  left: 16px;
+  right: 16px;
   z-index: 50;
-  padding: 12px 18px;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 20px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 8px 12px;
+  background: #ffffff;
+  border-radius: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  gap: 12px;
 }
 
-.floating-glass-header h1 {
-  font-size: 17px;
-  font-weight: 800;
+.floating-search-card .search-icon {
+  color: #64748b;
+  margin-left: 8px;
+}
+
+.floating-search-card input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  padding: 8px 0;
+  color: #1e293b;
+  background: transparent;
+}
+
+.floating-search-card input::placeholder {
+  color: #94a3b8;
+}
+
+.floating-search-card .profile-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0;
-  color: #1e293b;
 }
 
-.floating-glass-header h1 svg {
-  color: #2563eb;
-}
-
-.floating-glass-header button {
-  padding: 7px 14px;
-  background: #f1f5f9;
-  border: none;
-  color: #64748b;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-
-.floating-glass-header button:hover {
+.profile-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: #e2e8f0;
-  color: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.logout-icon-btn {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  display: flex;
+  padding: 4px;
 }
 
 /* ── Navigation Top Bar (Google Maps green bar) ── */

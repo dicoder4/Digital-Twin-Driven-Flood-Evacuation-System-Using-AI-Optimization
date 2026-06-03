@@ -86,6 +86,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
   const [routeData, setRouteData] = useState(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchTarget, setSearchTarget] = useState('destination');
   const [searchResults, setSearchResults] = useState([]);
   const [error, setError] = useState(null);
   const [rerouteBanner, setRerouteBanner] = useState(null);
@@ -200,18 +201,31 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
   };
 
   const handleSelectDestination = (result) => {
-    setDestination({ lat: parseFloat(result.lat), lon: parseFloat(result.lon), label: result.display_name });
-    setSearchResults([]);
-    setSearchQuery('');
-    handleComputeRoute(parseFloat(result.lat), parseFloat(result.lon));
+    if (searchTarget === 'start') {
+      setUserLoc({ lat: parseFloat(result.lat), lon: parseFloat(result.lon) });
+      setSearchTarget('destination');
+      setSearchResults([]);
+      setSearchQuery('');
+    } else {
+      setDestination({ lat: parseFloat(result.lat), lon: parseFloat(result.lon), label: result.display_name });
+      setSearchResults([]);
+      setSearchQuery('');
+      handleComputeRoute(parseFloat(result.lat), parseFloat(result.lon));
+    }
   };
 
   const handleMapClick = (coords) => {
     if (draggedMarker) return;
     if (mapTapMode && phase === 'DESTINATION_INPUT') {
-      setDestination({ lat: coords.lat, lon: coords.lon, label: 'Selected Location' });
-      setMapTapMode(false);
-      handleComputeRoute(coords.lat, coords.lon);
+      if (searchTarget === 'start') {
+        setUserLoc({ lat: coords.lat, lon: coords.lon });
+        setSearchTarget('destination');
+        setMapTapMode(false);
+      } else {
+        setDestination({ lat: coords.lat, lon: coords.lon, label: 'Selected Location' });
+        setMapTapMode(false);
+        handleComputeRoute(coords.lat, coords.lon);
+      }
     }
   };
 
@@ -589,22 +603,26 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
         {(phase === 'NAVIGATING' || phase === 'SHELTER_EVACUATION') && <RainOverlay intensity={maxFloodIntensity} />}
       </div>
 
-      {/* ─── FLOATING TOP HEADER ─── */}
-      {(phase === 'IDLE' || phase === 'CONFIG' || phase === 'DESTINATION_INPUT' || phase === 'LOCATING' || phase === 'ARRIVED') && (
-        <div className="floating-glass-header" id="tutorial-sim-header">
-          <h1><Navigation size={20} /> {translations.citizen_title}</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              className="tutorial-trigger-btn tutorial-trigger-btn--header"
-              onClick={() => startTutorial('citizen')}
-              style={{ padding: '6px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.8)', color: '#475569', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <GraduationCap size={14} />
-              {lang === 'en' ? 'Tutorial' : 'ಟ್ಯುಟೋರಿಯಲ್'}
+      {/* ─── FLOATING SEARCH CARD ─── */}
+      {(phase === 'IDLE' || phase === 'LOCATING' || phase === 'ARRIVED') && (
+        <div className="floating-search-card" id="tutorial-sim-header" onClick={() => setPhase('DESTINATION_INPUT')}>
+          <div className="search-icon"><Search size={20} /></div>
+          <input 
+            type="text" 
+            placeholder={translations.search_destination} 
+            readOnly 
+            style={{ cursor: 'pointer' }}
+          />
+          <div className="profile-actions">
+            <button onClick={(e) => { e.stopPropagation(); startTutorial('citizen'); }} className="logout-icon-btn" style={{ color: '#64748b' }}>
+              <GraduationCap size={18} />
             </button>
-            <button onClick={onLogout} style={{ background: '#fee2e2', color: '#dc2626', padding: '6px', borderRadius: '8px', display: 'flex' }}>
-              <LogOut size={16} />
+            <button onClick={(e) => { e.stopPropagation(); onLogout(); }} className="logout-icon-btn">
+              <LogOut size={18} />
             </button>
+            <div className="profile-avatar" onClick={(e) => e.stopPropagation()}>
+              {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
+            </div>
           </div>
         </div>
       )}
@@ -718,24 +736,35 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
         {/* ── DESTINATION INPUT ── */}
         {phase === 'DESTINATION_INPUT' && (
           <div style={{ height: bottomSheetExpanded ? '75vh' : 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f1f5f9', borderRadius: 14, padding: '4px 4px 4px 16px', marginBottom: 12 }}>
-              <Search size={18} style={{ color: '#94a3b8', flexShrink: 0 }} />
-              <input
-                type="text"
-                placeholder={translations.search_destination}
-                value={searchQuery}
-                onChange={e => handleSearchInputChange(e.target.value)}
-                autoFocus
-                style={{
-                  flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                  padding: '14px 0', fontSize: 15, fontWeight: 500, color: '#1e293b',
-                }}
-              />
-              {searchQuery && (
-                <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}>
-                  <X size={18} style={{ color: '#94a3b8' }} />
-                </button>
-              )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafc', borderRadius: 16, padding: 12, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: searchTarget === 'start' ? '#fff' : '#f1f5f9', border: searchTarget === 'start' ? '1px solid #93c5fd' : '1px solid transparent', borderRadius: 10, padding: '4px 12px', cursor: 'pointer' }} onClick={() => setSearchTarget('start')}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }}></div>
+                <input
+                  type="text"
+                  placeholder={userLoc ? "Your Location" : "Choose start location"}
+                  value={searchTarget === 'start' ? searchQuery : ''}
+                  onChange={e => { setSearchTarget('start'); handleSearchInputChange(e.target.value); }}
+                  autoFocus={searchTarget === 'start'}
+                  style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', padding: '10px 0', fontSize: 14, fontWeight: 500, color: '#1e293b' }}
+                />
+                {searchTarget === 'start' && searchQuery && (
+                  <button onClick={(e) => { e.stopPropagation(); setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={16} style={{ color: '#94a3b8' }} /></button>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: searchTarget === 'destination' ? '#fff' : '#f1f5f9', border: searchTarget === 'destination' ? '1px solid #93c5fd' : '1px solid transparent', borderRadius: 10, padding: '4px 12px', cursor: 'pointer' }} onClick={() => setSearchTarget('destination')}>
+                <MapPin size={16} style={{ color: '#ef4444', flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder={translations.search_destination}
+                  value={searchTarget === 'destination' ? searchQuery : ''}
+                  onChange={e => { setSearchTarget('destination'); handleSearchInputChange(e.target.value); }}
+                  autoFocus={searchTarget === 'destination'}
+                  style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', padding: '10px 0', fontSize: 14, fontWeight: 500, color: '#1e293b' }}
+                />
+                {searchTarget === 'destination' && searchQuery && (
+                  <button onClick={(e) => { e.stopPropagation(); setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={16} style={{ color: '#94a3b8' }} /></button>
+                )}
+              </div>
             </div>
 
             <button

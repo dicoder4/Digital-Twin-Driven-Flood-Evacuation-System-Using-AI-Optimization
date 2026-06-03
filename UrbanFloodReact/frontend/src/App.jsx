@@ -497,6 +497,7 @@ export default function App() {
         title="Toggle Menu"
       >
         {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        <span>{t('tab_setup', lang) === 'Setup' ? 'Menu' : 'ಮೆನು'}</span>
       </button>
 
       {/* ─── Sidebar ───────────────────────────────────────── */}
