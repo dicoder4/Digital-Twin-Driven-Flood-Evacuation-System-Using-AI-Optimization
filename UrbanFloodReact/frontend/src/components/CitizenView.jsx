@@ -614,7 +614,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
             style={{ cursor: 'pointer' }}
           />
           <div className="profile-actions">
-            <button onClick={(e) => { e.stopPropagation(); startTutorial('citizen'); }} className="logout-icon-btn" style={{ color: '#64748b' }}>
+            <button onClick={(e) => { e.stopPropagation(); startTutorial('citizen'); }} className="tutorial-trigger-btn tutorial-trigger-btn--header logout-icon-btn" style={{ color: '#64748b' }}>
               <GraduationCap size={18} />
             </button>
             <button onClick={(e) => { e.stopPropagation(); onLogout(); }} className="logout-icon-btn">
@@ -624,6 +624,20 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
               {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ─── FLOATING IDLE ACTIONS ─── */}
+      {phase === 'IDLE' && (
+        <div style={{ position: 'absolute', bottom: '24px', left: '16px', right: '16px', zIndex: 50, display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button
+            onClick={handleNearestShelter}
+            disabled={isLoading}
+            className="citizen-btn btn-green"
+            style={{ padding: '14px 24px', borderRadius: '100px', fontSize: '15px', fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          >
+            <Shield size={18} /> {isLoading ? 'Searching...' : translations.nearest_shelter}
+          </button>
         </div>
       )}
 
@@ -685,53 +699,23 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
       )}
 
       {/* ─── BOTTOM SHEET ─── */}
-      <div 
-        className="citizen-bottom-sheet" id="tutorial-sim-config"
-        style={{ maxHeight: bottomSheetExpanded ? '85vh' : (phase === 'NAVIGATING' ? '40vh' : '45vh') }}
-        onTouchStart={handleSheetTouchStart}
-        onTouchMove={handleSheetTouchMove}
-        onTouchEnd={handleSheetTouchEnd}
-      >
-        <div className="bottom-sheet-handle"></div>
+      {phase !== 'IDLE' && (
+        <div 
+          className="citizen-bottom-sheet" id="tutorial-sim-config"
+          style={{ maxHeight: bottomSheetExpanded ? '85vh' : (phase === 'NAVIGATING' ? '40vh' : '45vh') }}
+          onTouchStart={handleSheetTouchStart}
+          onTouchMove={handleSheetTouchMove}
+          onTouchEnd={handleSheetTouchEnd}
+        >
+          <div className="bottom-sheet-handle"></div>
 
-        {/* ── LOCATING ── */}
-        {phase === 'LOCATING' && (
-          <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📍</div>
-            <div style={{ fontWeight: 600 }}>{translations.finding_location}</div>
-          </div>
-        )}
-
-        {/* ── IDLE ── */}
-        {phase === 'IDLE' && userLoc && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', fontSize: 13, color: '#166534', fontWeight: 600, marginBottom: '16px' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', animation: 'citizen-pulse 2s infinite' }}></div>
-              Location live
+          {/* ── LOCATING ── */}
+          {phase === 'LOCATING' && (
+            <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📍</div>
+              <div style={{ fontWeight: 600 }}>{translations.finding_location}</div>
             </div>
-
-            <button
-              onClick={() => setPhase('DESTINATION_INPUT')}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '16px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 16, cursor: 'pointer', marginBottom: 16, transition: 'background 0.15s',
-              }}
-            >
-              <Search size={20} style={{ color: '#2563eb' }} />
-              <span style={{ color: '#64748b', fontSize: 15, fontWeight: 500 }}>{translations.search_destination}</span>
-            </button>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <button
-                onClick={handleNearestShelter}
-                disabled={isLoading}
-                className="citizen-btn btn-green"
-                style={{ padding: '16px', borderRadius: '14px', fontSize: '1rem', fontWeight: 700 }}
-              >
-                <Shield size={20} /> {isLoading ? 'Searching...' : translations.nearest_shelter}
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
         {/* ── DESTINATION INPUT ── */}
         {phase === 'DESTINATION_INPUT' && (

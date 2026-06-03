@@ -2458,11 +2458,15 @@ body,
 
   /* Adjust map floating elements so they don't overlap with the hamburger menu */
   .map-chip {
-    left: 55px; /* Push past the hamburger menu */
+    left: 110px !important; /* Push past the hamburger menu */
   }
 
   .map-traffic-toggle {
-    left: 55px; /* Push past the hamburger menu */
+    left: 110px !important; 
+  }
+
+  .legend {
+    bottom: calc(65vh + 20px) !important;
   }
 
   /* Modals and Tables */
