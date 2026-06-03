@@ -908,6 +908,7 @@ export default function CitizenView({ user, onLogout, lang, onToggleLang }) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
