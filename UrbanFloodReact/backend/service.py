@@ -873,16 +873,37 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     all_shelters = shelter_resp["shelters"]
 
     if extra_shelters:
-        G_snap = REGION_CACHE[key]["G"]
         import osmnx as ox
+        added_count = 0
+        # Pre-compute safe nodes (depth <= 0.15m) for snapping
+        safe_nodes = [
+            nid for nid, data in sim.G.nodes(data=True)
+            if data.get('water_depth', 0.0) <= 0.15
+        ]
+
         for idx, es in enumerate(extra_shelters):
             try:
-                node_id = ox.distance.nearest_nodes(G_snap, es['lon'], es['lat'])
-            except Exception:
+                # First, try to find nearest safe node
+                if safe_nodes:
+                    safe_coords = np.array([
+                        [sim.G.nodes[n]['y'], sim.G.nodes[n]['x']] for n in safe_nodes
+                    ])
+                    target = np.array([es['lat'], es['lon']])
+                    dist_sq = np.sum((safe_coords - target) ** 2, axis=1)
+                    node_id = safe_nodes[int(np.argmin(dist_sq))]
+                    print(f"  [RERUN] Snapped shelter {idx+1} to safe node {node_id}")
+                else:
+                    # Fallback: snap to any nearest node
+                    node_id = ox.distance.nearest_nodes(sim.G, es['lon'], es['lat'])
+                    print(f"  [RERUN] No safe nodes available, snapped to any node {node_id}")
+            except Exception as e:
+                print(f"  [RERUN] Failed to snap shelter {idx+1} to graph: {e}")
                 node_id = None
+
+            added_count += 1
             synthetic = {
-                "id":       f"suggested_{idx + 1}",
-                "name":     es.get('area_name', f"Suggested Shelter {idx + 1}"),
+                "id":       f"suggested_{added_count}",
+                "name":     es.get('area_name', f"Suggested Shelter {added_count}"),
                 "type":     "synthetic",
                 "lat":      es['lat'],
                 "lon":      es['lon'],
@@ -962,8 +983,9 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
     safe_shelters = [s for s in shelters_with_safety if s["safe"]]
     safe_count = len(safe_shelters)
     print(f"{_ts()}  [DEBUG] safe shelters after filter = {safe_count} / {len(shelters_with_safety)}")
+
     for s in shelters_with_safety[:5]:
-        print(f"{_ts()}    shelter: {s['name']} | safe={s['safe']} | cap={s['capacity']} | node_id={s.get('node_id')}")
+        print(f"{_ts()}    shelter: id={s['id']} | name={s['name']} | safe={s['safe']} | cap={s['capacity']} | node_id={s.get('node_id')}")
 
     if not safe_shelters:
         print(f"{_ts()}  [DEBUG] WARNING: no safe shelters available — evacuation routing will be skipped")
@@ -1177,6 +1199,34 @@ async def run_simulation_generator(hobli: str, rainfall_mm: float, steps: int, d
         }
         for s in shelters_with_safety
     ]
+
+    # CRITICAL: Ensure any shelter referenced in the evacuation plan is included in the report
+    # This is essential for re-runs where emergency shelters are added
+    shelter_ids_in_report = {s["id"] for s in shelter_reports}
+    shelter_ids_in_plan = {move.get("to_shelter") for move in final_evacuation_plan if move.get("to_shelter")}
+    missing_shelter_ids = shelter_ids_in_plan - shelter_ids_in_report
+
+    if missing_shelter_ids:
+        print(f"{_ts()}  [DEBUG] Missing shelters in report: {missing_shelter_ids}")
+        # Find missing shelters in all_shelters and add them
+        all_shelters_by_id = {s["id"]: s for s in all_shelters}
+        for shelter_id in missing_shelter_ids:
+            if shelter_id in all_shelters_by_id:
+                s = all_shelters_by_id[shelter_id]
+                shelter_reports.append({
+                    "id":       s["id"],
+                    "name":     s.get("name", s["id"]),
+                    "type":     s.get("type", "unknown"),
+                    "occupancy": sim.shelter_occupancy.get(s["id"], 0),
+                    "capacity":  s["capacity"],
+                    "safe":      s.get("safe", True),
+                    "occupancy_pct": round(
+                        min(sim.shelter_occupancy.get(s["id"], 0) / max(s["capacity"], 1) * 100, 100), 1
+                    ),
+                    "lat": s.get("lat"),
+                    "lon": s.get("lon"),
+                })
+                print(f"{_ts()}  [DEBUG] Added missing shelter '{s['name']}' (id={s['id']}) to report")
 
     # Correctly compute at-risk remaining: pre-GA count minus what GA evacuated
     total_assigned = sim.total_evacuated
@@ -1536,6 +1586,28 @@ async def run_compare_generator(
                 }
                 for s in shelters_with_safety
             ]
+
+            # CRITICAL: Ensure any shelter referenced in the plan is included in the report
+            shelter_ids_in_report = {s["id"] for s in shelter_reports}
+            shelter_ids_in_plan = {move.get("to_shelter") for move in plan if move.get("to_shelter")}
+            missing_shelter_ids = shelter_ids_in_plan - shelter_ids_in_report
+
+            if missing_shelter_ids:
+                all_shelters_by_id = {s["id"]: s for s in all_shelters}
+                for shelter_id in missing_shelter_ids:
+                    if shelter_id in all_shelters_by_id:
+                        s = all_shelters_by_id[shelter_id]
+                        shelter_reports.append({
+                            "id":           s["id"],
+                            "name":         s.get("name", s["id"]),
+                            "type":         s.get("type", "unknown"),
+                            "occupancy":     shelter_occ.get(s["id"], 0),
+                            "capacity":      s["capacity"],
+                            "safe":          s.get("safe", True),
+                            "occupancy_pct": round(
+                                min(shelter_occ.get(s["id"], 0) / max(s["capacity"], 1) * 100, 100), 1
+                            ),
+                        })
 
             traffic_geojson       = None
             traffic_segment_count = 0
