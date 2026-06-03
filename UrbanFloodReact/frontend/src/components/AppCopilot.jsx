@@ -285,16 +285,32 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
             // Strip out our custom UI properties (like options) before sending back to the LLM
             const cleanMessages = newMessages.slice(1).map(({ options, ...msg }) => msg);
 
-            const res = await fetch(`${API_URL}/app-copilot`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    messages: cleanMessages,
-                    available_hoblis: availableHoblis || [],
-                    regions_tree: regionsTree || {},
-                    map_pin: mapPin || null
-                }),
-            });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+            let res;
+            try {
+                res = await fetch(`${API_URL}/app-copilot`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: cleanMessages,
+                        available_hoblis: availableHoblis || [],
+                        regions_tree: regionsTree || {},
+                        map_pin: mapPin || null
+                    }),
+                    signal: controller.signal,
+                });
+            } catch (fetchErr) {
+                clearTimeout(timeoutId);
+                const msg = fetchErr.name === 'AbortError'
+                    ? 'Request timed out — the AI is taking too long. Please try again.'
+                    : 'Cannot reach the server. Make sure the backend is running.';
+                setMessages(prev => [...prev, { role: 'assistant', content: msg }]);
+                setIsTyping(false);
+                return;
+            }
+            clearTimeout(timeoutId);
 
             const data = await res.json();
 

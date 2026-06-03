@@ -411,7 +411,8 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                 },
                 location_data: { location_name: locationName || 'Unknown' },
                 ai_report: (user?.role === 'authority') ? (responses['sos_expert'] || responses['civic']) : (responses['civic'] || ""),
-                map_image_base64: mapImageBase64
+                map_image_base64: mapImageBase64,
+                frontend_base_url: window.location.origin
             };
             const res = await fetch(`${API_URL}${endpoint}`, {
                 method: 'POST',
