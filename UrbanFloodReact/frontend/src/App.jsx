@@ -962,6 +962,18 @@ export default function App() {
             setActiveTab('setup');
             return;
           }
+          if (tab === 'ai-agent') {
+            setActiveTab('ai-agent');
+            return;
+          }
+          if (tab === 'automation') {
+            setActiveTab('automation');
+            return;
+          }
+          if (tab === 'tutorial') {
+            startTutorial(isDraMode ? 'authority' : 'researcher');
+            return;
+          }
           setActiveTab('setup');
         }}
         onSelectRegion={handleSelectRegion}

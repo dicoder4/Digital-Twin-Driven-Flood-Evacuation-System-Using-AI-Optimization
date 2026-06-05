@@ -52,9 +52,9 @@ The app workflow:
 2. Configure rainfall (default 150mm) and algorithm.
 3. Click "Run Flood Simulation".
 4. View results in the "Evacuation" tab.
-5. Compare algorithms in the "Compare" tab.
+5. Compare algorithms using Compare mode.
 
-App tabs: 'info' | 'config' (setup + map) | 'evacuate' (results) | 'compare'.
+App tabs: 'setup' (region + config + map) | 'evacuation' (results + routes) | 'ai-agent' (AI resources + transport) | 'automation' (sentinel weather watcher) | 'compare' (activates compare mode, not a tab) | 'tutorial' (launches guided tutorial overlay).
 
 TOOL CALL RULES — follow this exact flow when the user wants a simulation:
 Step A: Fuzzy-match the location (see rules below). If it is a specific Hobli → call `select_region(hobli)`.
@@ -93,14 +93,14 @@ def _build_tools(available_hoblis: list, flat_taluks: dict) -> list:
                 ),
                 genai.protos.FunctionDeclaration(
                     name="navigate",
-                    description="Navigate to a specific tab in the application.",
+                    description="Navigate to a specific tab or trigger an action in the application.",
                     parameters=genai.protos.Schema(
                         type=genai.protos.Type.OBJECT,
                         properties={
                             "tab": genai.protos.Schema(
                                 type=genai.protos.Type.STRING,
-                                description="Tab name: info, config, evacuate, or compare.",
-                                enum=["info", "config", "evacuate", "compare"],
+                                description="Tab or action: 'setup' (region/config), 'evacuation' (results), 'ai-agent' (AI resources), 'automation' (sentinel), 'compare' (compare mode), or 'tutorial' (guided walkthrough).",
+                                enum=["setup", "evacuation", "ai-agent", "automation", "compare", "tutorial"],
                             )
                         },
                         required=["tab"],
@@ -519,7 +519,7 @@ async def _fallback_ask_groq(messages: list, system_instruction: str) -> dict:
                 "description": "Navigate to a specific tab.",
                 "parameters": {
                     "type": "object",
-                    "properties": {"tab": {"type": "string", "enum": ["info", "config", "evacuate", "compare"]}},
+                    "properties": {"tab": {"type": "string", "enum": ["setup", "evacuation", "ai-agent", "automation", "compare", "tutorial"]}},
                     "required": ["tab"]
                 }
             }
