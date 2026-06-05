@@ -292,7 +292,8 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                     messages: cleanMessages,
                     available_hoblis: availableHoblis || [],
                     regions_tree: regionsTree || {},
-                    map_pin: mapPin || null
+                    map_pin: mapPin || null,
+                    lang: lang || 'en'
                 }),
             });
 
@@ -364,7 +365,8 @@ export function AppCopilot({ loadedHobli, availableHoblis, regionsTree, populati
                                     messages: followupMessages,
                                     available_hoblis: availableHoblis || [],
                                     regions_tree: regionsTree || {},
-                                    map_pin: mapPin || null
+                                    map_pin: mapPin || null,
+                                    lang: lang || 'en'
                                 }),
                             });
                             const followData = await followRes.json();

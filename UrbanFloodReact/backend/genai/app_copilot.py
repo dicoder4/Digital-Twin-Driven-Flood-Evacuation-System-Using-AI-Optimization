@@ -179,7 +179,7 @@ def _build_tools(available_hoblis: list, flat_taluks: dict) -> list:
     ]
 
 
-def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest_msg: str, map_pin: dict = None) -> str:
+def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest_msg: str, map_pin: dict = None, lang: str = "en") -> str:
     """Inject dynamic location context into the system prompt."""
     hoblis_str = ", ".join(available_hoblis) if available_hoblis else "Hebbal, Yelahanka, Varthur, Begur (etc)"
 
@@ -189,6 +189,19 @@ def _build_system_instruction(available_hoblis: list, regions_tree: dict, latest
         for taluks in regions_tree.values():
             for taluk_name, hobli_list in taluks.items():
                 flat_taluks[taluk_name] = hobli_list
+
+    # Language instruction — if user has switched to Kannada, force all replies in Kannada
+    lang_instruction = ""
+    if lang == "kn":
+        lang_instruction = """
+
+LANGUAGE INSTRUCTION (CRITICAL — MUST FOLLOW):
+The user has enabled Kannada (ಕನ್ನಡ) mode. You MUST:
+- Reply ENTIRELY in Kannada script (ಕನ್ನಡ ಲಿಪಿ).
+- All explanations, questions, confirmations, and option labels must be in Kannada.
+- Tool call argument values (hobli names, algorithm names like 'ga'/'aco'/'pso', tab names) must remain in English as they are code identifiers.
+- But any user-facing text, messages, and ask_clarification message text MUST be in Kannada.
+"""
 
     validation = f"""
 VALID LOCATIONS:
@@ -205,6 +218,7 @@ You will receive location tool calls pre-resolved. Focus on:
 4. For questions about the disaster, evacuation routes, transport, shelters, or anything else, CALL YOUR TOOLS to inspect the crisis database.
 
 {f"- CRITICAL: The user has dropped a PIN on the map at coordinates lat={map_pin['lat']}, lon={map_pin['lon']}. Whenever they ask to check buses 'here', 'at the pinned location', 'selected location', or 'this location', you MUST automatically use these exact coordinates ({map_pin['lat']}, {map_pin['lon']}) for any tool calls requiring `lat` and `lon`." if map_pin else ""}
+{lang_instruction}
 """
     return COPILOT_SYSTEM_PROMPT + validation
 
@@ -327,7 +341,7 @@ def _python_location_match(user_msg: str, available_hoblis: list, flat_taluks: d
     return None
 
 
-async def ask_copilot(messages: list, available_hoblis: list = None, regions_tree: dict = None, map_pin: dict = None) -> dict:
+async def ask_copilot(messages: list, available_hoblis: list = None, regions_tree: dict = None, map_pin: dict = None, lang: str = "en") -> dict:
     """
     Sends conversation to Gemini 2.5 Flash with function calling.
     Returns one of:
@@ -363,7 +377,7 @@ async def ask_copilot(messages: list, available_hoblis: list = None, regions_tre
 
     try:
         genai.configure(api_key=api_key)
-        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg, map_pin)
+        system_instruction = _build_system_instruction(available_hoblis, regions_tree, latest_user_msg, map_pin, lang)
 
         # --- Fix: Ensure tool list is consistent (either all functions or all protos) ---
         # Gemini SDK takes a list of functions OR a list of protos. Mixing can be flaky.
