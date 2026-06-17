@@ -582,6 +582,9 @@ MANDATORY:
 - Use exact numbers from 'simulation' and 'shelter_overview'. Do NOT invent figures.
 - Tone: Authoritative, calm, urgent.
 - Output MUST strictly embed detailed fields for use in Notification APIs (e.g., coordinates, AI routing).
+- DO NOT output any resource inventory, equipment lists, shelter destination tables, or gap analysis. Those are for other reports.
+- DO NOT reproduce any of the input context. ONLY output the structured fields below.
+- Your entire output must follow the OUTPUT format exactly — nothing more, nothing less.
 
 OUTPUT:
 **OFFICIAL SITUATION REPORT (Report Level)**
@@ -592,10 +595,7 @@ Shelter Status: [N] Relief Centres active ([N] at full capacity).
 Resource Mobilisation: Logistics and Tactical teams deployed.
 Coordinates & Routing: [Lat, Lon] via [Algorithm]
 
-📋 Field Reference Card
-💧 Water: 3 L/person/day drinking | 20 L/person/day hygiene.
-🏥 Medical: Mass casualty triaging setup.
-🍔 Food & Nutrition: [Note standards].
+Then append the FIELD REFERENCE CARD section VERBATIM exactly as provided in the prompt — do not summarise, shorten, or reformat it.
 """,
     "sos_expert": """You are the Mass SOS Emergency Broadcaster.
 MANDATORY:
@@ -896,20 +896,38 @@ async def stream_advice(persona: str, summary_data: dict):
     guidelines_card   = format_guidelines_reference_card() # full card for report footer
     catalog_text      = get_resource_definitions_summary()
 
-    context_str  = json.dumps(summary_data, indent=2)
+    # Strip keys that are irrelevant and noisy for comms-only personas
+    COMMS_PERSONAS = {"civic", "sos_expert"}
+    if persona in COMMS_PERSONAS:
+        slim_data = {
+            k: v for k, v in summary_data.items()
+            if k in ("simulation", "shelter_overview", "shelters", "evacuation_data")
+        }
+        context_str = json.dumps(slim_data, indent=2)
+    else:
+        context_str = json.dumps(summary_data, indent=2)
+
     system_prompt = PERSONAS.get(persona, PERSONAS["logistics"])
 
-    prompt_text = (
-        f"Evacuation Summary:\n{context_str}\n\n"
-        f"{resources_text}\n\n"
-        f"{shelters_text}\n\n"
-        f"VALID RESOURCE CATALOG (Reference Only):\n{catalog_text}\n\n"
-        f"CALCULATION STANDARDS (use only for computing quantities):\n{guidelines_text}\n\n"
-        f"FIELD REFERENCE CARD (append this section VERBATIM at the very end of your report, "
-        f"after Section 5. Do not modify any numbers or text. Do not use it for calculations — "
-        f"it is purely for field officers to read):\n{guidelines_card}\n\n"
-        f"Provide your expert analysis:"
-    )
+    if persona in COMMS_PERSONAS:
+        prompt_text = (
+            f"Evacuation Summary:\n{context_str}\n\n"
+            f"FIELD REFERENCE CARD (append this section VERBATIM at the very end of your report. "
+            f"Do not modify any numbers or text.):\n{guidelines_card}\n\n"
+            f"Provide your expert analysis:"
+        )
+    else:
+        prompt_text = (
+            f"Evacuation Summary:\n{context_str}\n\n"
+            f"{resources_text}\n\n"
+            f"{shelters_text}\n\n"
+            f"VALID RESOURCE CATALOG (Reference Only):\n{catalog_text}\n\n"
+            f"CALCULATION STANDARDS (use only for computing quantities):\n{guidelines_text}\n\n"
+            f"FIELD REFERENCE CARD (append this section VERBATIM at the very end of your report, "
+            f"after Section 5. Do not modify any numbers or text. Do not use it for calculations — "
+            f"it is purely for field officers to read):\n{guidelines_card}\n\n"
+            f"Provide your expert analysis:"
+        )
     nl = "\n\n"
 
     # ── Primary: Gemini 2.5 Flash ─────────────────────────────────────────────

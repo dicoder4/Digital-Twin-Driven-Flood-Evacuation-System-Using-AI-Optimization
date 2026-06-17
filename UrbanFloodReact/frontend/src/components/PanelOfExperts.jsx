@@ -411,7 +411,8 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                 },
                 location_data: { location_name: locationName || 'Unknown' },
                 ai_report: (user?.role === 'authority') ? (responses['sos_expert'] || responses['civic']) : (responses['civic'] || ""),
-                map_image_base64: mapImageBase64
+                map_image_base64: mapImageBase64,
+                frontend_base_url: window.location.origin
             };
             const res = await fetch(`${API_URL}${endpoint}`, {
                 method: 'POST',
@@ -646,7 +647,6 @@ export function PanelOfExperts({ summary, evacuationPlan, locationName: propLoca
                                 <FilterPill id="all" label="All" color="#64748b" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="logistics" label="Logistics" color="#3b82f6" active={resourceFilter} onClick={setResourceFilter} />
                                 <FilterPill id="tactical" label="Tactical" color="#f59e0b" active={resourceFilter} onClick={setResourceFilter} />
-                                <FilterPill id="civic" label="Civic" color="#16a34a" active={resourceFilter} onClick={setResourceFilter} />
                             </div>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('dist_filter', lang)}</span>
